@@ -2,8 +2,10 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Tajawal } from "next/font/google";
 import LandmarksShowcase from "@/components/landmarks/LandmarksShowcase";
+import LandingHeader from "@/components/layout/LandingHeader";
 
 const tajawal = Tajawal({
   subsets: ["arabic"],
@@ -11,6 +13,8 @@ const tajawal = Tajawal({
 });
 
 export default function HomePage() {
+  const router = useRouter();
+
   const text = "اكتشف جمال الماضي وعِش تجربة سياحية مميزة";
   const [displayedText, setDisplayedText] = useState("");
   const [index, setIndex] = useState(0);
@@ -38,9 +42,9 @@ export default function HomePage() {
 
   return (
     <main className={`relative min-h-screen ${tajawal.className}`}>
-      {/* GLOBAL VIDEO BACKGROUND */}
+      {/* VIDEO BACKGROUND */}
       <video
-        className="fixed inset-0 w-full h-full object-cover z-0"
+        className="fixed inset-0 w-full h-full object-cover z-0 pointer-events-none"
         src="/hero.mp4"
         autoPlay
         muted
@@ -48,13 +52,15 @@ export default function HomePage() {
         playsInline
       />
 
-      {/* DARK OVERLAY */}
-      <div className="fixed inset-0 bg-black/60 z-0" />
+      {/* OVERLAY */}
+      <div className="fixed inset-0 bg-black/60 z-0 pointer-events-none" />
 
       {/* PAGE CONTENT */}
       <div className="relative z-10">
         {/* HERO SECTION */}
-        <section className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
+        <section className="relative min-h-screen flex flex-col items-center justify-center px-6 text-center">
+          <LandingHeader />
+
           {/* LOGO */}
           <div className="mb-6">
             <Image
@@ -76,9 +82,10 @@ export default function HomePage() {
             تجربة سياحية تفاعلية مدعومة بالذكاء الاصطناعي
           </p>
 
-          {/* Explore Map Button */}
-          <div className="mt-10 mb-10">
+          {/* CTA BUTTON */}
+          <div className="mt-10 mb-10 relative z-20">
             <button
+              onClick={() => router.push("/map")}
               className="
                 flex items-center gap-3
                 px-10 py-4
@@ -122,7 +129,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* LANDMARKS SHOWCASE */}
+        {/* LANDMARKS SECTION */}
         <section className="py-32">
           <LandmarksShowcase />
         </section>
