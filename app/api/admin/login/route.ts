@@ -1,78 +1,73 @@
-import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { createClient } from "@supabase/supabase-js";
-
-export const dynamic = "force-dynamic";
-
-function jsonError(message: string, status = 401) {
-  return NextResponse.json({ ok: false, error: message }, { status });
-}
+import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => null);
-    const email = (body?.email ?? "").toString().trim();
-    const authPassword = (body?.authPassword ?? "").toString();
-    const secret = (body?.secret ?? "").toString();
+    const body = await req.json();
+    const { email, authPassword, secret } = body;
 
+    // 1. التحقق من المدخلات
     if (!email || !authPassword || !secret) {
-      return jsonError("الرجاء إدخال جميع البيانات", 400);
+      return NextResponse.json(
+        { error: "البيانات ناقصة" },
+        { status: 400 }
+      );
     }
 
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    // 2. تهيئة Supabase (باستخدام Service Role لتخطي أي قيود)
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    if (!url || !anon || !service) {
-      return jsonError("Server env missing", 500);
-    }
-
-    // (A) تحقق كلمة مرور Supabase Auth (بدون الاعتماد على client)
-    const authRes = await fetch(`${url}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: {
-        apikey: anon,
-        Authorization: `Bearer ${anon}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, password: authPassword }),
+    // 3. محاولة تسجيل الدخول (للتحقق من صحة الإيميل وكلمة المرور)
+    const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
+      email,
+      password: authPassword,
     });
 
-    const authJson = await authRes.json().catch(() => null);
-    if (!authRes.ok || !authJson?.access_token || !authJson?.user?.id) {
-      return jsonError("بيانات الدخول غير صحيحة");
+    if (authError || !authData.user) {
+      console.error("Auth Error:", authError);
+      return NextResponse.json(
+        { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة" },
+        { status: 401 }
+      );
     }
 
-    const userId = authJson.user.id as string;
+    // 4. التحقق من الإجابة السرية وصلاحية الأدمن عبر الدالة الآمنة
+    // نمرر ID المستخدم والإجابة السرية التي كتبها
+    const { data: isSecretValid, error: rpcError } = await supabaseAdmin.rpc(
+      'verify_admin_secret', 
+      { 
+        user_id: authData.user.id, 
+        secret_input: secret 
+      }
+    );
 
-    // (B) قراءة صلاحيات الأدمن من profiles عبر Service Role (يتجاوز RLS)
-    const adminDb = createClient(url, service, {
-      auth: { persistSession: false },
-    });
-
-    const { data: profile, error } = await adminDb
-      .from("profiles")
-      .select("is_super_admin, admin_secret_hash")
-      .eq("id", userId)
-      .single();
-
-    if (error || !profile?.is_super_admin || !profile?.admin_secret_hash) {
-      return jsonError("ليس لديك صلاحية الأدمن");
+    if (rpcError) {
+      console.error("RPC Error:", rpcError);
+      return NextResponse.json({ error: "خطأ في التحقق من الصلاحيات" }, { status: 500 });
     }
 
-    // (C) تحقق السر
-    const ok = await bcrypt.compare(secret, profile.admin_secret_hash);
-    if (!ok) {
-      return jsonError("إجابة غير صحيحة");
+    if (!isSecretValid) {
+      return NextResponse.json(
+        { error: "الإجابة السرية غير صحيحة أو الحساب ليس له صلاحيات أدمن" },
+        { status: 401 }
+      );
     }
 
-    // رجّع التوكنز عشان الـ client يسوي setSession
+    // 5. نجاح الدخول - إرجاع التوكن
     return NextResponse.json({
       ok: true,
-      access_token: authJson.access_token,
-      refresh_token: authJson.refresh_token,
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token,
     });
-  } catch {
-    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
+
+  } catch (error: any) {
+    console.error("Server Error:", error);
+    return NextResponse.json(
+      { error: "حدث خطأ غير متوقع في السيرفر" },
+      { status: 500 }
+    );
   }
 }
