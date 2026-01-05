@@ -1,306 +1,500 @@
 "use client";
-
-import { useEffect, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
-  Save, Loader2, Lock, User, Globe, ToggleLeft, ToggleRight, LogOut, Briefcase,
-  MapPin, Tag, Plus, Trash2, ArrowRight, Menu, X, Home, Server, Key, ListPlus
+  Save,
+  Loader2,
+  Info,
+  Phone,
+  Mail,
+  FileText,
+  Target,
+  Eye,
+  Twitter,
+  Instagram,
+  Linkedin,
+  Globe,
+  Server,
+  Key,
+  Database,
+  MapPin,
+  List,
+  User,
+  Lock,
+  CheckCircle,
+
+  // ✅ الأيقونات الناقصة
+  Plus,
+  Edit,
+  Trash2,
+  X
 } from "lucide-react";
+
 import { Tajawal } from "next/font/google";
-import { useRouter } from "next/navigation";
 
-const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
+const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "700"] });
 
-export default function SettingsPage() {
-  const router = useRouter();
+
+export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("general"); 
+  const [activeTab, setActiveTab] = useState("app_settings");
+  const router = useRouter();
 
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
-  const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+  // ==================== منطق حقول الخدمات (جديد) ====================
+  const [fields, setFields] = useState<any[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentField, setCurrentField] = useState<any>({ label: "", field_type: "text", options: [], is_required: false, sort_order: 0 });
+  const [optionsText, setOptionsText] = useState("");
+  const [fieldSaving, setFieldSaving] = useState(false);
 
-  // --- حالات البيانات (تم إصلاح الأنواع لتجنب الأخطاء) ---
-  const [profile, setProfile] = useState<any>({ id: "", full_name: "", phone: "", email: "" });
-  const [passwords, setPasswords] = useState({ newPassword: "", confirmPassword: "" });
-  
-  // الإعدادات العامة
-  const [appSettings, setAppSettings] = useState<any>({
-    maintenance_mode: false,
-    payment_mode: 'test',
-    support_phone: "",
-    support_email: ""
-  });
-
-  // قائمة إعدادات الربط الديناميكية
-  const [integrations, setIntegrations] = useState<any[]>([]);
-  const [newIntegration, setNewIntegration] = useState({ key: "", value: "", description: "" });
-  
-  // حقول الخدمات والمدن والتصنيفات
-  const [serviceFields, setServiceFields] = useState<any[]>([]);
-  const [newServiceField, setNewServiceField] = useState<any>({ label: "", field_type: "text", options: "", is_required: false });
-  const [cities, setCities] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [newCity, setNewCity] = useState("");
-  const [newCategory, setNewCategory] = useState("");
-  const [catType, setCatType] = useState("place");
-
+  // جلب الحقول عند فتح الصفحة
   useEffect(() => {
-    fetchData();
+    const fetchFields = async () => {
+      const { data } = await supabase.from('registration_fields').select('*').order('sort_order', { ascending: true });
+      if (data) setFields(data);
+    };
+    fetchFields();
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session) {
-      // 1. البروفايل
-      const { data: myProfile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-      if (myProfile) setProfile(myProfile);
+  const handleAddNewField = () => {
+    setCurrentField({ label: "", field_type: "text", options: [], is_required: false, sort_order: fields.length + 1 });
+    setOptionsText("");
+    setIsModalOpen(true);
+  };
 
-      // 2. كل الإعدادات (العامة + الربط)
-      const { data: settingsData } = await supabase.from('platform_settings').select('*').order('created_at');
-      if (settingsData) {
-        // نفصل الإعدادات الأساسية عن مفاتيح الربط
-        const coreKeys = ['maintenance_mode', 'payment_mode', 'support_phone', 'support_email'];
-        const core: any = {};
-        const dyn: any[] = [];
+  const handleEditField = (field: any) => {
+    setCurrentField(field);
+    setOptionsText(field.options ? field.options.join(", ") : (field.field_type === 'policy' && field.options ? field.options[0] : ""));
+    setIsModalOpen(true);
+  };
 
-        settingsData.forEach((item: any) => {
-            if (coreKeys.includes(item.key)) {
-                core[item.key] = item.key === 'maintenance_mode' ? item.value === 'true' : item.value;
-            } else {
-                dyn.push(item);
-            }
-        });
-        setAppSettings((prev: any) => ({ ...prev, ...core }));
-        setIntegrations(dyn);
-      }
+  const handleDeleteField = async (id: string) => {
+    if (!confirm("هل أنت متأكد من الحذف؟")) return;
+    const { error } = await supabase.from('registration_fields').delete().eq('id', id);
+    if (!error) setFields(fields.filter(f => f.id !== id));
+  };
 
-      // 3. حقول الخدمات (حيث scope = service)
-      const { data: sFields } = await supabase.from('registration_fields').select('*').eq('scope', 'service').order('sort_order');
-      if (sFields) setServiceFields(sFields);
+  const handleSaveField = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFieldSaving(true);
+    try {
+      let finalOptions: string[] | null = null;
+      if (currentField.field_type === 'select') finalOptions = optionsText.split(',').map(s => s.trim()).filter(Boolean);
+      else if (currentField.field_type === 'policy') finalOptions = [optionsText];
 
-      // 4. المدن والتصنيفات
-      const { data: citiesData } = await supabase.from('cities').select('*').order('created_at');
-      if (citiesData) setCities(citiesData);
-
-      const { data: catData } = await supabase.from('categories').select('*').order('created_at');
-      if (catData) setCategories(catData);
+      const fieldData = { ...currentField, options: finalOptions, is_required: currentField.field_type === 'policy' ? true : currentField.is_required };
+      const { data, error } = await supabase.from('registration_fields').upsert(fieldData).select().single();
+      
+      if (error) throw error;
+      if (currentField.id) setFields(fields.map(f => f.id === data.id ? data : f));
+      else setFields([...fields, data]);
+      
+      setIsModalOpen(false);
+    } catch (error: any) {
+      alert("خطأ: " + error.message);
+    } finally {
+      setFieldSaving(false);
     }
-    setLoading(false);
+  };
+  // ==============================================================
+
+  // بيانات الإعدادات العامة
+  const [formData, setFormData] = useState({
+    is_app_active: true,
+    about_us: "",
+    vision: "",
+    mission: "",
+    whatsapp: "",
+    email: "",
+    twitter: "",
+    instagram: "",
+    linkedin: ""
+  });
+
+  // بيانات وهمية للعرض في التبويبات الأخرى (يمكنك ربطها بقاعدة البيانات لاحقاً)
+  const [techData, setTechData] = useState({
+    googleMapKey: "AIzaSyDxxxxxxxxxxxxxx",
+    geminiKey: "sk-xxxxxxxxxxxxxx",
+    paymentGateway: "Stripe"
+  });
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('platform_settings')
+        .select('*')
+        .eq('id', 1)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') console.error(error);
+
+      if (data) {
+        setFormData({
+          is_app_active: data.is_app_active ?? true,
+          about_us: data.about_us || "",
+          vision: data.vision || "",
+          mission: data.mission || "",
+          whatsapp: data.whatsapp || "",
+          email: data.email || "",
+          twitter: data.twitter || "",
+          instagram: data.instagram || "",
+          linkedin: data.linkedin || ""
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // --- دوال الحفظ ---
-  const handleSaveGeneral = async () => {
+  const handleSave = async () => {
     setSaving(true);
-    const updates = [
-        { key: 'maintenance_mode', value: String(appSettings.maintenance_mode) },
-        { key: 'payment_mode', value: appSettings.payment_mode },
-        { key: 'support_phone', value: appSettings.support_phone },
-        { key: 'support_email', value: appSettings.support_email },
-    ];
-    await supabase.from('platform_settings').upsert(updates, { onConflict: 'key' });
-    setSaving(false);
-    alert("✅ تم حفظ الإعدادات العامة");
+    try {
+      // هنا نحفظ فقط إعدادات التطبيق (التبويب الأول)
+      // التبويبات الأخرى تحتاج جداول خاصة أو منطق حفظ منفصل حسب برمجتك السابقة
+      const { error } = await supabase
+        .from('platform_settings')
+        .upsert({
+          id: 1,
+          ...formData,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      alert("تم حفظ الإعدادات بنجاح!");
+    } catch (error) {
+      alert("حدث خطأ أثناء الحفظ");
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // --- دوال الربط الديناميكي ---
-  const handleAddIntegration = async () => {
-      if(!newIntegration.key || !newIntegration.value) return alert("المفتاح والقيمة مطلوبة");
-      
-      const { error } = await supabase.from('platform_settings').upsert([newIntegration], { onConflict: 'key' });
-      if(!error) {
-          alert("✅ تم إضافة/تحديث مفتاح الربط");
-          setNewIntegration({ key: "", value: "", description: "" });
-          fetchData();
-      } else {
-          alert(error.message);
-      }
-  };
-
-  const handleDeleteIntegration = async (key: string) => {
-      if(!confirm("حذف هذا المفتاح؟ قد تتوقف الخدمة المرتبطة به.")) return;
-      await supabase.from('platform_settings').delete().eq('key', key);
-      fetchData();
-  };
-
-  // --- دوال حقول الخدمات ---
-  const handleAddServiceField = async () => {
-      if(!newServiceField.label) return;
-      const optionsArray = newServiceField.options ? newServiceField.options.split(',').map((s: string) => s.trim()) : null;
-      
-      const { error } = await supabase.from('registration_fields').insert([{
-          label: newServiceField.label,
-          field_type: newServiceField.field_type,
-          options: optionsArray,
-          is_required: newServiceField.is_required,
-          scope: 'service', // هذا يحدد أن الحقل لصفحة إضافة الخدمة
-          sort_order: serviceFields.length + 1
-      }]);
-
-      if(!error) {
-          setNewServiceField({ label: "", field_type: "text", options: "", is_required: false });
-          fetchData();
-      }
-  };
-
-  const handleDeleteServiceField = async (id: string) => {
-      if(!confirm("حذف هذا الحقل؟")) return;
-      await supabase.from('registration_fields').delete().eq('id', id);
-      fetchData();
-  };
-
-  // --- دوال التنظيف والحذف ---
-  const handleWipeData = async () => {
-      if(confirm("⚠️ تحذير: سيتم حذف جميع الحجوزات والمدفوعات والمفضلة. هل أنت متأكد؟")) {
-          setSaving(true);
-          const { error } = await supabase.rpc('wipe_system_data');
-          setSaving(false);
-          if(error) alert("خطأ: " + error.message);
-          else alert("✅ تم تنظيف النظام بنجاح.");
-      }
-  };
-
-  // دوال مساعدة أخرى (البروفايل، المدن، التصنيفات - نفس المنطق السابق)
-  const handleUpdateProfile = async (e: any) => { e.preventDefault(); /* ... */ };
-  const handleChangePassword = async (e: any) => { e.preventDefault(); /* ... */ };
-  const handleAddCity = async () => { /* ... */ };
-  const handleDeleteCity = async (id: string) => { /* ... */ };
-  const handleAddCategory = async () => { /* ... */ };
-  const handleDeleteCategory = async (id: string) => { /* ... */ };
-  const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
+  if (loading) return <div className="p-10 text-center text-white">جاري التحميل...</div>;
 
   return (
-    <main dir="rtl" className={`min-h-screen bg-[#1a1a1a] text-white relative ${tajawal.className}`}>
+    <div className={`p-6 max-w-5xl mx-auto text-right ${tajawal.className}`} dir="rtl">
+      <button
+  onClick={() => router.push("/admin/dashboard")}
+  className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"
+>
+  <ArrowRight size={22} />
+</button>
+
+      <h1 className="text-3xl font-bold text-white mb-8 border-b border-white/10 pb-4">الإعدادات العامة</h1>
       
-      {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
-        <button onClick={() => router.push('/admin/dashboard')} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><ArrowRight size={24} /></button>
-        <Link href="/"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
-        <div className="relative"><button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10"><User size={20} /></button></div>
+
+      {/* --- شريط التبويبات --- */}
+      <div className="flex flex-wrap gap-2 mb-8 bg-white/5 p-1 rounded-xl w-fit mx-auto md:mx-0 border border-white/10">
+        {[
+          { id: "app_settings", label: "إعدادات التطبيق", icon: <Globe size={16}/> },
+          { id: "tech_link", label: "الربط والتقنية", icon: <Server size={16}/> },
+          { id: "fields", label: "حقول الخدمات", icon: <Database size={16}/> },
+          { id: "cities", label: "المدن والتصنيفات", icon: <MapPin size={16}/> },
+          { id: "account", label: "حسابي", icon: <User size={16}/> }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-bold transition-all duration-300 ${
+              activeTab === tab.id 
+                ? "bg-[#C89B3C] text-black shadow-lg shadow-[#C89B3C]/20" 
+                : "text-white/60 hover:text-white hover:bg-white/10"
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      <div className="p-6 lg:p-10 pt-24 md:pt-10">
-        <header className="hidden md:flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold flex items-center gap-2"><Settings className="text-[#C89B3C]" /> الإعدادات العامة</h1>
-            <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full"><Home size={20} /></Link>
-        </header>
+      {/* ================= تبويب 1: إعدادات التطبيق ================= */}
+      {activeTab === "app_settings" && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          {/* حالة التطبيق */}
+          <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
+              <Globe size={20} /> حالة التطبيق
+            </h2>
+            <div className="flex items-center justify-between bg-black/40 p-4 rounded-xl border border-white/5">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${formData.is_app_active ? "bg-green-500 shadow-[0_0_10px_lime]" : "bg-red-500 shadow-[0_0_10px_red]"}`}></div>
+                <span className="text-white font-bold">{formData.is_app_active ? "التطبيق يعمل" : "التطبيق متوقف للصيانة"}</span>
+              </div>
+              <button 
+                onClick={() => setFormData({...formData, is_app_active: !formData.is_app_active})}
+                className={`w-12 h-6 rounded-full p-1 transition-colors duration-300 ${formData.is_app_active ? "bg-green-500/20 border border-green-500" : "bg-red-500/20 border border-red-500"}`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform duration-300 ${formData.is_app_active ? "-translate-x-6 bg-green-500" : "translate-x-0 bg-red-500"}`}></div>
+              </button>
+            </div>
+          </section>
 
-        {loading ? <div className="text-center p-20 text-[#C89B3C]"><Loader2 className="animate-spin inline"/></div> : (
-          <div>
-            <div className="flex gap-4 mb-8 border-b border-white/10 pb-4 overflow-x-auto custom-scrollbar">
-              {['integrations', 'services_fields', 'general', 'categories', 'account'].map(tab => (
-                  <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-2 rounded-full whitespace-nowrap transition ${activeTab === tab ? 'bg-[#C89B3C] text-black font-bold' : 'bg-white/5 text-white/60'}`}>
-                      {tab === 'integrations' && 'الربط والتقنية'}
-                      {tab === 'services_fields' && 'حقول الخدمات'}
-                      {tab === 'general' && 'إعدادات التطبيق'}
-                      {tab === 'categories' && 'المدن والتصنيفات'}
-                      {tab === 'account' && 'حسابي'}
-                  </button>
-              ))}
+          {/* التواصل */}
+          <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
+              <Phone size={20} /> معلومات التواصل
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">رقم الواتساب</label>
+                <div className="relative">
+                   <input type="text" value={formData.whatsapp} onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none pl-10" />
+                   <Phone className="absolute left-3 top-3.5 text-gray-500" size={18} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">البريد الإلكتروني</label>
+                <div className="relative">
+                   <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none pl-10" />
+                   <Mail className="absolute left-3 top-3.5 text-gray-500" size={18} />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-white/5">
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm flex gap-2"><Twitter size={14}/> تويتر</label>
+                <input type="text" value={formData.twitter} onChange={(e) => setFormData({ ...formData, twitter: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-xs" dir="ltr" />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm flex gap-2"><Instagram size={14}/> انستقرام</label>
+                <input type="text" value={formData.instagram} onChange={(e) => setFormData({ ...formData, instagram: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-xs" dir="ltr" />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm flex gap-2"><Linkedin size={14}/> لينكد إن</label>
+                <input type="text" value={formData.linkedin} onChange={(e) => setFormData({ ...formData, linkedin: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-xs" dir="ltr" />
+              </div>
+            </div>
+          </section>
+
+          {/* المحتوى */}
+          <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
+              <FileText size={20} /> المحتوى التعريفي
+            </h2>
+            <div className="space-y-5">
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">من نحن</label>
+                <textarea rows={4} value={formData.about_us} onChange={(e) => setFormData({ ...formData, about_us: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-gray-400 mb-2 text-sm">الرؤية</label>
+                  <textarea rows={3} value={formData.vision} onChange={(e) => setFormData({ ...formData, vision: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none" />
+                </div>
+                <div>
+                  <label className="block text-gray-400 mb-2 text-sm">الرسالة</label>
+                  <textarea rows={3} value={formData.mission} onChange={(e) => setFormData({ ...formData, mission: e.target.value })} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none" />
+                </div>
+              </div>
+            </div>
+          </section>
+          
+          <div className="flex justify-end pt-4 sticky bottom-4 z-10">
+            <div className="bg-[#121212]/80 backdrop-blur-md p-2 rounded-xl border border-white/10 shadow-2xl">
+              <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-[#C89B3C] hover:bg-[#b88a2c] text-black font-bold py-3 px-12 rounded-xl transition disabled:opacity-50">
+                {saving ? <Loader2 className="animate-spin" /> : <Save size={20} />} حفظ التغييرات
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= تبويب 2: الربط والتقنية ================= */}
+      {activeTab === "tech_link" && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
+              <Key size={20} /> مفاتيح الربط (API Keys)
+            </h2>
+            <div className="space-y-6">
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">مفتاح خرائط جوجل (Google Maps API)</label>
+                <input type="text" defaultValue={techData.googleMapKey} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none font-mono text-sm" dir="ltr" />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">مفتاح الذكاء الاصطناعي (Gemini AI Key)</label>
+                <input type="text" defaultValue={techData.geminiKey} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none font-mono text-sm" dir="ltr" />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">بوابة الدفع (Payment Gateway)</label>
+                <select className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none">
+                  <option value="Stripe">Stripe</option>
+                  <option value="Moyasar">Moyasar (ميسر)</option>
+                  <option value="Tamara">Tamara</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+               <button className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition text-sm">حفظ مفاتيح الربط</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ================= تبويب 3: حقول الخدمات (المعدل) ================= */}
+      {activeTab === "fields" && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2">
+                  <Database size={20} /> إدارة حقول ونماذج التسجيل
+                </h2>
+                <button onClick={handleAddNewField} className="bg-[#C89B3C] text-black px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-[#b38a35] text-sm">
+                   <Plus size={16} /> إضافة حقل
+                </button>
             </div>
 
-            {/* === TAB: INTEGRATIONS (الربط الديناميكي) === */}
-            {activeTab === 'integrations' && (
-                <div className="space-y-8 animate-in fade-in">
-                    
-                    {/* إضافة ربط جديد */}
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold flex gap-2"><Server size={20} className="text-[#C89B3C]"/> مزودي الخدمات والـ API</h3>
-                        </div>
-                        
-                        <div className="bg-black/20 p-4 rounded-xl border border-white/5 mb-6">
-                            <p className="text-xs text-white/50 mb-3">أضف أي مفتاح ربط خارجي هنا (مثل: moyasar_key, google_maps_key, twilio_sid)</p>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                                <input placeholder="المفتاح (Key)" value={newIntegration.key} onChange={e=>setNewIntegration({...newIntegration, key: e.target.value})} className="bg-black/40 border border-white/10 rounded-lg p-3 text-sm outline-none text-white font-mono"/>
-                                <input placeholder="القيمة (Value)" value={newIntegration.value} onChange={e=>setNewIntegration({...newIntegration, value: e.target.value})} className="bg-black/40 border border-white/10 rounded-lg p-3 text-sm outline-none text-white font-mono"/>
-                                <input placeholder="وصف الخدمة" value={newIntegration.description} onChange={e=>setNewIntegration({...newIntegration, description: e.target.value})} className="bg-black/40 border border-white/10 rounded-lg p-3 text-sm outline-none text-white"/>
-                            </div>
-                            <button onClick={handleAddIntegration} className="w-full bg-[#C89B3C] text-black font-bold py-2 rounded-lg hover:bg-[#b38a35]">إضافة / حفظ</button>
-                        </div>
+            {/* الجدول */}
+            <div className="overflow-x-auto custom-scrollbar rounded-xl border border-white/5">
+                <table className="w-full text-right border-collapse min-w-[600px]">
+                    <thead className="bg-black/20 text-white/50 text-xs uppercase">
+                        <tr>
+                            <th className="px-4 py-3">الترتيب</th>
+                            <th className="px-4 py-3">العنوان</th>
+                            <th className="px-4 py-3">النوع</th>
+                            <th className="px-4 py-3">إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-sm">
+                        {fields.map(f => (
+                        <tr key={f.id} className="hover:bg-white/5 transition">
+                            <td className="px-4 py-3 font-mono text-[#C89B3C]">{f.sort_order}</td>
+                            <td className="px-4 py-3 font-bold">{f.label}</td>
+                            <td className="px-4 py-3">
+                                <span className={`px-2 py-1 rounded text-xs ${f.field_type === 'policy' ? 'bg-[#C89B3C]/20 text-[#C89B3C]' : 'bg-white/10'}`}>
+                                    {f.field_type === 'text' && 'نص'} {f.field_type === 'select' && 'قائمة'} {f.field_type === 'file' && 'ملف'} {f.field_type === 'policy' && 'سياسة'} {f.field_type === 'map' && 'خريطة'}
+                                    {f.field_type === 'tel' && 'جوال'} {f.field_type === 'email' && 'إيميل'} {f.field_type === 'textarea' && 'نص طويل'}
+                                </span>
+                            </td>
+                            <td className="px-4 py-3 flex gap-2">
+                                <button onClick={()=>handleEditField(f)} className="p-1.5 bg-blue-500/10 text-blue-400 rounded hover:bg-blue-500 hover:text-white"><Edit size={14}/></button>
+                                <button onClick={()=>handleDeleteField(f.id)} className="p-1.5 bg-red-500/10 text-red-400 rounded hover:bg-red-500 hover:text-white"><Trash2 size={14}/></button>
+                            </td>
+                        </tr>
+                    ))}</tbody>
+                </table>
+            </div>
+          </section>
 
-                        {/* قائمة المفاتيح الموجودة */}
-                        <div className="space-y-2">
-                            {integrations.map(setting => (
-                                <div key={setting.key} className="flex justify-between items-center bg-white/5 p-4 rounded-xl border border-white/5">
-                                    <div>
-                                        <p className="font-bold text-[#C89B3C] text-sm font-mono">{setting.key}</p>
-                                        <p className="text-xs text-white/50">{setting.description}</p>
-                                        <p className="text-xs text-white/30 font-mono mt-1 max-w-xs truncate">{setting.value}</p>
-                                    </div>
-                                    <button onClick={() => handleDeleteIntegration(setting.key)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition"><Trash2 size={16}/></button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* منطقة الخطر */}
-                    <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-6">
-                        <h3 className="text-lg font-bold text-red-400 mb-2 flex gap-2"><ShieldAlert/> منطقة الخطر</h3>
-                        <p className="text-white/60 text-sm mb-4">تنظيف قاعدة البيانات من جميع العمليات التجريبية.</p>
-                        <button onClick={handleWipeData} disabled={saving} className="w-full py-3 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl font-bold hover:bg-red-500 hover:text-white transition flex justify-center gap-2">
-                            {saving ? <Loader2 className="animate-spin"/> : <><Trash2 size={18}/> حذف البيانات الوهمية (Reset)</>}
-                        </button>
-                    </div>
+          {/* النافذة المنبثقة (Modal) للإضافة والتعديل */}
+          {isModalOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div className="bg-[#2B2B2B] w-full max-w-lg rounded-2xl border border-white/10 p-6 shadow-2xl">
+                <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                    <h3 className="text-xl font-bold">{currentField.id ? "تعديل الحقل" : "إضافة حقل جديد"}</h3>
+                    <button onClick={()=>setIsModalOpen(false)}><X className="text-white/50 hover:text-white"/></button>
                 </div>
-            )}
+                <form onSubmit={handleSaveField} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                      <div><label className="text-xs text-white/60 mb-1 block">النوع</label><select className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm" value={currentField.field_type} onChange={e=>setCurrentField({...currentField, field_type:e.target.value})}><option value="text">نص</option><option value="policy">سياسة</option><option value="map">خريطة</option><option value="file">ملف</option><option value="tel">جوال</option><option value="select">قائمة</option><option value="textarea">نص طويل</option></select></div>
+                      <div><label className="text-xs text-white/60 mb-1 block">الترتيب</label><input type="number" className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm" value={currentField.sort_order} onChange={e=>setCurrentField({...currentField, sort_order: +e.target.value})}/></div>
+                  </div>
+                  <div><label className="text-xs text-white/60 mb-1 block">العنوان</label><input required type="text" className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm" value={currentField.label} onChange={e => setCurrentField({...currentField, label: e.target.value})} /></div>
+                  
+                  {(currentField.field_type === 'select' || currentField.field_type === 'policy') && (
+                     <div><label className="text-xs text-white/60 mb-1 block">{currentField.field_type === 'policy' ? 'نص السياسة الكامل' : 'الخيارات (بينها فواصل)'}</label>
+                     {currentField.field_type === 'policy' ? <textarea className="w-full bg-black/30 border border-white/10 rounded-lg p-2 h-24" value={optionsText} onChange={e => setOptionsText(e.target.value)} /> : <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg p-2" value={optionsText} onChange={e => setOptionsText(e.target.value)} />}
+                     </div>
+                  )}
 
-            {/* === TAB: SERVICE FIELDS (حقول الخدمات) === */}
-            {activeTab === 'services_fields' && (
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 animate-in fade-in">
-                    <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
-                        <div>
-                            <h3 className="text-lg font-bold flex gap-2"><ListPlus className="text-[#C89B3C]"/> تخصيص نموذج الخدمات</h3>
-                            <p className="text-xs text-white/50 mt-1">هنا تحدد ما يطلبه النظام من المزود عند إضافة خدمة جديدة.</p>
-                        </div>
-                    </div>
+                  <button disabled={fieldSaving} className="w-full bg-[#C89B3C] text-black font-bold py-2 rounded-lg hover:bg-[#b38a35] mt-2">
+                    {fieldSaving ? "جاري الحفظ..." : "حفظ التغييرات"}
+                  </button>
+                </form>
+            </div>
+            </div>
+          )}
+        </div>
+      )}
 
-                    <div className="bg-black/20 p-4 rounded-xl border border-white/5 mb-6">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                            <input type="text" placeholder="عنوان الحقل (مثلاً: صور المكان)" value={newServiceField.label} onChange={e=>setNewServiceField({...newServiceField, label: e.target.value})} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm outline-none text-white"/>
-                            <select value={newServiceField.field_type} onChange={e=>setNewServiceField({...newServiceField, field_type: e.target.value})} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm outline-none text-white">
-                                <option value="text">نص قصير</option>
-                                <option value="textarea">نص طويل (وصف)</option>
-                                <option value="file">رفع ملفات/صور</option>
-                                <option value="map">خريطة (لوكيشن)</option>
-                                <option value="policy">سياسة (إقرار)</option>
-                                <option value="select">قائمة اختيار</option>
-                            </select>
-                            <input type="text" placeholder="خيارات القائمة (مفصولة بفاصلة)" value={newServiceField.options} onChange={e=>setNewServiceField({...newServiceField, options: e.target.value})} disabled={!['select', 'policy'].includes(newServiceField.field_type)} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm outline-none text-white disabled:opacity-50"/>
-                            <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={newServiceField.is_required} onChange={e=>setNewServiceField({...newServiceField, is_required: e.target.checked})} className="accent-[#C89B3C] w-5 h-5"/>
-                                <label className="text-sm">اجباري؟</label>
-                            </div>
-                        </div>
-                        <button onClick={handleAddServiceField} className="w-full bg-[#C89B3C] text-black font-bold py-2 rounded-lg hover:bg-[#b38a35]">إضافة حقل للخدمات</button>
-                    </div>
+      {/* ================= تبويب 4: المدن والتصنيفات ================= */}
+      {activeTab === "cities" && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+              <div className="flex justify-between items-center mb-6">
+                 <h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2">
+                   <MapPin size={20} /> المدن المدعومة
+                 </h2>
+                 <button className="text-xs bg-[#C89B3C] text-black px-3 py-1 rounded hover:bg-[#b88a2c]">+ إضافة</button>
+              </div>
+              <div className="space-y-2">
+                 {['أبها', 'خميس مشيط', 'النماص', 'رجال ألمع', 'تنومة'].map((city, idx) => (
+                   <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5">
+                      <span>{city}</span>
+                      <span className="text-xs text-green-400 bg-green-400/10 px-2 py-1 rounded">نشط</span>
+                   </div>
+                 ))}
+              </div>
+            </section>
 
-                    <div className="space-y-2">
-                        {serviceFields.length === 0 && <p className="text-center text-white/30">النموذج الافتراضي فقط. أضف حقولاً لتخصيص الطلب.</p>}
-                        {serviceFields.map((f: any) => (
-                            <div key={f.id} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
-                                <div className="flex items-center gap-3">
-                                    <span className="font-bold">{f.label}</span>
-                                    <span className="text-xs bg-white/10 px-2 py-1 rounded text-white/70">{f.field_type}</span>
-                                    {f.is_required && <span className="text-xs text-red-400 border border-red-500/30 px-1 rounded">اجباري</span>}
-                                </div>
-                                <button onClick={() => handleDeleteServiceField(f.id)} className="text-red-400 hover:text-white transition"><Trash2 size={16}/></button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* === باقي التبويبات (عامة، حساب، الخ) نفس الكود السابق يمكن وضعه هنا === */}
-            {activeTab === 'general' && <div className="text-center text-white/50 p-10">إعدادات التطبيق العامة...</div>}
+            <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+              <div className="flex justify-between items-center mb-6">
+                 <h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2">
+                   <List size={20} /> تصنيفات الخدمات
+                 </h2>
+                 <button className="text-xs bg-[#C89B3C] text-black px-3 py-1 rounded hover:bg-[#b88a2c]">+ إضافة</button>
+              </div>
+              <div className="space-y-2">
+                 {['مطاعم ومقاهي', 'نزل تراثية', 'فنادق ومنتجعات', 'تجارب هايكنج', 'متاحف'].map((cat, idx) => (
+                   <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5">
+                      <span>{cat}</span>
+                      <span className="text-xs text-white/40">50 خدمة</span>
+                   </div>
+                 ))}
+              </div>
+            </section>
           </div>
-        )}
-      </div>
-    </main>
+        </div>
+      )}
+
+      {/* ================= تبويب 5: حسابي ================= */}
+      {activeTab === "account" && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
+              <User size={20} /> إعدادات الحساب والأمان
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div>
+                  <label className="block text-gray-400 mb-2 text-sm">اسم المسؤول</label>
+                  <input type="text" defaultValue="المدير العام" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none" />
+               </div>
+               <div>
+                  <label className="block text-gray-400 mb-2 text-sm">البريد الإلكتروني</label>
+                  <input type="email" defaultValue="admin@sayyir.com" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none" disabled />
+               </div>
+            </div>
+            
+            <div className="mt-8 border-t border-white/10 pt-6">
+               <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Lock size={16}/> تغيير كلمة المرور</h3>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-gray-400 mb-2 text-sm">كلمة المرور الحالية</label>
+                    <input type="password" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 mb-2 text-sm">كلمة المرور الجديدة</label>
+                    <input type="password" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none" />
+                  </div>
+               </div>
+               <div className="mt-6 flex justify-end">
+                  <button className="px-6 py-2 bg-[#C89B3C] text-black font-bold rounded-lg hover:bg-[#b88a2c] transition">تحديث الملف الشخصي</button>
+               </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+    </div>
   );
 }
