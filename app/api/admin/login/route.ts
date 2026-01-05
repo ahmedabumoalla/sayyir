@@ -6,36 +6,45 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { email, authPassword, secret } = body;
 
-    // 1. التحقق من المدخلات
-    if (!email || !authPassword || !secret) {
+    // طباعة للتحقق من وصول البيانات (ستظهر في سجلات فيرسال)
+    console.log("Attempting login for:", email);
+
+    // التحقق من وجود مفاتيح الربط
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error("Missing Supabase Environment Variables!");
       return NextResponse.json(
-        { error: "البيانات ناقصة" },
-        { status: 400 }
+        { error: "خطأ في إعدادات السيرفر (المفاتيح مفقودة)" },
+        { status: 500 }
       );
     }
 
-    // 2. تهيئة Supabase (باستخدام Service Role لتخطي أي قيود)
+    // إعداد العميل مع إلغاء حفظ الجلسة (مهم جداً للـ API)
     const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false, // يمنع تداخل الكوكيز في السيرفر
+        },
+      }
     );
 
-    // 3. محاولة تسجيل الدخول (للتحقق من صحة الإيميل وكلمة المرور)
+    // 1. محاولة تسجيل الدخول
     const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
       email,
       password: authPassword,
     });
 
     if (authError || !authData.user) {
-      console.error("Auth Error:", authError);
+      console.error("Auth Failed:", authError?.message);
       return NextResponse.json(
         { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة" },
         { status: 401 }
       );
     }
 
-    // 4. التحقق من الإجابة السرية وصلاحية الأدمن عبر الدالة الآمنة
-    // نمرر ID المستخدم والإجابة السرية التي كتبها
+    // 2. التحقق من الإجابة السرية وصلاحية الأدمن عبر الدالة الآمنة
     const { data: isSecretValid, error: rpcError } = await supabaseAdmin.rpc(
       'verify_admin_secret', 
       { 
@@ -46,7 +55,7 @@ export async function POST(req: Request) {
 
     if (rpcError) {
       console.error("RPC Error:", rpcError);
-      return NextResponse.json({ error: "خطأ في التحقق من الصلاحيات" }, { status: 500 });
+      return NextResponse.json({ error: "حدث خطأ أثناء التحقق من الصلاحيات" }, { status: 500 });
     }
 
     if (!isSecretValid) {
@@ -56,7 +65,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5. نجاح الدخول - إرجاع التوكن
+    // 3. نجاح
     return NextResponse.json({
       ok: true,
       access_token: authData.session.access_token,
@@ -64,7 +73,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    console.error("Server Error:", error);
+    console.error("Server Crash:", error);
     return NextResponse.json(
       { error: "حدث خطأ غير متوقع في السيرفر" },
       { status: 500 }
