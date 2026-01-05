@@ -6,7 +6,8 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
-  Search, Ban, CheckCircle, Loader2, Mail, Phone, Calendar, LogOut, Briefcase, UserCheck
+  Search, Ban, CheckCircle, Loader2, Mail, Phone, Calendar, LogOut, Briefcase, UserCheck,
+  Menu, X, User, Home
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -31,6 +32,10 @@ export default function CustomersPage() {
   const [filter, setFilter] = useState<'all' | 'active' | 'banned'>('all');
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   
+  // حالات القائمة الجانبية للجوال
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+
   // حالات العدادات
   const [stats, setStats] = useState({
     clients: 0,
@@ -68,14 +73,12 @@ export default function CustomersPage() {
     }
 
     // 2. جلب الإحصائيات (عدد العملاء وعدد المزودين)
-    // حساب عدد العملاء
     const { count: clientsCount } = await supabase
       .from('profiles')
       .select('*', { count: 'exact', head: true })
       .eq('is_provider', false)
       .eq('is_admin', false);
 
-    // حساب عدد مزودي الخدمة
     const { count: providersCount } = await supabase
       .from('profiles')
       .select('*', { count: 'exact', head: true })
@@ -129,29 +132,82 @@ export default function CustomersPage() {
   ];
 
   return (
-    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className}`}>
+    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-black/40 border-l border-white/10 p-6 backdrop-blur-md">
-        <div className="mb-10 flex justify-center pt-4"><Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90" /></div>
-        <nav className="space-y-2 flex-1">
+      {/* Mobile Header Bar */}
+      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
+        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
+          <Menu size={24} />
+        </button>
+
+        <Link href="/" className="absolute left-1/2 -translate-x-1/2">
+           <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
+        </Link>
+
+        <div className="relative">
+          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
+            <User size={20} />
+          </button>
+          
+          {isProfileMenuOpen && (
+            <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+              <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
+              <button onClick={handleLogout} className="w-full text-right px-4 py-3 hover:bg-red-500/10 text-red-400 text-sm transition">تسجيل الخروج</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sidebar Overlay (Mobile) */}
+      {isSidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+        
+        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white">
+          <X size={24} />
+        </button>
+
+        <div className="mb-10 flex justify-center pt-4">
+          <Link href="/" title="العودة للرئيسية">
+             <Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
+          </Link>
+        </div>
+
+        <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
           {menuItems.map((item, i) => item.show && (
-            <Link key={i} href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
+            <Link key={i} href={item.href} onClick={() => setSidebarOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
               <item.icon size={20} /><span>{item.label}</span>
             </Link>
           ))}
         </nav>
-        <div className="pt-6 border-t border-white/10"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full"><LogOut size={20} /> خروج</button></div>
+        <div className="pt-6 border-t border-white/10 mt-auto"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full px-4 py-2 hover:bg-white/5 rounded-xl transition items-center"><LogOut size={20} /> خروج</button></div>
       </aside>
 
-      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen">
-        <header className="mb-10">
-            <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-              <Users className="text-[#C89B3C]" /> إدارة العملاء
-            </h1>
-            <p className="text-white/60">متابعة السياح والزوار المسجلين في المنصة.</p>
+      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen pt-24 md:pt-10">
+        <header className="hidden md:flex justify-between items-center mb-10">
+            <div>
+                <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+                <Users className="text-[#C89B3C]" /> إدارة العملاء
+                </h1>
+                <p className="text-white/60">متابعة السياح والزوار المسجلين في المنصة.</p>
+            </div>
+            <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
+                <Home size={20} className="text-white/70" />
+            </Link>
         </header>
 
-        {/* بطاقات الإحصائيات الجديدة */}
+        {/* Mobile Header Title */}
+        <div className="md:hidden mb-6">
+             <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
+                <Users className="text-[#C89B3C]" size={24} /> إدارة العملاء
+             </h1>
+             <p className="text-white/60 text-sm">متابعة السياح والزوار.</p>
+        </div>
+
+        {/* بطاقات الإحصائيات */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 p-6 rounded-2xl flex items-center justify-between">
                 <div>
@@ -184,10 +240,10 @@ export default function CustomersPage() {
               className="w-full bg-black/20 border border-white/10 rounded-xl py-2.5 pr-10 pl-4 text-white focus:border-[#C89B3C] outline-none"
             />
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-xl text-sm transition ${filter === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>الكل</button>
-            <button onClick={() => setFilter('active')} className={`px-4 py-2 rounded-xl text-sm transition ${filter === 'active' ? "bg-emerald-500 text-white" : "bg-black/20 text-white/60"}`}>نشط</button>
-            <button onClick={() => setFilter('banned')} className={`px-4 py-2 rounded-xl text-sm transition ${filter === 'banned' ? "bg-red-500 text-white" : "bg-black/20 text-white/60"}`}>محظور</button>
+          <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
+            <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${filter === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>الكل</button>
+            <button onClick={() => setFilter('active')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${filter === 'active' ? "bg-emerald-500 text-white" : "bg-black/20 text-white/60"}`}>نشط</button>
+            <button onClick={() => setFilter('banned')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${filter === 'banned' ? "bg-red-500 text-white" : "bg-black/20 text-white/60"}`}>محظور</button>
           </div>
         </div>
 
@@ -197,7 +253,7 @@ export default function CustomersPage() {
           ) : filteredUsers.length === 0 ? (
             <div className="p-20 text-center text-white/40">لا يوجد عملاء مطابقين.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full text-right min-w-[900px]">
                 <thead className="bg-black/20 text-white/50 text-xs uppercase">
                   <tr>

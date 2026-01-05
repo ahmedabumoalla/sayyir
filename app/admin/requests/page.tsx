@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, CheckCircle, XCircle, Clock, Search, Loader2, Eye, LogOut, 
   MapPin, Phone, Mail, Briefcase, X, ShieldAlert, Map as MapIcon, DollarSign, Settings, UserPlus,
-  Download, FileText, LayoutList
+  Download, FileText, LayoutList, Menu, User, Home
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -34,6 +34,10 @@ export default function RequestsPage() {
   const [selectedRequest, setSelectedRequest] = useState<ProviderRequest | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [processing, setProcessing] = useState(false); 
+
+  // حالات القائمة الجانبية للجوال
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
 
   useEffect(() => { fetchData(); checkRole(); }, []);
 
@@ -98,29 +102,85 @@ export default function RequestsPage() {
   ];
 
   return (
-    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className}`}>
+    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-black/40 border-l border-white/10 p-6 backdrop-blur-md">
-        <div className="mb-10 flex justify-center pt-4"><Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90" /></div>
-        <nav className="space-y-2 flex-1">
+      {/* Mobile Header Bar */}
+      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
+        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
+          <Menu size={24} />
+        </button>
+
+        <Link href="/" className="absolute left-1/2 -translate-x-1/2">
+           <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
+        </Link>
+
+        <div className="relative">
+          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
+            <User size={20} />
+          </button>
+          
+          {isProfileMenuOpen && (
+            <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+              <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
+              <button onClick={handleLogout} className="w-full text-right px-4 py-3 hover:bg-red-500/10 text-red-400 text-sm transition">تسجيل الخروج</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sidebar Overlay (Mobile) */}
+      {isSidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+        
+        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white">
+          <X size={24} />
+        </button>
+
+        <div className="mb-10 flex justify-center pt-4">
+          <Link href="/" title="العودة للرئيسية">
+             <Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
+          </Link>
+        </div>
+
+        <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
           {menuItems.map((item, i) => item.show && (
-            <Link key={i} href={item.href} className={`relative flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
+            <Link key={i} href={item.href} onClick={() => setSidebarOpen(false)} className={`relative flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
               <item.icon size={20} /><span>{item.label}</span>
               {item.badge && item.badge > 0 ? <span className="absolute left-3 top-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">{item.badge}</span> : null}
             </Link>
           ))}
         </nav>
-        <div className="pt-6 border-t border-white/10"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full"><LogOut size={20} /> خروج</button></div>
+        <div className="pt-6 border-t border-white/10 mt-auto"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full px-4 py-2 hover:bg-white/5 rounded-xl transition items-center"><LogOut size={20} /> خروج</button></div>
       </aside>
 
-      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen">
-        <header className="mb-10"><h1 className="text-3xl font-bold mb-2 flex items-center gap-2"><Briefcase className="text-[#C89B3C]" /> طلبات الانضمام</h1></header>
+      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen pt-24 md:pt-10">
+        <header className="hidden md:flex justify-between items-center mb-10">
+            <div>
+                <h1 className="text-3xl font-bold mb-2 flex items-center gap-2"><Briefcase className="text-[#C89B3C]" /> طلبات الانضمام</h1>
+                <p className="text-white/60">مراجعة واعتماد شركاء النجاح الجدد.</p>
+            </div>
+            <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
+                <Home size={20} className="text-white/70" />
+            </Link>
+        </header>
+
+        {/* Mobile Header Title */}
+        <div className="md:hidden mb-6">
+             <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
+                <Briefcase className="text-[#C89B3C]" size={24} /> طلبات الانضمام
+             </h1>
+             <p className="text-white/60 text-sm">مراجعة طلبات الشركاء.</p>
+        </div>
         
         <div className="flex flex-col md:flex-row gap-4 mb-6 bg-white/5 p-4 rounded-2xl border border-white/10">
           <div className="relative flex-1"><Search className="absolute right-3 top-3 text-white/40" size={20} /><input type="text" placeholder="بحث بالاسم أو البريد..." className="w-full bg-black/20 border border-white/10 rounded-xl py-2.5 pr-10 pl-4 text-white focus:border-[#C89B3C] outline-none" /></div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
             {['all', 'pending', 'approved', 'rejected'].map(f => (
-              <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-xl text-sm ${filter === f ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>
+              <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-xl text-sm whitespace-nowrap ${filter === f ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>
                 {f === 'all' ? 'الكل' : f === 'pending' ? 'انتظار' : f === 'approved' ? 'مقبول' : 'مرفوض'}
               </button>
             ))}
@@ -130,20 +190,22 @@ export default function RequestsPage() {
         <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
           {loading ? <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C]" /></div> :
            filteredRequests.length === 0 ? <div className="p-20 text-center text-white/40">لا توجد طلبات.</div> : (
-            <table className="w-full text-right">
-              <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">الخدمة</th><th className="px-6 py-4">تاريخ الطلب</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4 text-center">إجراءات</th></tr></thead>
-              <tbody className="divide-y divide-white/5 text-sm">{filteredRequests.map(req => (
-                <tr key={req.id} className="hover:bg-white/5 transition">
-                  <td className="px-6 py-4 font-bold">{req.name}<div className="text-xs text-[#C89B3C] font-normal">{req.email}</div></td>
-                  <td className="px-6 py-4">{getTypeLabel(req.service_type)}</td>
-                  <td className="px-6 py-4 text-white/60 text-xs" dir="ltr">{new Date(req.created_at).toLocaleDateString()}</td>
-                  <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs border ${req.status==='approved'?'text-emerald-400 border-emerald-400/20 bg-emerald-400/10':req.status==='rejected'?'text-red-400 border-red-400/20 bg-red-400/10':'text-amber-400 border-amber-400/20 bg-amber-400/10'}`}>{req.status === 'approved' ? 'مقبول' : req.status === 'rejected' ? 'مرفوض' : 'بانتظار المراجعة'}</span></td>
-                  <td className="px-6 py-4 flex justify-center gap-2">
-                    <button onClick={() => setSelectedRequest(req)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white transition"><Eye size={18}/></button>
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table>
+            <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-right min-w-[900px]">
+                <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">الخدمة</th><th className="px-6 py-4">تاريخ الطلب</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4 text-center">إجراءات</th></tr></thead>
+                <tbody className="divide-y divide-white/5 text-sm">{filteredRequests.map(req => (
+                    <tr key={req.id} className="hover:bg-white/5 transition">
+                    <td className="px-6 py-4 font-bold">{req.name}<div className="text-xs text-[#C89B3C] font-normal">{req.email}</div></td>
+                    <td className="px-6 py-4">{getTypeLabel(req.service_type)}</td>
+                    <td className="px-6 py-4 text-white/60 text-xs" dir="ltr">{new Date(req.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs border ${req.status==='approved'?'text-emerald-400 border-emerald-400/20 bg-emerald-400/10':req.status==='rejected'?'text-red-400 border-red-400/20 bg-red-400/10':'text-amber-400 border-amber-400/20 bg-amber-400/10'}`}>{req.status === 'approved' ? 'مقبول' : req.status === 'rejected' ? 'مرفوض' : 'بانتظار المراجعة'}</span></td>
+                    <td className="px-6 py-4 flex justify-center gap-2">
+                        <button onClick={() => setSelectedRequest(req)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white transition"><Eye size={18}/></button>
+                    </td>
+                    </tr>
+                ))}</tbody>
+                </table>
+            </div>
           )}
         </div>
         

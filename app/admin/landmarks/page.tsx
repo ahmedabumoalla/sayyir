@@ -6,7 +6,8 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map as MapIcon, DollarSign, Settings, ShieldAlert,
-  Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video, Type, Globe
+  Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video, Type, Globe,
+  Menu, User, Home
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -35,6 +36,10 @@ export default function LandmarksPage() {
   const router = useRouter();
   const pathname = usePathname();
   
+  // حالات القائمة الجانبية للجوال
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+
   // البيانات
   const [places, setPlaces] = useState<Place[]>([]);
   const [citiesList, setCitiesList] = useState<any[]>([]); // قائمة المدن من القاعدة
@@ -246,27 +251,86 @@ export default function LandmarksPage() {
   ];
 
   return (
-    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className}`}>
+    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
+      {/* Mobile Header Bar */}
+      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
+        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
+          <Menu size={24} />
+        </button>
+
+        <Link href="/" className="absolute left-1/2 -translate-x-1/2">
+           <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
+        </Link>
+
+        <div className="relative">
+          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
+            <User size={20} />
+          </button>
+          
+          {isProfileMenuOpen && (
+            <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+              <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
+              <button onClick={handleLogout} className="w-full text-right px-4 py-3 hover:bg-red-500/10 text-red-400 text-sm transition">تسجيل الخروج</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sidebar Overlay (Mobile) */}
+      {isSidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
+      )}
+
       {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-black/40 border-l border-white/10 p-6 backdrop-blur-md">
-        <div className="mb-10 flex justify-center pt-4"><Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90" /></div>
-        <nav className="space-y-2 flex-1">
+      <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+        
+        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white">
+          <X size={24} />
+        </button>
+
+        <div className="mb-10 flex justify-center pt-4">
+          <Link href="/" title="العودة للرئيسية">
+             <Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
+          </Link>
+        </div>
+
+        <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
           {menuItems.map((item, i) => item.show && (
-            <Link key={i} href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
+            <Link key={i} href={item.href} onClick={() => setSidebarOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
               <item.icon size={20} /><span>{item.label}</span>
             </Link>
           ))}
         </nav>
-        <div className="pt-6 border-t border-white/10"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full"><LogOut size={20} /> خروج</button></div>
+        <div className="pt-6 border-t border-white/10 mt-auto"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full px-4 py-2 hover:bg-white/5 rounded-xl transition items-center"><LogOut size={20} /> خروج</button></div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen">
-        <header className="mb-10 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div><h1 className="text-3xl font-bold mb-2 flex items-center gap-2"><MapIcon className="text-[#C89B3C]" /> إدارة المعالم</h1></div>
-          <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] font-bold px-6 py-3 rounded-xl hover:bg-[#b38a35] transition flex items-center gap-2"><Plus size={20} /> إضافة معلم</button>
+      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen pt-24 md:pt-10">
+        <header className="hidden md:flex justify-between items-center mb-10">
+            <div>
+                <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+                <MapIcon className="text-[#C89B3C]" /> إدارة المعالم
+                </h1>
+                <p className="text-white/60">إدارة الأماكن السياحية والتراثية.</p>
+            </div>
+            <div className="flex items-center gap-4">
+               <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] font-bold px-6 py-3 rounded-xl hover:bg-[#b38a35] transition flex items-center gap-2 shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /> إضافة معلم</button>
+               <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
+                  <Home size={20} className="text-white/70" />
+               </Link>
+            </div>
         </header>
+
+        {/* Mobile Header Title & Action */}
+        <div className="md:hidden mb-6 flex justify-between items-center">
+             <div>
+                 <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
+                    <MapIcon className="text-[#C89B3C]" size={24} /> إدارة المعالم
+                 </h1>
+                 <p className="text-white/60 text-sm">إدارة الأماكن السياحية.</p>
+             </div>
+             <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] p-2.5 rounded-xl font-bold hover:bg-[#b38a35] transition shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /></button>
+        </div>
 
         <div className="mb-6 bg-white/5 p-4 rounded-2xl border border-white/10 flex gap-4">
           <div className="relative flex-1">
@@ -278,32 +342,34 @@ export default function LandmarksPage() {
         <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
           {loading ? <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div> : 
            filteredPlaces.length === 0 ? <div className="p-20 text-center text-white/40">لا توجد معالم.</div> : (
-            <table className="w-full text-right min-w-[800px]">
-              <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الميديا</th><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">المدينة</th><th className="px-6 py-4">التصنيف</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4">إجراءات</th></tr></thead>
-              <tbody className="divide-y divide-white/5 text-sm">{filteredPlaces.map(p => (
-                <tr key={p.id} className="hover:bg-white/5">
-                  <td className="px-6 py-4">
-                    <div className="w-16 h-12 bg-white/10 rounded-lg overflow-hidden border border-white/10">
-                      {p.media_urls && p.media_urls[0] ? (
-                         p.media_urls[0].includes('mp4') || p.media_urls[0].includes('webm') 
-                         ? <video src={p.media_urls[0]} className="w-full h-full object-cover" />
-                         : <img src={p.media_urls[0]} alt={p.name} className="w-full h-full object-cover" />
-                      ) : <div className="flex justify-center items-center h-full"><ImageIcon size={16}/></div>}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 font-bold">{p.name}</td>
-                  <td className="px-6 py-4">{p.city || '-'}</td>
-                  <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1">
-                          <span className="text-[10px] text-white/50">{p.type === 'tourist' ? 'سياحي' : 'تراثي'}</span>
-                          <span className="px-2 py-0.5 rounded bg-white/10 text-xs w-fit">{p.category || '-'}</span>
-                      </div>
-                  </td>
-                  <td className="px-6 py-4"><span className={`w-2 h-2 rounded-full inline-block mr-2 ${p.is_active ? 'bg-emerald-400' : 'bg-red-400'}`}></span>{p.is_active ? "نشط" : "مخفي"}</td>
-                  <td className="px-6 py-4 flex gap-2"><button onClick={() => handleEdit(p)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white"><Edit size={16}/></button><button onClick={() => handleDelete(p.id!)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white"><Trash2 size={16}/></button></td>
-                </tr>
-              ))}</tbody>
-            </table>
+            <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-right min-w-[800px]">
+                <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الميديا</th><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">المدينة</th><th className="px-6 py-4">التصنيف</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4">إجراءات</th></tr></thead>
+                <tbody className="divide-y divide-white/5 text-sm">{filteredPlaces.map(p => (
+                    <tr key={p.id} className="hover:bg-white/5">
+                    <td className="px-6 py-4">
+                        <div className="w-16 h-12 bg-white/10 rounded-lg overflow-hidden border border-white/10">
+                        {p.media_urls && p.media_urls[0] ? (
+                            p.media_urls[0].includes('mp4') || p.media_urls[0].includes('webm') 
+                            ? <video src={p.media_urls[0]} className="w-full h-full object-cover" />
+                            : <img src={p.media_urls[0]} alt={p.name} className="w-full h-full object-cover" />
+                        ) : <div className="flex justify-center items-center h-full"><ImageIcon size={16}/></div>}
+                        </div>
+                    </td>
+                    <td className="px-6 py-4 font-bold">{p.name}</td>
+                    <td className="px-6 py-4">{p.city || '-'}</td>
+                    <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] text-white/50">{p.type === 'tourist' ? 'سياحي' : 'تراثي'}</span>
+                            <span className="px-2 py-0.5 rounded bg-white/10 text-xs w-fit">{p.category || '-'}</span>
+                        </div>
+                    </td>
+                    <td className="px-6 py-4"><span className={`w-2 h-2 rounded-full inline-block mr-2 ${p.is_active ? 'bg-emerald-400' : 'bg-red-400'}`}></span>{p.is_active ? "نشط" : "مخفي"}</td>
+                    <td className="px-6 py-4 flex gap-2"><button onClick={() => handleEdit(p)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white"><Edit size={16}/></button><button onClick={() => handleDelete(p.id!)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white"><Trash2 size={16}/></button></td>
+                    </tr>
+                ))}</tbody>
+                </table>
+            </div>
           )}
         </div>
 
