@@ -1,53 +1,87 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Compass, MapPin, Sparkles } from "lucide-react";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { ArrowLeft, Compass, MapPin, Sparkles, Loader2, Calendar } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
-
 export default function ClientDashboard() { 
-    const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    completed_trips: 0,
+    upcoming_trips: 0,
+    favorites_count: 0
+  });
+  const [recentBooking, setRecentBooking] = useState<any>(null);
+  const [userName, setUserName] = useState("");
 
   useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.replace("/login");
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    fetchDashboardData();
   }, []);
+
+  const fetchDashboardData = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    // 1. جلب الاسم
+    const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
+    if(profile) setUserName(profile.full_name);
+
+    // 2. إحصائيات الحجوزات
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('status')
+      .eq('user_id', session.user.id);
+
+    const completed = bookings?.filter(b => b.status === 'completed').length || 0;
+    const upcoming = bookings?.filter(b => b.status === 'confirmed' || b.status === 'pending').length || 0;
+
+    // 3. عدد المفضلة
+    const { count: favCount } = await supabase
+      .from('favorites')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', session.user.id);
+
+    // 4. آخر حجز
+    const { data: lastBook } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        services:service_id (title, image_url)
+      `)
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    setStats({
+      completed_trips: completed,
+      upcoming_trips: upcoming,
+      favorites_count: favCount || 0
+    });
+    setRecentBooking(lastBook);
+    setLoading(false);
+  };
+
+  if (loading) return <div className="h-[50vh] flex items-center justify-center text-[#C89B3C]"><Loader2 className="animate-spin w-10 h-10" /></div>;
 
   return (
     <div className="space-y-8 animate-in fade-in-50 slide-in-from-bottom-5 duration-700">
       
-      {/* ================= القسم الأول: بطاقة البطل (Hero Card) ================= */}
-      {/* دعوة لاستخدام الميزة الرئيسية (الخريطة) بتصميم جذاب */}
-      <div className="relative h-[280px] rounded-3xl overflow-hidden group">
-        {/* خلفية البطاقة (صورة مموهة) */}
+      {/* ================= القسم الأول: بطاقة البطل ================= */}
+      <div className="relative h-[280px] rounded-3xl overflow-hidden group border border-white/5">
         <div className="absolute inset-0 bg-[url('/hero-bg.jpg')] bg-cover bg-center transition-transform duration-700 group-hover:scale-105" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#2B1F17] via-[#2B1F17]/80 to-transparent mix-blend-multiply" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#2B1F17] via-[#2B1F17]/90 to-transparent mix-blend-multiply" />
         
-        {/* محتوى البطاقة */}
         <div className="absolute inset-0 p-8 lg:p-12 flex flex-col justify-center items-start z-10">
            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#C89B3C]/20 text-[#C89B3C] text-sm font-medium mb-4 border border-[#C89B3C]/30 backdrop-blur-md">
               <Sparkles size={14} />
-              <span>تجربة سيّر المميزة</span>
+              <span>أهلاً بك، {userName}</span>
            </div>
            <h2 className="text-3xl lg:text-4xl font-extrabold text-white mb-4 leading-tight">
              اكتشف كنوز عسير المخفية <br/> عبر خريطتنا التفاعلية
            </h2>
-           <p className="text-white/70 max-w-xl mb-8 text-lg">
-             تصفح المعالم التراثية، النُزل الريفية، وتجارب الطهي الأصيلة في رحلة بصرية لا تُنسى.
-           </p>
-           
            <Link href="/map">
              <button className="flex items-center gap-3 bg-[#C89B3C] text-[#2B1F17] px-6 py-3.5 rounded-xl font-bold hover:bg-[#b38a35] transition-all active:scale-95 shadow-lg shadow-[#C89B3C]/20">
                <span>ابدأ الاستكشاف الآن</span>
@@ -55,130 +89,91 @@ export default function ClientDashboard() {
              </button>
            </Link>
         </div>
-
-        {/* عنصر جمالي: بوصلة خفيفة في الخلفية */}
-        <Compass className="absolute left-10 top-1/2 -translate-y-1/2 text-white/5 w-64 h-64 pointer-events-none group-hover:rotate-45 transition-transform duration-700" strokeWidth={1} />
       </div>
 
-
-      {/* ================= القسم الثاني: الإحصائيات السريعة ================= */}
+      {/* ================= القسم الثاني: الإحصائيات ================= */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* كرت 1 */}
-        <div className="rounded-2xl p-6 bg-white/5 backdrop-blur-lg border border-white/10 relative overflow-hidden group hover:border-[#C89B3C]/30 transition-colors">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-[#C89B3C]/10 rounded-full blur-[50px] -z-10 translate-x-1/2 -translate-y-1/2 group-hover:bg-[#C89B3C]/20 transition-all"></div>
+        <div className="rounded-2xl p-6 bg-[#252525] border border-white/5 hover:border-[#C89B3C]/30 transition group">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-[#C89B3C]/20 flex items-center justify-center text-[#C89B3C]">
+            <div className="w-14 h-14 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C]">
               <MapPin size={28} />
             </div>
             <div>
-              <p className="text-white/60 text-sm mb-1 font-medium">أماكن قمت بزيارتها</p>
-              <h3 className="text-3xl font-bold text-white">12 <span className="text-base font-normal text-white/50">مكان</span></h3>
+              <p className="text-white/60 text-sm mb-1 font-medium">أماكن زرتها</p>
+              <h3 className="text-3xl font-bold text-white">{stats.completed_trips}</h3>
             </div>
           </div>
         </div>
         
-        {/* كرت 2 */}
-        <div className="rounded-2xl p-6 bg-white/5 backdrop-blur-lg border border-white/10 relative overflow-hidden group hover:border-[#C89B3C]/30 transition-colors">
-           <div className="absolute top-0 right-0 w-32 h-32 bg-[#5F6F52]/20 rounded-full blur-[50px] -z-10 translate-x-1/2 -translate-y-1/2 group-hover:bg-[#5F6F52]/30 transition-all"></div>
+        <div className="rounded-2xl p-6 bg-[#252525] border border-white/5 hover:border-[#C89B3C]/30 transition group">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-[#5F6F52]/20 flex items-center justify-center text-[#9EB38D]">
+            <div className="w-14 h-14 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400">
               <Compass size={28} />
             </div>
             <div>
-              <p className="text-white/60 text-sm mb-1 font-medium">رحلات مخطط لها</p>
-              <h3 className="text-3xl font-bold text-white">03 <span className="text-base font-normal text-white/50">رحلات</span></h3>
+              <p className="text-white/60 text-sm mb-1 font-medium">رحلات قادمة</p>
+              <h3 className="text-3xl font-bold text-white">{stats.upcoming_trips}</h3>
             </div>
           </div>
         </div>
 
-         {/* كرت 3 */}
-         <div className="rounded-2xl p-6 bg-white/5 backdrop-blur-lg border border-white/10 relative overflow-hidden group hover:border-[#C89B3C]/30 transition-colors">
-           <div className="absolute top-0 right-0 w-32 h-32 bg-[#C89B3C]/10 rounded-full blur-[50px] -z-10 translate-x-1/2 -translate-y-1/2 group-hover:bg-[#C89B3C]/20 transition-all"></div>
+         <div className="rounded-2xl p-6 bg-[#252525] border border-white/5 hover:border-[#C89B3C]/30 transition group">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-[#C89B3C]/20 flex items-center justify-center text-[#C89B3C]">
+            <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
               <Sparkles size={28} />
             </div>
             <div>
-              <p className="text-white/60 text-sm mb-1 font-medium">نقاط المكافآت</p>
-              <h3 className="text-3xl font-bold text-[#C89B3C]">450 <span className="text-base font-normal text-[#C89B3C]/70">نقطة</span></h3>
+              <p className="text-white/60 text-sm mb-1 font-medium">المفضلة</p>
+              <h3 className="text-3xl font-bold text-white">{stats.favorites_count}</h3>
             </div>
           </div>
         </div>
       </div>
 
-
-      {/* ================= القسم الثالث: توصيات ومؤخراً ================= */}
+      {/* ================= القسم الثالث: آخر نشاط ================= */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* قائمة النشاط الأخير */}
-        <div className="rounded-3xl bg-white/5 backdrop-blur-xl border border-white/10 p-6 lg:p-8">
+        <div className="rounded-3xl bg-[#252525] border border-white/5 p-6 lg:p-8">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-white">نشاطك الأخير</h3>
-            <Link href="/client/trips" className="text-sm text-[#C89B3C] hover:underline">عرض الكل</Link>
+            <h3 className="text-xl font-bold text-white">آخر نشاط لك</h3>
+            <Link href="/client/trips" className="text-sm text-[#C89B3C] hover:underline">سجل الرحلات</Link>
           </div>
           
-          <div className="space-y-4">
-            {/* عنصر قائمة 1 */}
-            <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition cursor-pointer group">
-              <div className="w-16 h-16 rounded-xl bg-neutral-800 relative overflow-hidden">
-                <Image src="/logo.png" alt="place" fill className="object-cover opacity-50 group-hover:scale-110 transition" />
+          {recentBooking ? (
+            <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5">
+              <div className="w-16 h-16 rounded-xl bg-black relative overflow-hidden">
+                <Image src={recentBooking.services?.image_url || "/logo.png"} alt="place" fill className="object-cover" />
               </div>
               <div className="flex-1">
-                <h4 className="text-white font-bold">زيارة قرية رجال ألمع</h4>
-                <p className="text-white/60 text-sm">تمت الزيارة • منذ يومين</p>
+                <h4 className="text-white font-bold">{recentBooking.services?.title || "خدمة محجوزة"}</h4>
+                <p className="text-white/60 text-sm flex items-center gap-2">
+                   <Calendar size={12}/> {new Date(recentBooking.booking_date).toLocaleDateString('ar-SA')}
+                </p>
               </div>
-              <div className="w-8 h-8 rounded-full bg-[#5F6F52]/20 flex items-center justify-center text-[#9EB38D]">
-                <ArrowLeft size={16} className="rotate-180" />
-              </div>
+              <span className={`px-3 py-1 rounded-full text-xs ${recentBooking.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-yellow-500/10 text-yellow-400'}`}>
+                  {recentBooking.status === 'confirmed' ? 'مؤكد' : recentBooking.status === 'pending' ? 'انتظار' : recentBooking.status}
+              </span>
             </div>
-            {/* عنصر قائمة 2 */}
-            <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition cursor-pointer group">
-              <div className="w-16 h-16 rounded-xl bg-neutral-800 relative overflow-hidden">
-                <Image src="/logo.png" alt="place" fill className="object-cover opacity-50 group-hover:scale-110 transition" />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-white font-bold">حجز غداء في مطعم عسيري</h4>
-                <p className="text-white/60 text-sm">مؤكد • للأسبوع القادم</p>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-[#C89B3C]/20 flex items-center justify-center text-[#C89B3C]">
-                <ArrowLeft size={16} className="rotate-180" />
-              </div>
-            </div>
-          </div>
+          ) : (
+            <p className="text-white/30 text-center py-4">لم تقم بأي حجوزات بعد.</p>
+          )}
         </div>
 
-        {/* توصيات الذكاء الاصطناعي (مساحة إبداعية) */}
-        <div className="rounded-3xl bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-xl border border-white/10 p-6 lg:p-8 relative overflow-hidden">
-           {/* تأثير خلفية */}
-           <Sparkles className="absolute top-4 left-4 text-[#C89B3C]/20 w-32 h-32" />
-           
+        {/* توصية AI */}
+        <div className="rounded-3xl bg-gradient-to-br from-[#C89B3C]/20 to-[#252525] border border-[#C89B3C]/20 p-6 lg:p-8 relative overflow-hidden">
            <div className="relative z-10">
               <div className="flex items-center gap-2 mb-4">
-                <span className="bg-[#C89B3C] text-[#2B1F17] text-xs font-bold px-2 py-1 rounded-md">Sayyir AI</span>
-                <h3 className="text-xl font-bold text-white">توصيات لك</h3>
+                <span className="bg-[#C89B3C] text-[#2B1F17] text-xs font-bold px-2 py-1 rounded-md">AI Suggestion</span>
+                <h3 className="text-xl font-bold text-white">توصية خاصة</h3>
               </div>
-              <p className="text-white/70 mb-6">بناءً على اهتمامك بالتراث، اخترنا لك هذه التجربة الفريدة.</p>
-              
-              {/* كرت التوصية */}
-              <div className="rounded-2xl overflow-hidden relative h-48 group cursor-pointer">
-                <div className="absolute inset-0 bg-[url('/hero-bg.jpg')] bg-cover bg-center transition-transform duration-500 group-hover:scale-105" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-5">
-                  <h4 className="text-white font-bold text-lg mb-1">ليلة في نُزل السحاب التراثي</h4>
-                  <div className="flex items-center justify-between">
-                    <p className="text-white/70 text-sm flex items-center gap-1">
-                      <MapPin size={14} className="text-[#C89B3C]" /> السودة، عسير
-                    </p>
-                    <span className="text-[#C89B3C] font-bold text-sm">اكتشف المزيد</span>
-                  </div>
+              <p className="text-white/70 mb-6">بناءً على اهتماماتك، نقترح عليك تجربة:</p>
+              <div className="rounded-2xl overflow-hidden relative h-40 group cursor-pointer bg-black/40 border border-white/10">
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <p className="text-white font-bold">جولة في سد أبها</p>
                 </div>
               </div>
-
            </div>
         </div>
-
       </div>
-
     </div>
   );
 }

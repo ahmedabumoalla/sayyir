@@ -7,13 +7,12 @@ import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, List, CalendarCheck, Wallet, UserCog, LogOut,
-  Menu, X, User // إضافة الأيقونات الجديدة
+  Menu, X, User, Home // إضافة Home
 } from "lucide-react"; 
 import { useState } from "react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// قائمة المزود تختلف عن العميل
 const providerMenu = [
   { label: "لوحة المعلومات", icon: LayoutDashboard, href: "/provider/dashboard" },
   { label: "خدماتي", icon: List, href: "/provider/services" }, 
@@ -26,7 +25,6 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
   const router = useRouter();
   
-  // حالات القائمة الجانبية للجوال
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
 
@@ -38,7 +36,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   return (
     <div className={`flex min-h-screen bg-[#121212] text-white ${tajawal.className} relative`} dir="rtl">
       
-      {/* Mobile Header Bar (جديد) */}
+      {/* Mobile Header Bar */}
       <div className="md:hidden fixed top-0 w-full z-50 bg-[#1E1E1E]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
             <Menu size={24} />
@@ -52,7 +50,6 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
             <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
                 <User size={20} className="text-white" />
             </button>
-            
             {isProfileMenuOpen && (
                 <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
                     <Link href="/provider/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition text-white">إعدادات الحساب</Link>
@@ -62,22 +59,24 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         </div>
       </div>
 
-      {/* Sidebar Overlay (Mobile) */}
+      {/* Sidebar Overlay */}
       {isSidebarOpen && (
         <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
       )}
 
-      {/* Sidebar (معدل ليكون متجاوب) */}
+      {/* Sidebar */}
       <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#1E1E1E] border-l border-white/5 flex flex-col z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
         
-        {/* زر إغلاق للجوال */}
         <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white">
             <X size={24} />
         </button>
 
-        <div className="h-20 flex items-center justify-center border-b border-white/5 pt-4 md:pt-0">
-           <Image src="/logo.png" alt="Sayyir Provider" width={100} height={40} className="opacity-90" />
-           <span className="text-[10px] bg-[#C89B3C] text-black px-1.5 py-0.5 rounded mr-2 font-bold">شريك</span>
+        <div className="h-24 flex flex-col items-center justify-center border-b border-white/5 pt-4 md:pt-0">
+           {/* الشعار الآن يرجع للصفحة الرئيسية */}
+           <Link href="/">
+             <Image src="/logo.png" alt="Sayyir Provider" width={100} height={40} className="opacity-90 hover:opacity-100 transition cursor-pointer" />
+           </Link>
+           <span className="text-[10px] bg-[#C89B3C] text-black px-1.5 py-0.5 rounded mt-1 font-bold">بوابة الشركاء</span>
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
@@ -93,7 +92,10 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
           })}
         </nav>
 
-        <div className="p-4 border-t border-white/5 mt-auto">
+        <div className="p-4 border-t border-white/5">
+          <Link href="/" className="flex items-center gap-3 w-full px-4 py-3 text-white/50 hover:text-white hover:bg-white/5 rounded-xl transition mb-2">
+             <Home size={20} /> <span>زيارة المنصة</span>
+          </Link>
           <button onClick={handleLogout} className="flex items-center gap-3 w-full px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-xl transition">
             <LogOut size={20} />
             <span>تسجيل الخروج</span>
@@ -103,10 +105,10 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden pt-20 md:pt-0">
-        {/* Header بسيط (يظهر فقط في سطح المكتب) */}
         <header className="hidden md:flex h-20 border-b border-white/5 bg-[#1E1E1E]/50 backdrop-blur-md items-center justify-between px-8">
-           <h2 className="font-bold text-lg text-white/80">بوابة الشركاء</h2>
+           <h2 className="font-bold text-lg text-white/80">لوحة التحكم</h2>
            <div className="flex items-center gap-3">
+              <Link href="/" title="زيارة الموقع" className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition"><Home size={18}/></Link>
               <div className="w-10 h-10 rounded-full bg-[#C89B3C]/20 flex items-center justify-center text-[#C89B3C] font-bold border border-[#C89B3C]/30">P</div>
            </div>
         </header>
