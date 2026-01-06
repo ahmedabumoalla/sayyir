@@ -1,12 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from 'next/navigation';
 import { MapPin, Calendar, CheckCircle, Info } from 'lucide-react'; 
 import { toast, Toaster } from 'sonner'; // استدعاء Toaster هنا لضمان عمل التنبيهات
 
 export default function ServiceDetails({ params }: { params: { id: string } }) {
-  const supabase = createClientComponentClient();
+  
   const router = useRouter();
   // التأكد من أن الـ id موجود
   const serviceId = params?.id;
