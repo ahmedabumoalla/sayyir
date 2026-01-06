@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Image from "next/image";
+import Image from "next/image"; // للشعار فقط
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   ArrowRight, Loader2, UploadCloud, X, FileText, Check, 
-  MapPin, User, Mail, Phone, ChevronDown, AlignLeft, Camera, LayoutList, Crosshair
+  MapPin, User, Mail, Phone, ChevronDown, AlignLeft, Camera, LayoutList
 } from "lucide-react";
 import Map, { Marker, NavigationControl, GeolocateControl, MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -39,36 +39,29 @@ export default function DynamicProviderRegister() {
   // 1. جلب الحقول + تحديد الموقع التلقائي
   useEffect(() => {
     const initPage = async () => {
-      // أ) جلب الحقول
       const { data } = await supabase.from('registration_fields').select('*').order('sort_order', { ascending: true });
       if (data) {
         setFields(data);
         const initialAnswers: any = {};
         
-        // ب) تحديد الموقع الحالي للمستخدم (مرة واحدة عند التحميل)
-        let userLocation = { lat: 18.216, lng: 42.505 }; // الافتراضي (أبها)
+        let userLocation = { lat: 18.216, lng: 42.505 };
         
         if ("geolocation" in navigator) {
             navigator.geolocation.getCurrentPosition((pos) => {
                 const { latitude, longitude } = pos.coords;
                 userLocation = { lat: latitude, lng: longitude };
                 
-                // تحديث العرض للخريطة
                 setViewState(prev => ({ ...prev, latitude, longitude, zoom: 15 }));
                 mapRef.current?.flyTo({ center: [longitude, latitude], zoom: 15 });
 
-                // تحديث الإجابات لجميع حقول الخرائط الموجودة
                 const updatedAnswers = { ...initialAnswers };
                 data.forEach(f => {
                     if (f.field_type === 'map') updatedAnswers[f.id] = userLocation;
                 });
                 setAnswers(updatedAnswers);
-            }, (err) => {
-                console.warn("Location access denied or error:", err);
-            });
+            }, (err) => console.warn(err));
         }
 
-        // تهيئة القيم الافتراضية
         data.forEach(f => {
             if (f.field_type === 'map') initialAnswers[f.id] = userLocation; 
             else if (f.field_type === 'policy') initialAnswers[f.id] = false;
@@ -90,6 +83,8 @@ export default function DynamicProviderRegister() {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
       setFiles(prev => ({ ...prev, [id]: [...(prev[id] || []), ...newFiles] }));
+      
+      // إنشاء روابط معاينة محلية
       const newPreviews = newFiles.map(f => URL.createObjectURL(f));
       setPreviews(prev => ({ ...prev, [id]: [...(prev[id] || []), ...newPreviews] }));
     }
@@ -113,31 +108,27 @@ export default function DynamicProviderRegister() {
 
     setSubmitting(true);
     try {
-      // 1. رفع الملفات
-      const uploadedUrls: Record<string, string[]> = {};
+      // 1. رفع الملفات (كما هي)
+      const uploadedData: Record<string, string[]> = {};
       for (const [fieldId, fileList] of Object.entries(files)) {
-        uploadedUrls[fieldId] = [];
-        for (const file of fileList) {
-          const fileName = `${Date.now()}-${file.name.replace(/\s/g, '_')}`;
-          const { error } = await supabase.storage.from('provider-files').upload(fileName, file);
-          if (!error) {
-            const { data } = supabase.storage.from('provider-files').getPublicUrl(fileName);
-            uploadedUrls[fieldId].push(data.publicUrl);
-          }
+        if (fileList.length > 0) {
+            const uploadPromises = fileList.map(async (file) => {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const { error: uploadError } = await supabase.storage.from('provider-files').upload(fileName, file);
+                if (uploadError) throw uploadError;
+                const { data } = supabase.storage.from('provider-files').getPublicUrl(fileName);
+                return data.publicUrl;
+            });
+            uploadedData[fieldId] = await Promise.all(uploadPromises);
         }
       }
 
-      // 2. تجميع البيانات
+      // 2. تجهيز البيانات
       const finalData = { ...answers };
-      Object.keys(uploadedUrls).forEach(key => { finalData[key] = uploadedUrls[key]; });
+      Object.keys(uploadedData).forEach(key => { finalData[key] = uploadedData[key]; });
 
-      // 3. استخراج البيانات الأساسية (Mapping)
-      // نحاول نربط الحقول الديناميكية بالأعمدة الأساسية في الجدول
-      let nameVal = "مزود جديد";
-      let emailVal = "";
-      let phoneVal = "";
-      let serviceTypeVal = "";
-
+      let nameVal = "مزود جديد", emailVal = "", phoneVal = "", serviceTypeVal = "";
       fields.forEach(f => {
           const val = answers[f.id];
           if (f.label.includes("اسم") || f.field_type === 'text') { if(!nameVal || nameVal === "مزود جديد") nameVal = val; }
@@ -146,30 +137,34 @@ export default function DynamicProviderRegister() {
           if (f.field_type === 'select') serviceTypeVal = val;
       });
 
-      // 4. الإرسال لقاعدة البيانات
-      const { error } = await supabase.from('provider_requests').insert([{
-        name: nameVal,
-        email: emailVal,
-        phone: phoneVal,
-        service_type: serviceTypeVal,
-        dynamic_data: finalData,
-        status: 'pending'
-      }]);
+      // 3. الإرسال للـ API الجديد بدلاً من Supabase مباشرة
+      const response = await fetch('/api/provider/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              name: nameVal,
+              email: emailVal,
+              phone: phoneVal,
+              service_type: serviceTypeVal,
+              dynamic_data: finalData
+          })
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error || "فشل إرسال الطلب");
       
-      alert("✅ تم إرسال طلبك بنجاح! سنتواصل معك قريباً.");
+      alert(`✅ ${result.message}`);
       router.push("/");
       
     } catch (error: any) {
       console.error(error);
-      alert("حدث خطأ: " + error.message);
+      alert("❌ " + error.message);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // أيقونات الحقول
   const getFieldIcon = (type: string) => {
     switch (type) {
         case 'text': return <User size={18} />;
@@ -187,13 +182,12 @@ export default function DynamicProviderRegister() {
   return (
     <div className={`relative min-h-screen w-full bg-[#121212] text-white ${tajawal.className}`} dir="rtl">
       <div className="fixed inset-0 z-0 bg-[url('/grain.png')] opacity-5 pointer-events-none" />
-      <div className="fixed top-0 left-0 w-[500px] h-[500px] bg-[#C89B3C] opacity-[0.03] blur-[150px] rounded-full pointer-events-none" />
-      <div className="fixed bottom-0 right-0 w-[500px] h-[500px] bg-blue-500 opacity-[0.03] blur-[150px] rounded-full pointer-events-none" />
-
+      
       <div className="relative z-10 container mx-auto px-4 py-12 flex flex-col items-center">
         
         <Link href="/" className="mb-8 hover:scale-105 transition duration-300 drop-shadow-lg">
-            <Image src="/logo.png" alt="Sayyir" width={160} height={70} priority />
+            {/* الشعار */}
+            <img src="/logo.png" alt="Sayyir" width={160} height={70} />
         </Link>
 
         <div className="w-full max-w-2xl animate-in slide-in-from-bottom-8 duration-700">
@@ -239,7 +233,7 @@ export default function DynamicProviderRegister() {
                     />
                     )}
 
-                    {/* Custom Select (تصميم القائمة الجديد) */}
+                    {/* Custom Select */}
                     {field.field_type === 'select' && (
                         <div className="relative">
                             <button type="button" onClick={() => setOpenSelectId(openSelectId === field.id ? null : field.id)} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-right flex justify-between items-center transition-all ${openSelectId === field.id ? 'border-[#C89B3C] bg-white/10' : 'border-white/10'}`}>
@@ -256,7 +250,7 @@ export default function DynamicProviderRegister() {
                         </div>
                     )}
 
-                    {/* --- Map (Light Style + Auto Locate) --- */}
+                    {/* Map */}
                     {field.field_type === 'map' && (
                     <div className="h-80 rounded-3xl overflow-hidden border border-white/10 relative shadow-2xl group-hover:border-[#C89B3C]/50 transition">
                         <Map 
@@ -264,14 +258,12 @@ export default function DynamicProviderRegister() {
                             initialViewState={viewState} 
                             onMove={evt => setViewState(evt.viewState)}
                             mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN} 
-                            // ✅ تم تغيير الستايل إلى الفاتح
                             mapStyle="mapbox://styles/mapbox/streets-v12" 
                             style={{ width: "100%", height: "100%" }} 
                             onClick={(e) => handleChange(field.id, { lat: e.lngLat.lat, lng: e.lngLat.lng })}
                         >
                             <NavigationControl position="top-left" />
                             <GeolocateControl position="top-left" />
-
                             <Marker 
                                 latitude={answers[field.id]?.lat || viewState.latitude} 
                                 longitude={answers[field.id]?.lng || viewState.longitude} 
@@ -281,18 +273,16 @@ export default function DynamicProviderRegister() {
                             >
                                 <div className="group cursor-grab active:cursor-grabbing">
                                     <MapPin size={48} className="text-[#C89B3C] drop-shadow-2xl -mt-10 transition-transform hover:scale-110" fill="#2B1F17"/>
-                                    <div className="w-3 h-3 bg-black/30 rounded-full blur-sm mx-auto"></div>
                                 </div>
                             </Marker>
                         </Map>
-                        
                         <div className="absolute top-4 right-4 bg-white/90 text-black text-xs px-3 py-1.5 rounded-lg shadow-lg font-bold pointer-events-none border border-black/10">
                             قم بسحب الدبوس لتحديد الموقع بدقة
                         </div>
                     </div>
                     )}
 
-                    {/* File Upload */}
+                    {/* File Upload (معاينة الصور محسنة) */}
                     {field.field_type === 'file' && (
                     <div className="relative group/upload">
                         <input type="file" multiple accept="image/*,video/*" id={`file-${field.id}`} className="hidden" onChange={(e) => handleFileChange(field.id, e)} />
@@ -303,7 +293,10 @@ export default function DynamicProviderRegister() {
                         {previews[field.id]?.length > 0 && (
                         <div className="flex gap-3 mt-4 overflow-x-auto pb-2 custom-scrollbar">
                             {previews[field.id].map((src, idx) => (
-                            <div key={idx} className="w-20 h-20 rounded-xl overflow-hidden relative shrink-0 border border-white/20 shadow-lg group-hover:border-[#C89B3C]/50 transition"><Image src={src} fill className="object-cover" alt="preview" /></div>
+                            <div key={idx} className="w-20 h-20 rounded-xl overflow-hidden relative shrink-0 border border-white/20 shadow-lg group-hover:border-[#C89B3C]/50 transition">
+                                {/* استخدام img عادي للمعاينة لتجنب المشاكل */}
+                                <img src={src} className="w-full h-full object-cover" alt="preview" />
+                            </div>
                             ))}
                         </div>
                         )}

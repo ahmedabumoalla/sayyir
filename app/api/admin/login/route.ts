@@ -1,82 +1,53 @@
-import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { email, authPassword, secret } = body;
+    const { email, authPassword, secret } = await req.json();
 
-    // طباعة للتحقق من وصول البيانات (ستظهر في سجلات فيرسال)
-    console.log("Attempting login for:", email);
-
-    // التحقق من وجود مفاتيح الربط
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error("Missing Supabase Environment Variables!");
-      return NextResponse.json(
-        { error: "خطأ في إعدادات السيرفر (المفاتيح مفقودة)" },
-        { status: 500 }
-      );
+    // 1. تثبيت الإجابة السرية (كما طلبت)
+    const ADMIN_SECRET = "Ah_1995_sayyirai"; 
+    
+    // التحقق من الإجابة السرية
+    if (secret !== ADMIN_SECRET) {
+      return NextResponse.json({ ok: false, error: "الإجابة السرية غير صحيحة!" }, { status: 401 });
     }
 
-    // إعداد العميل مع إلغاء حفظ الجلسة (مهم جداً للـ API)
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false, // يمنع تداخل الكوكيز في السيرفر
-        },
-      }
+    // 2. تسجيل الدخول عبر Supabase
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
 
-    // 1. محاولة تسجيل الدخول
-    const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password: authPassword,
     });
 
-    if (authError || !authData.user) {
-      console.error("Auth Failed:", authError?.message);
-      return NextResponse.json(
-        { error: "البريد الإلكتروني أو كلمة المرور غير صحيحة" },
-        { status: 401 }
-      );
+    if (error || !data.user) {
+      return NextResponse.json({ ok: false, error: "البريد الإلكتروني أو كلمة المرور خطأ" }, { status: 401 });
     }
 
-    // 2. التحقق من الإجابة السرية وصلاحية الأدمن عبر الدالة الآمنة
-    const { data: isSecretValid, error: rpcError } = await supabaseAdmin.rpc(
-      'verify_admin_secret', 
-      { 
-        user_id: authData.user.id, 
-        secret_input: secret 
-      }
-    );
+    // 3. التحقق من الصلاحيات (هل هو أدمن؟)
+    const metadata = data.user.user_metadata || {};
+    
+    // نسمح بالدخول إذا كان سوبر أدمن أو أدمن عادي
+    const isAuthorized = metadata.is_super_admin === true || metadata.is_admin === true;
 
-    if (rpcError) {
-      console.error("RPC Error:", rpcError);
-      return NextResponse.json({ error: "حدث خطأ أثناء التحقق من الصلاحيات" }, { status: 500 });
+    if (!isAuthorized) {
+      // إذا دخل ببيانات صحيحة لكنه ليس أدمن، نطرده
+      await supabase.auth.signOut();
+      return NextResponse.json({ ok: false, error: "هذا الحساب ليس له صلاحيات دخول كأدمن" }, { status: 403 });
     }
 
-    if (!isSecretValid) {
-      return NextResponse.json(
-        { error: "الإجابة السرية غير صحيحة أو الحساب ليس له صلاحيات أدمن" },
-        { status: 401 }
-      );
-    }
-
-    // 3. نجاح
+    // 4. النجاح: إرجاع التوكن
     return NextResponse.json({
       ok: true,
-      access_token: authData.session.access_token,
-      refresh_token: authData.session.refresh_token,
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
     });
 
   } catch (error: any) {
-    console.error("Server Crash:", error);
-    return NextResponse.json(
-      { error: "حدث خطأ غير متوقع في السيرفر" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 }

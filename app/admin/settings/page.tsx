@@ -24,8 +24,6 @@ import {
   User,
   Lock,
   CheckCircle,
-
-  // ✅ الأيقونات الناقصة
   Plus,
   Edit,
   Trash2,
@@ -36,26 +34,26 @@ import { Tajawal } from "next/font/google";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "700"] });
 
-
 export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("app_settings");
   const router = useRouter();
 
-  // ==================== منطق حقول الخدمات (جديد) ====================
+  // ==================== منطق حقول الخدمات ====================
   const [fields, setFields] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentField, setCurrentField] = useState<any>({ label: "", field_type: "text", options: [], is_required: false, sort_order: 0 });
   const [optionsText, setOptionsText] = useState("");
   const [fieldSaving, setFieldSaving] = useState(false);
 
-  // جلب الحقول عند فتح الصفحة
+  // دالة جلب الحقول
+  const fetchFields = async () => {
+    const { data } = await supabase.from('registration_fields').select('*').order('sort_order', { ascending: true });
+    if (data) setFields(data);
+  };
+
   useEffect(() => {
-    const fetchFields = async () => {
-      const { data } = await supabase.from('registration_fields').select('*').order('sort_order', { ascending: true });
-      if (data) setFields(data);
-    };
     fetchFields();
   }, []);
 
@@ -74,9 +72,13 @@ export default function AdminSettingsPage() {
   const handleDeleteField = async (id: string) => {
     if (!confirm("هل أنت متأكد من الحذف؟")) return;
     const { error } = await supabase.from('registration_fields').delete().eq('id', id);
-    if (!error) setFields(fields.filter(f => f.id !== id));
+    if (!error) {
+        setFields(fields.filter(f => f.id !== id));
+    }
   };
 
+  // ✅ الدالة المصححة للحفظ
+  // ✅ دالة الحفظ المطورة (تكتشف التغييرات)
   const handleSaveField = async (e: React.FormEvent) => {
     e.preventDefault();
     setFieldSaving(true);
@@ -86,22 +88,79 @@ export default function AdminSettingsPage() {
       else if (currentField.field_type === 'policy') finalOptions = [optionsText];
 
       const fieldData = { ...currentField, options: finalOptions, is_required: currentField.field_type === 'policy' ? true : currentField.is_required };
-      const { data, error } = await supabase.from('registration_fields').upsert(fieldData).select().single();
       
-      if (error) throw error;
-      if (currentField.id) setFields(fields.map(f => f.id === data.id ? data : f));
-      else setFields([...fields, data]);
+      // --- بداية منطق كشف التغييرات ---
+      let detailsMsg = "";
       
+      if (!currentField.id) {
+          // حالة إضافة جديدة
+          detailsMsg = `إضافة حقل جديد بعنوان: "${fieldData.label}"`;
+      } else {
+          // حالة تعديل: نقارن مع الحقل القديم الموجود في الـ State
+          const oldField = fields.find(f => f.id === currentField.id);
+          const changes = [];
+
+          if (oldField) {
+              if (oldField.label !== fieldData.label) {
+                  changes.push(`تغيير العنوان من "${oldField.label}" إلى "${fieldData.label}"`);
+              }
+              if (oldField.field_type !== fieldData.field_type) {
+                  changes.push(`تغيير النوع من ${oldField.field_type} إلى ${fieldData.field_type}`);
+              }
+              if (oldField.is_required !== fieldData.is_required) {
+                  changes.push(fieldData.is_required ? "تم جعله إجبارياً" : "تم جعله اختيارياً");
+              }
+              // يمكن إضافة المزيد من المقارنات هنا
+          }
+          
+          if (changes.length > 0) {
+              detailsMsg = `تعديل حقل "${fieldData.label}": ` + changes.join("، ");
+          } else {
+              detailsMsg = `تحديث بيانات الحقل: "${fieldData.label}"`;
+          }
+      }
+      // --- نهاية منطق كشف التغييرات ---
+
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+          alert("انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى");
+          router.push('/login');
+          return;
+      }
+
+      const response = await fetch('/api/admin/fields/save', {
+          method: 'POST',
+          headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}` 
+          },
+          // نرسل التفاصيل التي حسبناها
+          body: JSON.stringify({ fields: fieldData, logDetails: detailsMsg }) 
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "فشل الاتصال بالخادم");
+      
+      await fetchFields();
       setIsModalOpen(false);
+      alert("✅ تم الحفظ بنجاح!");
+
     } catch (error: any) {
+      console.error(error);
       alert("خطأ: " + error.message);
     } finally {
       setFieldSaving(false);
     }
   };
-  // ==============================================================
 
-  // بيانات الإعدادات العامة
+  // ... (باقي الكود الخاص بالإعدادات العامة والتقنية يبقى كما هو تماماً دون تغيير) ...
+  // لتوفير المساحة، سأضع لك بداية ونهاية الأقسام فقط، انسخ المحتوى السابق وضعه هنا إذا لم يتغير، 
+  // أو إذا أردت الكود كاملاً (300+ سطر) أخبرني وسأرسله.
+  
+  // (هنا يأتي كود formData, techData, useEffect, fetchSettings, handleSave كما كان في ردودي السابقة)
+  
+  // ==================== البيانات العامة والتقنية ====================
   const [formData, setFormData] = useState({
     is_app_active: true,
     about_us: "",
@@ -114,11 +173,12 @@ export default function AdminSettingsPage() {
     linkedin: ""
   });
 
-  // بيانات وهمية للعرض في التبويبات الأخرى (يمكنك ربطها بقاعدة البيانات لاحقاً)
   const [techData, setTechData] = useState({
-    googleMapKey: "AIzaSyDxxxxxxxxxxxxxx",
-    geminiKey: "sk-xxxxxxxxxxxxxx",
-    paymentGateway: "Stripe"
+    googleMapKey: "",
+    geminiKey: "",
+    paymentGateway: "Stripe",
+    gmailUser: "",
+    gmailAppPassword: "" 
   });
 
   useEffect(() => {
@@ -147,6 +207,14 @@ export default function AdminSettingsPage() {
           instagram: data.instagram || "",
           linkedin: data.linkedin || ""
         });
+
+        setTechData({
+          googleMapKey: data.google_map_key || "",
+          geminiKey: data.gemini_key || "",
+          paymentGateway: data.payment_gateway || "Stripe",
+          gmailUser: data.gmail_user || "",
+          gmailAppPassword: data.gmail_app_password || ""
+        });
       }
     } catch (error) {
       console.error("Error fetching settings:", error);
@@ -158,13 +226,28 @@ export default function AdminSettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // هنا نحفظ فقط إعدادات التطبيق (التبويب الأول)
-      // التبويبات الأخرى تحتاج جداول خاصة أو منطق حفظ منفصل حسب برمجتك السابقة
+      let dataToUpdate = {};
+
+      if (activeTab === "app_settings") {
+        dataToUpdate = { ...formData };
+      } else if (activeTab === "tech_link") {
+        dataToUpdate = {
+          google_map_key: techData.googleMapKey,
+          gemini_key: techData.geminiKey,
+          payment_gateway: techData.paymentGateway,
+          gmail_user: techData.gmailUser,
+          gmail_app_password: techData.gmailAppPassword
+        };
+      } else {
+        setSaving(false);
+        return; 
+      }
+
       const { error } = await supabase
         .from('platform_settings')
         .upsert({
           id: 1,
-          ...formData,
+          ...dataToUpdate,
           updated_at: new Date().toISOString()
         });
 
@@ -183,21 +266,19 @@ export default function AdminSettingsPage() {
   return (
     <div className={`p-6 max-w-5xl mx-auto text-right ${tajawal.className}`} dir="rtl">
       <button
-  onClick={() => router.push("/admin/dashboard")}
-  className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"
->
-  <ArrowRight size={22} />
-</button>
+        onClick={() => router.push("/admin/dashboard")}
+        className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"
+      >
+        <ArrowRight size={22} />
+      </button>
 
       <h1 className="text-3xl font-bold text-white mb-8 border-b border-white/10 pb-4">الإعدادات العامة</h1>
       
-
-      {/* --- شريط التبويبات --- */}
       <div className="flex flex-wrap gap-2 mb-8 bg-white/5 p-1 rounded-xl w-fit mx-auto md:mx-0 border border-white/10">
         {[
           { id: "app_settings", label: "إعدادات التطبيق", icon: <Globe size={16}/> },
           { id: "tech_link", label: "الربط والتقنية", icon: <Server size={16}/> },
-          { id: "fields", label: "حقول الخدمات", icon: <Database size={16}/> },
+          { id: "fields", label: "إدارة نموذج طلبات الانضمام", icon: <Database size={16}/> },
           { id: "cities", label: "المدن والتصنيفات", icon: <MapPin size={16}/> },
           { id: "account", label: "حسابي", icon: <User size={16}/> }
         ].map((tab) => (
@@ -216,10 +297,8 @@ export default function AdminSettingsPage() {
         ))}
       </div>
 
-      {/* ================= تبويب 1: إعدادات التطبيق ================= */}
       {activeTab === "app_settings" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-          {/* حالة التطبيق */}
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
               <Globe size={20} /> حالة التطبيق
@@ -238,7 +317,6 @@ export default function AdminSettingsPage() {
             </div>
           </section>
 
-          {/* التواصل */}
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
               <Phone size={20} /> معلومات التواصل
@@ -275,7 +353,6 @@ export default function AdminSettingsPage() {
             </div>
           </section>
 
-          {/* المحتوى */}
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
               <FileText size={20} /> المحتوى التعريفي
@@ -308,9 +385,45 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      {/* ================= تبويب 2: الربط والتقنية ================= */}
       {activeTab === "tech_link" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
+              <Mail size={20} /> إعدادات البريد (Gmail SMTP)
+            </h2>
+            <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg mb-6 text-sm text-yellow-200/80">
+              <Info className="inline-block ml-2 w-4 h-4"/> 
+              للحصول على كلمة مرور التطبيق (App Password)، اذهب إلى إعدادات حساب Google {'>'} الأمان {'>'} التحقق بخطوتين {'>'} كلمات مرور التطبيقات.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div>
+                <label className="block text-gray-400 mb-2 text-sm">بريد Gmail المرسل</label>
+                <input 
+                  type="email" 
+                  value={techData.gmailUser} 
+                  onChange={(e) => setTechData({...techData, gmailUser: e.target.value})}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm" 
+                  dir="ltr" 
+                  placeholder="example@gmail.com"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-2 text-sm">كلمة مرور التطبيق (App Password)</label>
+                <div className="relative">
+                  <input 
+                    type="password" 
+                    value={techData.gmailAppPassword} 
+                    onChange={(e) => setTechData({...techData, gmailAppPassword: e.target.value})}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono tracking-widest" 
+                    dir="ltr" 
+                    placeholder="xxxx xxxx xxxx xxxx"
+                  />
+                  <Lock className="absolute right-3 top-3.5 text-gray-600" size={16}/>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
               <Key size={20} /> مفاتيح الربط (API Keys)
@@ -318,29 +431,49 @@ export default function AdminSettingsPage() {
             <div className="space-y-6">
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">مفتاح خرائط جوجل (Google Maps API)</label>
-                <input type="text" defaultValue={techData.googleMapKey} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none font-mono text-sm" dir="ltr" />
+                <input 
+                  type="text" 
+                  value={techData.googleMapKey} 
+                  onChange={(e) => setTechData({...techData, googleMapKey: e.target.value})}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none font-mono text-sm" 
+                  dir="ltr" 
+                />
               </div>
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">مفتاح الذكاء الاصطناعي (Gemini AI Key)</label>
-                <input type="text" defaultValue={techData.geminiKey} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none font-mono text-sm" dir="ltr" />
+                <input 
+                  type="text" 
+                  value={techData.geminiKey} 
+                  onChange={(e) => setTechData({...techData, geminiKey: e.target.value})}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none font-mono text-sm" 
+                  dir="ltr" 
+                />
               </div>
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">بوابة الدفع (Payment Gateway)</label>
-                <select className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none">
+                <select 
+                  value={techData.paymentGateway}
+                  onChange={(e) => setTechData({...techData, paymentGateway: e.target.value})}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none"
+                >
                   <option value="Stripe">Stripe</option>
                   <option value="Moyasar">Moyasar (ميسر)</option>
                   <option value="Tamara">Tamara</option>
                 </select>
               </div>
             </div>
-            <div className="mt-6 flex justify-end">
-               <button className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition text-sm">حفظ مفاتيح الربط</button>
-            </div>
           </section>
+
+          <div className="flex justify-end pt-4 sticky bottom-4 z-10">
+            <div className="bg-[#121212]/80 backdrop-blur-md p-2 rounded-xl border border-white/10 shadow-2xl">
+              <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-[#C89B3C] hover:bg-[#b88a2c] text-black font-bold py-3 px-12 rounded-xl transition disabled:opacity-50">
+                {saving ? <Loader2 className="animate-spin" /> : <Save size={20} />} حفظ إعدادات الربط
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ================= تبويب 3: حقول الخدمات (المعدل) ================= */}
       {activeTab === "fields" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
@@ -353,7 +486,6 @@ export default function AdminSettingsPage() {
                 </button>
             </div>
 
-            {/* الجدول */}
             <div className="overflow-x-auto custom-scrollbar rounded-xl border border-white/5">
                 <table className="w-full text-right border-collapse min-w-[600px]">
                     <thead className="bg-black/20 text-white/50 text-xs uppercase">
@@ -385,7 +517,6 @@ export default function AdminSettingsPage() {
             </div>
           </section>
 
-          {/* النافذة المنبثقة (Modal) للإضافة والتعديل */}
           {isModalOpen && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
             <div className="bg-[#2B2B2B] w-full max-w-lg rounded-2xl border border-white/10 p-6 shadow-2xl">
@@ -401,9 +532,9 @@ export default function AdminSettingsPage() {
                   <div><label className="text-xs text-white/60 mb-1 block">العنوان</label><input required type="text" className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm" value={currentField.label} onChange={e => setCurrentField({...currentField, label: e.target.value})} /></div>
                   
                   {(currentField.field_type === 'select' || currentField.field_type === 'policy') && (
-                     <div><label className="text-xs text-white/60 mb-1 block">{currentField.field_type === 'policy' ? 'نص السياسة الكامل' : 'الخيارات (بينها فواصل)'}</label>
-                     {currentField.field_type === 'policy' ? <textarea className="w-full bg-black/30 border border-white/10 rounded-lg p-2 h-24" value={optionsText} onChange={e => setOptionsText(e.target.value)} /> : <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg p-2" value={optionsText} onChange={e => setOptionsText(e.target.value)} />}
-                     </div>
+                      <div><label className="text-xs text-white/60 mb-1 block">{currentField.field_type === 'policy' ? 'نص السياسة الكامل' : 'الخيارات (بينها فواصل)'}</label>
+                      {currentField.field_type === 'policy' ? <textarea className="w-full bg-black/30 border border-white/10 rounded-lg p-2 h-24" value={optionsText} onChange={e => setOptionsText(e.target.value)} /> : <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg p-2" value={optionsText} onChange={e => setOptionsText(e.target.value)} />}
+                      </div>
                   )}
 
                   <button disabled={fieldSaving} className="w-full bg-[#C89B3C] text-black font-bold py-2 rounded-lg hover:bg-[#b38a35] mt-2">
@@ -416,7 +547,7 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      {/* ================= تبويب 4: المدن والتصنيفات ================= */}
+      {/* باقي التبويبات (Cities, Account) كما هي ... */}
       {activeTab === "cities" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -430,8 +561,8 @@ export default function AdminSettingsPage() {
               <div className="space-y-2">
                  {['أبها', 'خميس مشيط', 'النماص', 'رجال ألمع', 'تنومة'].map((city, idx) => (
                    <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5">
-                      <span>{city}</span>
-                      <span className="text-xs text-green-400 bg-green-400/10 px-2 py-1 rounded">نشط</span>
+                     <span>{city}</span>
+                     <span className="text-xs text-green-400 bg-green-400/10 px-2 py-1 rounded">نشط</span>
                    </div>
                  ))}
               </div>
@@ -447,8 +578,8 @@ export default function AdminSettingsPage() {
               <div className="space-y-2">
                  {['مطاعم ومقاهي', 'نزل تراثية', 'فنادق ومنتجعات', 'تجارب هايكنج', 'متاحف'].map((cat, idx) => (
                    <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5">
-                      <span>{cat}</span>
-                      <span className="text-xs text-white/40">50 خدمة</span>
+                     <span>{cat}</span>
+                     <span className="text-xs text-white/40">50 خدمة</span>
                    </div>
                  ))}
               </div>
@@ -457,7 +588,6 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      {/* ================= تبويب 5: حسابي ================= */}
       {activeTab === "account" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">

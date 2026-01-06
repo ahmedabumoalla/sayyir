@@ -48,12 +48,15 @@ export default function AdminLoginPage() {
       });
 
       if (setErr) {
-        alert("فشل تسجيل الدخول");
+        alert("فشل حفظ الجلسة");
         setLoading(false);
         return;
       }
 
+      // ✅ التعديل الوحيد هنا: تحديث الراوتر لضمان قراءة الكوكيز الجديدة
+      router.refresh(); 
       router.push("/admin/dashboard");
+      
     } catch {
       alert("فشل تسجيل الدخول");
     } finally {

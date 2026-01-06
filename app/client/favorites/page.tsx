@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { MapPin, Trash2, Heart, ArrowLeft, Loader2, Star } from "lucide-react";
+import { MapPin, Trash2, Heart, ArrowLeft, Loader2, Sparkles, Briefcase } from "lucide-react";
+import { Tajawal } from "next/font/google";
+
+const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700", "800"] });
 
 export default function FavoritesPage() {
   const [favorites, setFavorites] = useState<any[]>([]);
@@ -19,25 +22,24 @@ export default function FavoritesPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // جلب المفضلة وربطها بجدول الأماكن (places)
-      // ملاحظة: تأكد أن العمود في favorites هو location_id ويرتبط بـ places.id
+      // جلب المفضلة وربطها بالجدولين (landmarks و services)
       const { data, error } = await supabase
         .from("favorites")
         .select(`
           id,
-          place:places (
-            id,
-            name,
-            type,
-            media_urls,
-            city,
-            category
-          )
+          created_at,
+          landmark:landmarks (id, name, image_urls, city, type, description),
+          service:services (id, title, image_url, location, price)
         `)
-        .eq("user_id", session.user.id);
+        .eq("user_id", session.user.id)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setFavorites(data || []);
+      
+      // تصفية البيانات للتأكد من وجود العنصر المرتبط (في حال تم حذفه من المصدر)
+      const validFavorites = (data || []).filter(item => item.landmark || item.service);
+      setFavorites(validFavorites);
+
     } catch (error) {
       console.error("Error fetching favorites:", error);
     } finally {
@@ -46,80 +48,127 @@ export default function FavoritesPage() {
   };
 
   const removeFavorite = async (id: string) => {
+    if(!confirm("هل أنت متأكد من إزالة هذا العنصر من المفضلة؟")) return;
+
     // تحديث الواجهة فوراً (Optimistic UI)
+    const originalFavorites = [...favorites];
     setFavorites(prev => prev.filter(item => item.id !== id));
 
     const { error } = await supabase.from("favorites").delete().eq("id", id);
+    
     if (error) {
       alert("حدث خطأ أثناء الحذف");
-      fetchFavorites(); // تراجع في حال الخطأ
+      setFavorites(originalFavorites); // تراجع في حال الخطأ
     }
   };
 
-  if (loading) return <div className="h-[50vh] flex items-center justify-center text-[#C89B3C]"><Loader2 className="animate-spin w-8 h-8" /></div>;
+  if (loading) return (
+    <div className={`h-[80vh] flex flex-col items-center justify-center bg-[#1a1a1a] text-[#C89B3C] ${tajawal.className}`}>
+        <Loader2 className="animate-spin w-10 h-10 mb-4" />
+        <p className="animate-pulse">جاري تحميل كنوزك المحفوظة...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className={`min-h-screen bg-[#1a1a1a] text-white p-6 lg:p-10 ${tajawal.className}`} dir="rtl">
       
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-10 gap-4">
         <div>
-           <h2 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
-             <Heart className="text-[#C89B3C] fill-[#C89B3C]" /> قائمة مفضلاتي
-           </h2>
-           <p className="text-white/60 text-sm">الأماكن التي نالت إعجابك وتخطط لزيارتها.</p>
+            <h2 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+              <Heart className="text-[#C89B3C] fill-[#C89B3C]" size={32} /> 
+              <span>قائمة مفضلاتي</span>
+            </h2>
+            <p className="text-white/60">احتفظ بالأماكن والتجارب التي تخطط لزيارتها قريباً.</p>
         </div>
-        <div className="bg-[#C89B3C]/10 text-[#C89B3C] px-4 py-2 rounded-full font-bold border border-[#C89B3C]/20">
-          {favorites.length} أماكن
+        <div className="bg-[#C89B3C]/10 text-[#C89B3C] px-5 py-2 rounded-xl font-bold border border-[#C89B3C]/20 flex items-center gap-2">
+          <Sparkles size={18} />
+          {favorites.length} عناصر محفوظة
         </div>
       </div>
 
       {favorites.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white/5 rounded-3xl border border-white/10 border-dashed">
-          <Heart size={64} className="text-white/10 mb-6" />
-          <h3 className="text-xl font-bold text-white mb-2">قائمتك فارغة حالياً</h3>
-          <p className="text-white/50 mb-8 text-center max-w-md">لم تقم بإضافة أي أماكن للمفضلة بعد. استكشف الخريطة واحفظ الأماكن التي تعجبك!</p>
+        <div className="flex flex-col items-center justify-center py-24 bg-[#252525] rounded-[2rem] border border-white/5 border-dashed">
+          <div className="p-6 bg-white/5 rounded-full mb-6 text-white/20">
+             <Heart size={48} />
+          </div>
+          <h3 className="text-2xl font-bold text-white mb-3">قائمتك فارغة حالياً</h3>
+          <p className="text-white/50 mb-8 text-center max-w-md leading-relaxed">
+            لم تقم بإضافة أي أماكن للمفضلة بعد. تصفح الخريطة واحفظ الكنوز التي تعجبك لتصل إليها لاحقاً!
+          </p>
           <Link href="/map">
-            <button className="flex items-center gap-2 bg-[#C89B3C] text-[#2B1F17] px-6 py-3 rounded-xl font-bold hover:bg-[#b38a35] transition">
-              <span>تصفح الخريطة</span> <ArrowLeft size={18} />
+            <button className="flex items-center gap-2 bg-[#C89B3C] text-[#2B1F17] px-8 py-4 rounded-xl font-bold hover:bg-[#b38a35] transition shadow-lg shadow-[#C89B3C]/20">
+              <span>تصفح الخريطة</span> <ArrowLeft size={20} />
             </button>
           </Link>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {favorites.map((item) => {
-            const place = item.place;
-            // التحقق من وجود صورة، وإلا استخدام صورة افتراضية
-            const image = place?.media_urls?.[0] || "/logo.png";
+            // تحديد نوع العنصر (معلم أو خدمة)
+            const isLandmark = !!item.landmark;
+            const data = item.landmark || item.service;
             
+            // معالجة البيانات للعرض
+            const title = isLandmark ? data.name : data.title;
+            const image = isLandmark 
+                ? (data.image_urls?.[0] || "/placeholder.jpg") 
+                : (data.image_url || "/placeholder.jpg");
+            
+            // معالجة الموقع
+            let locationName = "عسير";
+            if (isLandmark) locationName = data.city || "عسير";
+            else if (data.location) {
+                try { locationName = JSON.parse(data.location).address || "عسير"; } catch {}
+            }
+
             return (
-              <div key={item.id} className="group relative bg-[#252525] border border-white/10 rounded-2xl overflow-hidden hover:border-[#C89B3C]/40 transition-all duration-300 hover:-translate-y-1">
-                <div className="relative h-48 w-full">
-                  <Image src={image} alt={place?.name || "مكان"} fill className="object-cover group-hover:scale-105 transition duration-700" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] to-transparent opacity-80" />
+              <div key={item.id} className="group relative bg-[#252525] border border-white/5 rounded-[1.5rem] overflow-hidden hover:border-[#C89B3C]/50 transition-all duration-300 hover:shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)]">
+                
+                {/* Image Section */}
+                <div className="relative h-56 w-full overflow-hidden">
+                  <Image src={image} alt={title} fill className="object-cover group-hover:scale-110 transition duration-700" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-transparent opacity-90" />
                   
-                  <button onClick={() => removeFavorite(item.id)} className="absolute top-3 right-3 p-2 bg-black/40 backdrop-blur-md rounded-full text-white/70 hover:bg-red-500 hover:text-white transition border border-white/10" title="إزالة">
-                    <Trash2 size={16} />
+                  {/* Delete Button */}
+                  <button 
+                    onClick={() => removeFavorite(item.id)} 
+                    className="absolute top-4 right-4 p-2.5 bg-black/40 backdrop-blur-md rounded-full text-white/70 hover:bg-red-500 hover:text-white transition border border-white/10 opacity-0 group-hover:opacity-100 translate-y-[-10px] group-hover:translate-y-0 duration-300" 
+                    title="إزالة من المفضلة"
+                  >
+                    <Trash2 size={18} />
                   </button>
                   
-                  <div className="absolute top-3 left-3 px-2 py-1 bg-[#C89B3C] text-[#2B1F17] text-xs font-bold rounded-md shadow-lg">
-                    {place?.type === 'tourist' ? 'سياحة' : 'تراث'}
+                  {/* Type Badge */}
+                  <div className="absolute top-4 left-4 px-3 py-1.5 bg-[#C89B3C] text-[#2B1F17] text-xs font-bold rounded-lg shadow-lg flex items-center gap-1">
+                    {isLandmark ? <MapPin size={12}/> : <Briefcase size={12}/>}
+                    {isLandmark ? 'معلم سياحي' : 'تجربة / خدمة'}
                   </div>
                 </div>
 
-                <div className="p-5">
-                  <h3 className="text-xl font-bold text-white mb-1 truncate">{place?.name}</h3>
-                  <div className="flex items-center gap-1 text-white/60 text-sm mb-4">
-                     <MapPin size={14} className="text-[#C89B3C]" />
-                     <span>{place?.city || "عسير"}</span>
+                {/* Content Section */}
+                <div className="p-6">
+                  <h3 className="text-xl font-bold text-white mb-2 truncate leading-tight">{title}</h3>
+                  
+                  <div className="flex items-center gap-2 text-white/60 text-sm mb-4">
+                      <MapPin size={16} className="text-[#C89B3C]" />
+                      <span>{locationName}</span>
                   </div>
 
+                  {!isLandmark && (
+                      <div className="mb-4 text-[#C89B3C] font-bold dir-ltr text-sm">
+                          {data.price} SAR
+                      </div>
+                  )}
+
                   <div className="flex items-center justify-between mt-auto pt-4 border-t border-white/5">
-                     <span className="text-xs text-white/40">{place?.category}</span>
-                     <Link href={`/place/${place?.id}`}>
-                       <button className="text-sm text-white hover:text-[#C89B3C] flex items-center gap-1 transition">
-                         التفاصيل <ArrowLeft size={14}/>
-                       </button>
-                     </Link>
+                      <span className="text-xs text-white/30">
+                        {new Date(item.created_at).toLocaleDateString('ar-SA')}
+                      </span>
+                      <Link href={isLandmark ? `/map?loc=${data.id}` : `/services/${data.id}`}>
+                        <button className="text-sm text-white font-bold hover:text-[#C89B3C] flex items-center gap-2 transition group-hover:gap-3">
+                          عرض التفاصيل <ArrowLeft size={16}/>
+                        </button>
+                      </Link>
                   </div>
                 </div>
               </div>

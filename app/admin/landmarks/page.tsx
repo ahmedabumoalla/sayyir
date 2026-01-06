@@ -6,7 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map as MapIcon, DollarSign, Settings, ShieldAlert,
-  Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video, Type, Globe,
+  Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video,
   Menu, User, Home
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
@@ -14,17 +14,18 @@ import { useRouter, usePathname } from "next/navigation";
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-// مفتاح الماب بوكس
+// مفتاح الماب بوكس (تأكد أنه يعمل)
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiYWJkYWxsYWhtdWFsYSIsImEiOiJjbTV4b3I0aGgwM3FkMmFyMXF3ZDN3Y3IyIn0.DrD4wJ-M5a-RjC8tPXyQ4g"; 
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
+// الواجهة مطابقة تماماً لما كان عندك سابقاً
 interface Place {
   id?: string;
   name: string;
-  type: string;     // النوع العام: tourist / heritage
-  category?: string; // التصنيف الدقيق: متحف، قلعة...
-  city?: string;     // المدينة: أبها، النماس...
+  type: string;     // tourist / heritage
+  category?: string; 
+  city?: string;    
   description: string;
   media_urls: string[];
   lat: number;
@@ -36,24 +37,19 @@ export default function LandmarksPage() {
   const router = useRouter();
   const pathname = usePathname();
   
-  // حالات القائمة الجانبية للجوال
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
-
-  // البيانات
   const [places, setPlaces] = useState<Place[]>([]);
-  const [citiesList, setCitiesList] = useState<any[]>([]); // قائمة المدن من القاعدة
-  const [categoriesList, setCategoriesList] = useState<any[]>([]); // قائمة التصنيفات من القاعدة
-
+  const [citiesList, setCitiesList] = useState<any[]>([]); 
+  const [categoriesList, setCategoriesList] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
-  // المودال
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  // حالة الفورم
+  // نفس الحالة القديمة بالضبط
   const [formData, setFormData] = useState<Place>({
     name: "", 
     type: "tourist", 
@@ -61,27 +57,24 @@ export default function LandmarksPage() {
     city: "", 
     description: "", 
     media_urls: [], 
-    lat: 18.2164, // إحداثيات افتراضية (أبها)
+    lat: 18.2164, 
     lng: 42.5053, 
     is_active: true
   });
 
-  // ملفات للرفع
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   
-  // الخريطة
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const marker = useRef<mapboxgl.Marker | null>(null);
 
   useEffect(() => {
     fetchPlaces();
-    fetchLookups(); // جلب المدن والتصنيفات
+    fetchLookups();
     checkRole();
   }, []);
 
-  // تهيئة الخريطة عند فتح المودال
   useEffect(() => {
     if (isModalOpen && mapContainer.current) {
       setTimeout(() => {
@@ -93,18 +86,15 @@ export default function LandmarksPage() {
             zoom: 12,
           });
 
-          // إضافة ماركر مبدئي
           marker.current = new mapboxgl.Marker({ color: "#C89B3C", draggable: true })
             .setLngLat([formData.lng, formData.lat])
             .addTo(map.current);
 
-          // تحديث الإحداثيات عند سحب الماركر
           marker.current.on('dragend', () => {
             const lngLat = marker.current!.getLngLat();
             setFormData(prev => ({ ...prev, lat: lngLat.lat, lng: lngLat.lng }));
           });
 
-          // تحديث الماركر عند النقر على الخريطة
           map.current.on('click', (e) => {
             marker.current!.setLngLat(e.lngLat);
             setFormData(prev => ({ ...prev, lat: e.lngLat.lat, lng: e.lngLat.lng }));
@@ -127,7 +117,6 @@ export default function LandmarksPage() {
     }
   }
 
-  // جلب البيانات والقوائم
   const fetchPlaces = async () => {
     setLoading(true);
     const { data, error } = await supabase.from('places').select('*').order('created_at', { ascending: false });
@@ -136,11 +125,8 @@ export default function LandmarksPage() {
   };
 
   const fetchLookups = async () => {
-    // جلب المدن
     const { data: cities } = await supabase.from('cities').select('*').order('name');
     if (cities) setCitiesList(cities);
-
-    // جلب التصنيفات (للمعالم)
     const { data: cats } = await supabase.from('categories').select('*').eq('type', 'place').order('name');
     if (cats) setCategoriesList(cats);
   };
@@ -163,81 +149,130 @@ export default function LandmarksPage() {
     setIsModalOpen(true);
   };
 
-  // معالجة اختيار الملفات
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
       setSelectedFiles(prev => [...prev, ...filesArray]);
-
-      // إنشاء روابط معاينة محلية
       const newPreviews = filesArray.map(file => URL.createObjectURL(file));
       setPreviews(prev => [...prev, ...newPreviews]);
     }
   };
 
-  // دالة رفع الملفات
   const uploadFiles = async (): Promise<string[]> => {
     const uploadedUrls: string[] = [];
-    
     for (const file of selectedFiles) {
       const fileName = `${Date.now()}-${file.name.replace(/\s/g, '-')}`;
-      const { data, error } = await supabase.storage
-        .from('landmarks')
-        .upload(fileName, file);
-
-      if (error) {
-        console.error("Upload error:", error);
-        continue;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('landmarks')
-        .getPublicUrl(fileName);
-      
+      const { data, error } = await supabase.storage.from('landmarks').upload(fileName, file);
+      if (error) { console.error("Upload error:", error); continue; }
+      const { data: urlData } = supabase.storage.from('landmarks').getPublicUrl(fileName);
       uploadedUrls.push(urlData.publicUrl);
     }
     return uploadedUrls;
   };
 
+  // ✅ دالة الحفظ (تم إعادتها للعمل مع الحقول القديمة + إضافة السجل)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
 
     try {
-      // 1. رفع الملفات الجديدة
       const newUrls = await uploadFiles();
       const finalMediaUrls = [...(formData.media_urls || []), ...newUrls];
 
-      // 2. حفظ البيانات
-      const { error } = await supabase
-        .from('places')
-        .upsert({
+      // البيانات التي سيتم حفظها (مطابقة تماماً لقاعدة بياناتك)
+      const placeData = {
           ...formData,
           media_urls: finalMediaUrls
-          // city و category موجودة تلقائياً في formData
-        });
+      };
 
-      if (error) throw error;
+      // --- حساب تفاصيل السجل (Log Details) ---
+      let details = "";
+      if (!formData.id) {
+          details = `إضافة معلم جديد: ${formData.name}`;
+      } else {
+          // مقارنة بسيطة للتعديل
+          const oldPlace = places.find(p => p.id === formData.id);
+          const changes = [];
+          if (oldPlace) {
+              if (oldPlace.name !== formData.name) changes.push(`الاسم: ${oldPlace.name} -> ${formData.name}`);
+              if (oldPlace.description !== formData.description) changes.push("تم تعديل الوصف");
+              if (oldPlace.is_active !== formData.is_active) changes.push(formData.is_active ? "تم التفعيل" : "تم الإخفاء");
+          }
+          details = changes.length > 0 ? `تعديل ${formData.name}: ${changes.join(", ")}` : `تحديث بيانات: ${formData.name}`;
+      }
+      // -------------------------------------
+
+      // جلب التوكن
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+          alert("انتهت الجلسة، سجل دخول مرة أخرى");
+          return;
+      }
+
+      // الإرسال للـ API الموحد (الذي يسجل العملية ويحفظ البيانات)
+      const response = await fetch('/api/admin/places/action', {
+          method: 'POST',
+          headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ 
+              action: 'save', 
+              data: placeData, // نرسل البيانات كما هي (بدون حقول إضافية تخرب الحفظ)
+              logDetails: details 
+          })
+      });
+
+      if (!response.ok) {
+          const resJson = await response.json();
+          throw new Error(resJson.error || "فشل الحفظ في السيرفر");
+      }
 
       alert("✅ تم الحفظ بنجاح");
       setIsModalOpen(false);
-      fetchPlaces();
+      fetchPlaces(); // تحديث الجدول
+
     } catch (error: any) {
+      console.error(error);
       alert("❌ خطأ: " + error.message);
     } finally {
       setSaving(false);
     }
   };
 
+  // ✅ دالة الحذف (مع السجل)
   const handleDelete = async (id: string) => {
-    if (!confirm("حذف هذا المعلم؟")) return;
-    const { error } = await supabase.from('places').delete().eq('id', id);
-    if (!error) setPlaces(prev => prev.filter(p => p.id !== id));
+    const placeToDelete = places.find(p => p.id === id);
+    if (!confirm(`حذف "${placeToDelete?.name}"؟`)) return;
+    
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const response = await fetch('/api/admin/places/action', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ 
+                action: 'delete', 
+                id: id, 
+                logDetails: `حذف معلم: ${placeToDelete?.name}` 
+            })
+        });
+
+        if (!response.ok) throw new Error("فشل الحذف");
+
+        setPlaces(prev => prev.filter(p => p.id !== id));
+        alert("تم الحذف");
+
+    } catch (error: any) {
+        alert("خطأ: " + error.message);
+    }
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
-  
-  // فلترة العرض
   const filteredPlaces = places.filter(p => p.name.includes(searchTerm));
 
   const menuItems = [
@@ -253,21 +288,12 @@ export default function LandmarksPage() {
   return (
     <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      {/* Mobile Header Bar */}
+      {/* Sidebar & Header */}
       <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
-        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
-          <Menu size={24} />
-        </button>
-
-        <Link href="/" className="absolute left-1/2 -translate-x-1/2">
-           <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
-        </Link>
-
+        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><Menu size={24} /></button>
+        <Link href="/" className="absolute left-1/2 -translate-x-1/2"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
         <div className="relative">
-          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
-            <User size={20} />
-          </button>
-          
+          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10"><User size={20} /></button>
           {isProfileMenuOpen && (
             <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
               <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
@@ -276,25 +302,10 @@ export default function LandmarksPage() {
           )}
         </div>
       </div>
-
-      {/* Sidebar Overlay (Mobile) */}
-      {isSidebarOpen && (
-        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
-      )}
-
-      {/* Sidebar */}
+      {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />}
       <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
-        
-        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white">
-          <X size={24} />
-        </button>
-
-        <div className="mb-10 flex justify-center pt-4">
-          <Link href="/" title="العودة للرئيسية">
-             <Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
-          </Link>
-        </div>
-
+        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white"><X size={24} /></button>
+        <div className="mb-10 flex justify-center pt-4"><Link href="/"><Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" /></Link></div>
         <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
           {menuItems.map((item, i) => item.show && (
             <Link key={i} href={item.href} onClick={() => setSidebarOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
@@ -315,13 +326,11 @@ export default function LandmarksPage() {
             </div>
             <div className="flex items-center gap-4">
                <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] font-bold px-6 py-3 rounded-xl hover:bg-[#b38a35] transition flex items-center gap-2 shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /> إضافة معلم</button>
-               <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
-                  <Home size={20} className="text-white/70" />
-               </Link>
+               <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي"><Home size={20} className="text-white/70" /></Link>
             </div>
         </header>
 
-        {/* Mobile Header Title & Action */}
+        {/* Mobile Header */}
         <div className="md:hidden mb-6 flex justify-between items-center">
              <div>
                  <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
@@ -373,7 +382,7 @@ export default function LandmarksPage() {
           )}
         </div>
 
-        {/* Modal */}
+        {/* Modal - نفس التصميم القديم بالضبط */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
             <div className="bg-[#2B2B2B] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
@@ -390,9 +399,7 @@ export default function LandmarksPage() {
                     <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
                   </div>
                   
-                  {/* === القوائم الديناميكية === */}
                   <div className="grid grid-cols-2 gap-4">
-                      {/* النوع العام */}
                       <div className="space-y-2">
                         <label className="text-xs text-white/60">النوع العام</label>
                         <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
@@ -400,8 +407,6 @@ export default function LandmarksPage() {
                           <option value="heritage">🏛️ تراثي (تاريخ)</option>
                         </select>
                       </div>
-
-                      {/* التصنيف الدقيق (من القاعدة) */}
                       <div className="space-y-2">
                         <label className="text-xs text-white/60">التصنيف الدقيق</label>
                         <select required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
@@ -413,7 +418,6 @@ export default function LandmarksPage() {
                       </div>
                   </div>
 
-                  {/* المدينة (من القاعدة) */}
                   <div className="space-y-2">
                     <label className="text-xs text-white/60">المدينة / المحافظة</label>
                     <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
@@ -429,19 +433,13 @@ export default function LandmarksPage() {
                     <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white resize-none" />
                   </div>
 
-                  {/* رفع الملفات */}
                   <div className="space-y-2">
                     <label className="text-xs text-white/60">الصور والفيديو</label>
                     <div className="relative border-2 border-dashed border-white/10 bg-black/20 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-[#C89B3C]/50 transition cursor-pointer">
-                      <input 
-                        type="file" multiple accept="image/*,video/*"
-                        onChange={handleFileSelect}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
+                      <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                       <UploadCloud size={30} className="text-[#C89B3C] mb-2" />
                       <p className="text-sm text-white/60">اضغط للرفع</p>
                     </div>
-                    {/* المعاينة */}
                     {previews.length > 0 && (
                       <div className="flex gap-2 overflow-x-auto py-2 custom-scrollbar">
                         {previews.map((src, idx) => (

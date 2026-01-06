@@ -31,11 +31,32 @@ export default function HomePage() {
   
   const [platformInfo, setPlatformInfo] = useState<any>(null);
 
+  // ... (الجزء الخاص بالـ Animation للنص يبقى كما هو)
   const text = "اكتشف جمال الماضي وعِش تجربة سياحية مميزة";
   const [displayedText, setDisplayedText] = useState("");
   const [index, setIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  
+  // Animation Effect Code ... (نفس الكود السابق)
+  useEffect(() => {
+    const speed = deleting ? 45 : 90;
+    const timeout = setTimeout(() => {
+      if (!deleting && index < text.length) {
+        setDisplayedText(text.slice(0, index + 1));
+        setIndex(index + 1);
+      } else if (deleting && index > 0) {
+        setDisplayedText(text.slice(0, index - 1));
+        setIndex(index - 1);
+      } else if (!deleting && index === text.length) {
+        setTimeout(() => setDeleting(true), 2200);
+      } else if (deleting && index === 0) {
+        setDeleting(false);
+      }
+    }, speed);
+    return () => clearTimeout(timeout);
+  }, [index, deleting]);
 
+  // Auth Check ... (نفس الكود السابق)
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -58,46 +79,58 @@ export default function HomePage() {
     checkUser();
   }, []);
 
+  // Fetch Data - HERE IS THE FIX
   useEffect(() => {
     const fetchData = async () => {
-      const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
+      console.log("Fetching Homepage Data...");
+
+      // 1. المعالم
+      const { data: places, error: placesError } = await supabase
+        .from('places')
+        .select('*')
+        .eq('is_active', true)
+        .limit(6);
       if (places) setLandmarksData(places);
+      if (placesError) console.error("Places Error:", placesError);
 
-      const { data: facilities } = await supabase.from('services')
-        .select('*').in('service_type', ['accommodation', 'food']).eq('status', 'approved').limit(6);
-      if (facilities) setFacilitiesData(facilities);
+      // 2. المرافق (سكن ومطاعم)
+      const { data: facilities, error: facilitiesError } = await supabase
+        .from('services')
+        .select('*')
+        .in('service_type', ['accommodation', 'food'])
+        .eq('status', 'approved') // تأكد أن الحالة approved في قاعدة البيانات
+        .limit(6);
+      
+      if (facilities) {
+        console.log("Facilities Found:", facilities.length);
+        setFacilitiesData(facilities);
+      }
+      if (facilitiesError) console.error("Facilities Error:", facilitiesError);
 
-      const { data: experiences } = await supabase.from('services')
-        .select('*').eq('service_type', 'experience').eq('status', 'approved').limit(6);
-      if (experiences) setExperiencesData(experiences);
+      // 3. التجارب
+      const { data: experiences, error: expError } = await supabase
+        .from('services')
+        .select('*')
+        .eq('service_type', 'experience')
+        .eq('status', 'approved')
+        .limit(6);
 
-      const { data: info } = await supabase.from('platform_settings').select('*').eq('id', 1).single();
+      if (experiences) {
+        console.log("Experiences Found:", experiences.length);
+        setExperiencesData(experiences);
+      }
+      if (expError) console.error("Experiences Error:", expError);
+
+      // 4. إعدادات المنصة
+      const { data: info } = await supabase.from('platform_settings').select('*').single();
       if (info) setPlatformInfo(info);
     };
     fetchData();
   }, []);
 
-  useEffect(() => {
-    const speed = deleting ? 45 : 90;
-    const timeout = setTimeout(() => {
-      if (!deleting && index < text.length) {
-        setDisplayedText(text.slice(0, index + 1));
-        setIndex(index + 1);
-      } else if (deleting && index > 0) {
-        setDisplayedText(text.slice(0, index - 1));
-        setIndex(index - 1);
-      } else if (!deleting && index === text.length) {
-        setTimeout(() => setDeleting(true), 2200);
-      } else if (deleting && index === 0) {
-        setDeleting(false);
-      }
-    }, speed);
-    return () => clearTimeout(timeout);
-  }, [index, deleting]);
-
   return (
     <main className={`relative min-h-screen ${tajawal.className} bg-black text-white`}>
-      
+      {/* HEADER SECTION - Keep as is */}
       <header className="fixed top-0 left-0 right-0 z-50 p-6 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent transition-all duration-300">
         <div className="w-28 md:w-32 hover:scale-105 transition duration-300">
           <Link href="/">
@@ -170,17 +203,24 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Dynamic Data Sections */}
         <div className="bg-gradient-to-t from-black via-[#0a0a0a] to-transparent py-10 space-y-24">
+          
+          {/* المعالم */}
           {landmarksData.length > 0 && (
              <div className="container mx-auto px-4">
                <DynamicShowcase title="أبرز المعالم المختارة" linkHref="/landmarks" data={landmarksData} dataType="places" />
              </div>
           )}
+
+          {/* المرافق - تم التأكد من تمرير services هنا */}
           {facilitiesData.length > 0 && (
              <div className="container mx-auto px-4">
                <DynamicShowcase title="أرقى المرافق والخدمات" linkHref="/facilities" data={facilitiesData} dataType="services" />
              </div>
           )}
+
+          {/* التجارب */}
           {experiencesData.length > 0 && (
              <div className="container mx-auto px-4">
                <DynamicShowcase title="تجارب سياحية لا تُنسى" linkHref="/experiences" data={experiencesData} dataType="services" />
@@ -188,6 +228,7 @@ export default function HomePage() {
           )}
         </div>
 
+        {/* Footer & Info Section ... (يبقى كما هو) */}
         {platformInfo && (
           <div className="relative bg-black py-20 px-4 border-t border-white/5">
             <div className="container mx-auto max-w-6xl">
@@ -215,46 +256,47 @@ export default function HomePage() {
         )}
 
         <footer className="bg-[#050505] border-t border-white/10 pt-16 pb-8 px-4 text-center md:text-right">
-          <div className="container mx-auto max-w-6xl flex flex-col md:flex-row justify-between items-start gap-10">
-            <div className="flex-1">
-              <Image src="/logo.png" alt="Sayyir" width={140} height={60} className="mb-6 opacity-90 mx-auto md:mx-0" />
-              <p className="text-white/50 text-sm leading-7 max-w-xs mx-auto md:mx-0">
-                منصة "سَير" هي رفيقك الرقمي لاستكشاف جمال عسير، نقدم لك أفضل المعالم والتجارب بأحدث التقنيات.
-              </p>
-            </div>
-            <div className="flex-1">
-              <h4 className="text-white font-bold text-lg mb-6">روابط سريعة</h4>
-              <ul className="space-y-3 text-white/60 text-sm">
-                <li><Link href="/map" className="hover:text-[#C89B3C] transition">الخريطة التفاعلية</Link></li>
-                <li><Link href="/ai-guide" className="hover:text-[#C89B3C] transition">المرشد الذكي (جـاد)</Link></li>
-                <li><Link href="/register/provider" className="hover:text-[#C89B3C] transition">انضم كشريك خدمة</Link></li>
-                <li><Link href="/login" className="hover:text-[#C89B3C] transition">تسجيل الدخول</Link></li>
-              </ul>
-            </div>
-            <div className="flex-1">
-               <h4 className="text-white font-bold text-lg mb-6">تواصل معنا</h4>
-               <ul className="space-y-4 text-white/60 text-sm flex flex-col items-center md:items-start">
-                 {platformInfo?.whatsapp && (
-                    <li className="flex items-center gap-3 hover:text-[#C89B3C] transition cursor-pointer">
-                      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center"><Phone size={16}/></div>
-                      <span dir="ltr">{platformInfo.whatsapp}</span>
-                    </li>
-                 )}
-                 {platformInfo?.email && (
-                    <li className="flex items-center gap-3 hover:text-[#C89B3C] transition cursor-pointer">
-                      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center"><Mail size={16}/></div>
-                      <span>{platformInfo.email}</span>
-                    </li>
-                 )}
-                 <div className="flex gap-4 mt-4 justify-center md:justify-start">
-                    {platformInfo?.twitter && <a href={platformInfo.twitter} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Twitter size={18} /></a>}
-                    {platformInfo?.instagram && <a href={platformInfo.instagram} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Instagram size={18} /></a>}
-                    {platformInfo?.linkedin && <a href={platformInfo.linkedin} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Linkedin size={18} /></a>}
-                 </div>
-               </ul>
-            </div>
-          </div>
-          <div className="border-t border-white/5 mt-12 pt-8 text-center text-white/30 text-xs">© 2026 منصة سَير. جميع الحقوق محفوظة.</div>
+             {/* Footer Content ... Same as before */}
+             <div className="container mx-auto max-w-6xl flex flex-col md:flex-row justify-between items-start gap-10">
+                <div className="flex-1">
+                  <Image src="/logo.png" alt="Sayyir" width={140} height={60} className="mb-6 opacity-90 mx-auto md:mx-0" />
+                  <p className="text-white/50 text-sm leading-7 max-w-xs mx-auto md:mx-0">
+                    منصة "سَير" هي رفيقك الرقمي لاستكشاف جمال عسير، نقدم لك أفضل المعالم والتجارب بأحدث التقنيات.
+                  </p>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-white font-bold text-lg mb-6">روابط سريعة</h4>
+                  <ul className="space-y-3 text-white/60 text-sm">
+                    <li><Link href="/map" className="hover:text-[#C89B3C] transition">الخريطة التفاعلية</Link></li>
+                    <li><Link href="/ai-guide" className="hover:text-[#C89B3C] transition">المرشد الذكي (جـاد)</Link></li>
+                    <li><Link href="/register/provider" className="hover:text-[#C89B3C] transition">انضم كشريك خدمة</Link></li>
+                    <li><Link href="/login" className="hover:text-[#C89B3C] transition">تسجيل الدخول</Link></li>
+                  </ul>
+                </div>
+                <div className="flex-1">
+                   <h4 className="text-white font-bold text-lg mb-6">تواصل معنا</h4>
+                   <ul className="space-y-4 text-white/60 text-sm flex flex-col items-center md:items-start">
+                     {platformInfo?.whatsapp && (
+                        <li className="flex items-center gap-3 hover:text-[#C89B3C] transition cursor-pointer">
+                          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center"><Phone size={16}/></div>
+                          <span dir="ltr">{platformInfo.whatsapp}</span>
+                        </li>
+                     )}
+                     {platformInfo?.email && (
+                        <li className="flex items-center gap-3 hover:text-[#C89B3C] transition cursor-pointer">
+                          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center"><Mail size={16}/></div>
+                          <span>{platformInfo.email}</span>
+                        </li>
+                     )}
+                     <div className="flex gap-4 mt-4 justify-center md:justify-start">
+                        {platformInfo?.twitter && <a href={platformInfo.twitter} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Twitter size={18} /></a>}
+                        {platformInfo?.instagram && <a href={platformInfo.instagram} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Instagram size={18} /></a>}
+                        {platformInfo?.linkedin && <a href={platformInfo.linkedin} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Linkedin size={18} /></a>}
+                     </div>
+                   </ul>
+                </div>
+             </div>
+             <div className="border-t border-white/5 mt-12 pt-8 text-center text-white/30 text-xs">© 2026 منصة سَير. جميع الحقوق محفوظة.</div>
         </footer>
       </div>
     </main>

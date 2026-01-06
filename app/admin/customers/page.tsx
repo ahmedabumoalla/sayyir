@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
   Search, Ban, CheckCircle, Loader2, Mail, Phone, Calendar, LogOut, Briefcase, UserCheck,
-  Menu, X, User, Home
+  Menu, X, User, Home, Trash2, KeyRound, Eye, XCircle
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -21,22 +21,36 @@ interface Profile {
   phone: string;
   created_at: string;
   is_banned: boolean;
+  is_provider: boolean;
+  is_admin: boolean;
+  city?: string;
+  gender?: string;
 }
 
 export default function CustomersPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const [users, setUsers] = useState<Profile[]>([]);
+  
+  // البيانات
+  const [allUsers, setAllUsers] = useState<Profile[]>([]); 
+  const [displayedUsers, setDisplayedUsers] = useState<Profile[]>([]); 
+  
+  // الحالات
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filter, setFilter] = useState<'all' | 'active' | 'banned'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all'); 
+  const [typeFilter, setTypeFilter] = useState<'clients' | 'providers'>('clients'); 
+  
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   
-  // حالات القائمة الجانبية للجوال
+  // UI States
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+  
+  // Modal State
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
 
-  // حالات العدادات
+  // إحصائيات
   const [stats, setStats] = useState({
     clients: 0,
     providers: 0
@@ -46,6 +60,10 @@ export default function CustomersPage() {
     fetchData();
     checkRole();
   }, []);
+
+  useEffect(() => {
+    filterData();
+  }, [searchTerm, statusFilter, typeFilter, allUsers]);
 
   const checkRole = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -59,67 +77,147 @@ export default function CustomersPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    
-    // 1. جلب العملاء للقائمة (نستثني الأدمن والمزودين)
-    const { data: clientsData, error } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('is_provider', false)
-      .eq('is_admin', false)
       .order('created_at', { ascending: false });
 
-    if (!error && clientsData) {
-      setUsers(clientsData as any);
+    if (!error && data) {
+      setAllUsers(data as any);
+      
+      const clientsCount = data.filter((u: any) => !u.is_provider && !u.is_admin).length;
+      const providersCount = data.filter((u: any) => u.is_provider).length;
+
+      setStats({
+        clients: clientsCount,
+        providers: providersCount
+      });
     }
-
-    // 2. جلب الإحصائيات (عدد العملاء وعدد المزودين)
-    const { count: clientsCount } = await supabase
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('is_provider', false)
-      .eq('is_admin', false);
-
-    const { count: providersCount } = await supabase
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('is_provider', true);
-
-    setStats({
-      clients: clientsCount || 0,
-      providers: providersCount || 0
-    });
-
     setLoading(false);
   };
 
-  const toggleBan = async (id: string, currentStatus: boolean) => {
-    const action = currentStatus ? "فك الحظر عن" : "حظر";
-    if (!confirm(`هل أنت متأكد من ${action} هذا المستخدم؟`)) return;
+  const filterData = () => {
+    let result = allUsers;
+
+    if (typeFilter === 'clients') {
+      result = result.filter(u => !u.is_provider && !u.is_admin);
+    } else if (typeFilter === 'providers') {
+      result = result.filter(u => u.is_provider);
+    }
+
+    if (statusFilter === 'active') {
+      result = result.filter(u => !u.is_banned);
+    } else if (statusFilter === 'banned') {
+      result = result.filter(u => u.is_banned);
+    }
+
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      result = result.filter(u => 
+        (u.full_name?.toLowerCase() || "").includes(lowerTerm) ||
+        (u.email?.toLowerCase() || "").includes(lowerTerm) ||
+        (u.phone || "").includes(lowerTerm)
+      );
+    }
+
+    setDisplayedUsers(result);
+  };
+
+  // --- الإجراءات المعدلة (ترتبط بالـ API) ---
+
+  const handleToggleBan = async (id: string, currentStatus: boolean, userName: string) => {
+    const actionText = currentStatus ? "فك الحظر عن" : "حظر";
+    if (!confirm(`هل أنت متأكد من ${actionText} المستخدم "${userName}"؟`)) return;
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ is_banned: !currentStatus })
-        .eq('id', id);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("جلسة العمل مفقودة");
 
-      if (error) throw error;
-      setUsers(prev => prev.map(u => u.id === id ? { ...u, is_banned: !currentStatus } : u));
-      alert(`تم ${action} المستخدم بنجاح.`);
+      // إعداد تفاصيل السجل
+      const newStatus = !currentStatus;
+      const logMsg = newStatus 
+        ? `تم حظر المستخدم: ${userName}` 
+        : `تم فك الحظر عن المستخدم: ${userName}`;
+
+      const response = await fetch('/api/admin/users/action', {
+          method: 'POST',
+          headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ 
+              action: 'toggle_ban', 
+              userId: id, 
+              newStatus: newStatus,
+              logDetails: logMsg
+          })
+      });
+
+      if (!response.ok) {
+          const res = await response.json();
+          throw new Error(res.error || "فشل العملية");
+      }
+      
+      // تحديث الحالة محلياً
+      setAllUsers(prev => prev.map(u => u.id === id ? { ...u, is_banned: newStatus } : u));
+      alert(`تم ${actionText} المستخدم بنجاح.`);
+
     } catch (error: any) {
       alert("حدث خطأ: " + error.message);
     }
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
+ const handleDeleteUser = async (id: string, userName: string) => {
+    if (!confirm(`تحذير: سيتم حذف حساب "${userName}" وجميع بياناته نهائياً.\nهل أنت متأكد؟`)) return;
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = 
-      (user.full_name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (user.email?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (user.phone || "").includes(searchTerm);
-    const matchesFilter = filter === 'all' ? true : filter === 'banned' ? user.is_banned : !user.is_banned;
-    return matchesSearch && matchesFilter;
-  });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("جلسة العمل مفقودة");
+
+      const response = await fetch('/api/admin/users/action', {
+          method: 'POST',
+          headers: { 
+              'Content-Type': 'application/json',
+              // لا نحتاج Authorization في الهيدر لأننا نرسل requesterId في البودي للتحقق
+          },
+          body: JSON.stringify({ 
+              action: 'delete', 
+              userId: id, 
+              // 👇 هذا هو التعديل المهم: نرسل هوية الأدمن للحارس
+              requesterId: session.user.id, 
+              logDetails: `تم حذف المستخدم نهائياً: ${userName}`
+          })
+      });
+
+      const res = await response.json();
+
+      if (!response.ok) {
+          // هنا ستظهر رسالة "ليس لديك صلاحية" إذا منعه الحارس
+          throw new Error(res.error || "فشل الحذف");
+      }
+      
+      // تحديث الواجهة بعد النجاح
+      setAllUsers(prev => prev.filter(u => u.id !== id));
+      alert("✅ " + (res.message || "تم حذف المستخدم نهائياً."));
+
+    } catch (error: any) {
+      console.error(error);
+      alert("❌ " + error.message);
+    }
+  };
+
+  const handleResetPassword = async (email: string) => {
+    if (!confirm(`هل تريد إرسال رابط إعادة تعيين كلمة المرور إلى ${email}؟`)) return;
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/update-password`,
+    });
+
+    if (error) alert("خطأ: " + error.message);
+    else alert("تم إرسال رابط إعادة التعيين إلى بريد المستخدم.");
+  };
+
+  const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
 
   const menuItems = [
     { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
@@ -139,16 +237,13 @@ export default function CustomersPage() {
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
           <Menu size={24} />
         </button>
-
         <Link href="/" className="absolute left-1/2 -translate-x-1/2">
            <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
         </Link>
-
         <div className="relative">
           <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
             <User size={20} />
           </button>
-          
           {isProfileMenuOpen && (
             <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
               <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
@@ -158,24 +253,13 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* Sidebar Overlay (Mobile) */}
-      {isSidebarOpen && (
-        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
-      )}
-
-      {/* Sidebar */}
+      {/* Sidebar & Overlay */}
+      {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />}
       <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
-        
-        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white">
-          <X size={24} />
-        </button>
-
+        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white"><X size={24} /></button>
         <div className="mb-10 flex justify-center pt-4">
-          <Link href="/" title="العودة للرئيسية">
-             <Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
-          </Link>
+          <Link href="/" title="العودة للرئيسية"><Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" /></Link>
         </div>
-
         <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
           {menuItems.map((item, i) => item.show && (
             <Link key={i} href={item.href} onClick={() => setSidebarOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
@@ -190,41 +274,42 @@ export default function CustomersPage() {
         <header className="hidden md:flex justify-between items-center mb-10">
             <div>
                 <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-                <Users className="text-[#C89B3C]" /> إدارة العملاء
+                <Users className="text-[#C89B3C]" /> إدارة {typeFilter === 'clients' ? 'العملاء' : 'مزودي الخدمة'}
                 </h1>
-                <p className="text-white/60">متابعة السياح والزوار المسجلين في المنصة.</p>
+                <p className="text-white/60">متابعة {typeFilter === 'clients' ? 'السياح والزوار' : 'أصحاب الخدمات'} المسجلين في المنصة.</p>
             </div>
-            <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
-                <Home size={20} className="text-white/70" />
-            </Link>
+            <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي"><Home size={20} className="text-white/70" /></Link>
         </header>
 
-        {/* Mobile Header Title */}
+        {/* Mobile Title */}
         <div className="md:hidden mb-6">
-             <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
-                <Users className="text-[#C89B3C]" size={24} /> إدارة العملاء
-             </h1>
-             <p className="text-white/60 text-sm">متابعة السياح والزوار.</p>
+             <h1 className="text-2xl font-bold mb-1 flex items-center gap-2"><Users className="text-[#C89B3C]" size={24} /> إدارة العملاء</h1>
         </div>
 
-        {/* بطاقات الإحصائيات */}
+        {/* بطاقات الإحصائيات (قابلة للنقر الآن) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 p-6 rounded-2xl flex items-center justify-between">
+            <div 
+              onClick={() => setTypeFilter('clients')}
+              className={`cursor-pointer border p-6 rounded-2xl flex items-center justify-between transition-all duration-300 ${typeFilter === 'clients' ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500 ring-1 ring-blue-500/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+            >
                 <div>
-                    <p className="text-blue-400 text-sm font-bold mb-1">إجمالي العملاء (السياح)</p>
+                    <p className={`text-sm font-bold mb-1 ${typeFilter === 'clients' ? 'text-blue-400' : 'text-gray-400'}`}>إجمالي العملاء (السياح)</p>
                     <h2 className="text-4xl font-bold text-white">{stats.clients}</h2>
                 </div>
-                <div className="w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${typeFilter === 'clients' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/10 text-white/50'}`}>
                     <Users size={24} />
                 </div>
             </div>
 
-            <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 border border-purple-500/20 p-6 rounded-2xl flex items-center justify-between">
+            <div 
+              onClick={() => setTypeFilter('providers')}
+              className={`cursor-pointer border p-6 rounded-2xl flex items-center justify-between transition-all duration-300 ${typeFilter === 'providers' ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500 ring-1 ring-purple-500/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+            >
                 <div>
-                    <p className="text-purple-400 text-sm font-bold mb-1">إجمالي مزودي الخدمة</p>
+                    <p className={`text-sm font-bold mb-1 ${typeFilter === 'providers' ? 'text-purple-400' : 'text-gray-400'}`}>إجمالي مزودي الخدمة</p>
                     <h2 className="text-4xl font-bold text-white">{stats.providers}</h2>
                 </div>
-                <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${typeFilter === 'providers' ? 'bg-purple-500/20 text-purple-400' : 'bg-white/10 text-white/50'}`}>
                     <Briefcase size={24} />
                 </div>
             </div>
@@ -235,45 +320,51 @@ export default function CustomersPage() {
           <div className="relative flex-1">
             <Search className="absolute right-3 top-3 text-white/40" size={20} />
             <input 
-              type="text" placeholder="بحث..." 
+              type="text" placeholder="بحث بالاسم، الإيميل، أو الجوال..." 
               value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
               className="w-full bg-black/20 border border-white/10 rounded-xl py-2.5 pr-10 pl-4 text-white focus:border-[#C89B3C] outline-none"
             />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
-            <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${filter === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>الكل</button>
-            <button onClick={() => setFilter('active')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${filter === 'active' ? "bg-emerald-500 text-white" : "bg-black/20 text-white/60"}`}>نشط</button>
-            <button onClick={() => setFilter('banned')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${filter === 'banned' ? "bg-red-500 text-white" : "bg-black/20 text-white/60"}`}>محظور</button>
+            <button onClick={() => setStatusFilter('all')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${statusFilter === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>الكل</button>
+            <button onClick={() => setStatusFilter('active')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${statusFilter === 'active' ? "bg-emerald-500 text-white" : "bg-black/20 text-white/60"}`}>نشط</button>
+            <button onClick={() => setStatusFilter('banned')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${statusFilter === 'banned' ? "bg-red-500 text-white" : "bg-black/20 text-white/60"}`}>محظور</button>
           </div>
         </div>
 
-        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl min-h-[400px]">
           {loading ? (
             <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="p-20 text-center text-white/40">لا يوجد عملاء مطابقين.</div>
+          ) : displayedUsers.length === 0 ? (
+            <div className="p-20 text-center text-white/40 flex flex-col items-center">
+                <Search size={40} className="mb-4 opacity-20"/>
+                لا يوجد مستخدمين مطابقين للبحث أو الفلتر.
+            </div>
           ) : (
             <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-right min-w-[900px]">
+              <table className="w-full text-right min-w-[1000px]">
                 <thead className="bg-black/20 text-white/50 text-xs uppercase">
                   <tr>
-                    <th className="px-6 py-4">العميل</th>
-                    <th className="px-6 py-4">معلومات الاتصال</th>
+                    <th className="px-6 py-4">المستخدم</th>
+                    <th className="px-6 py-4">بيانات التواصل</th>
                     <th className="px-6 py-4">تاريخ الانضمام</th>
                     <th className="px-6 py-4">الحالة</th>
-                    <th className="px-6 py-4 text-center">الإجراءات</th>
+                    <th className="px-6 py-4 text-center">إجراءات سريعة</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm">
-                  {filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-white/5 transition">
+                  {displayedUsers.map((user) => (
+                    <tr key={user.id} className="hover:bg-white/5 transition group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${user.is_banned ? 'bg-red-500/20 text-red-500' : 'bg-[#C89B3C]/20 text-[#C89B3C]'}`}>
                             {user.full_name ? user.full_name.charAt(0) : <UserCheck size={18}/>}
                           </div>
                           <div>
-                            <div className="font-bold text-white">{user.full_name || "مستخدم بدون اسم"}</div>
+                            <div className="font-bold text-white flex items-center gap-2">
+                                {user.full_name || "مستخدم بدون اسم"}
+                                {user.is_provider && <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded border border-purple-500/20">مزود</span>}
+                            </div>
                             <div className="text-xs text-white/40 font-mono">ID: {user.id.slice(0, 6)}...</div>
                           </div>
                         </div>
@@ -282,16 +373,29 @@ export default function CustomersPage() {
                         <div className="flex items-center gap-2 text-white/80 text-xs"><Mail size={14} className="text-[#C89B3C]" /> {user.email}</div>
                         <div className="flex items-center gap-2 text-white/60 text-xs"><Phone size={14} /> {user.phone || "-"}</div>
                       </td>
-                      <td className="px-6 py-4 text-white/50 text-xs flex items-center gap-2">
-                        <Calendar size={14} /> {new Date(user.created_at).toLocaleDateString('ar-SA')}
+                      <td className="px-6 py-4 text-white/50 text-xs">
+                        <div className="flex items-center gap-2"><Calendar size={14} /> {new Date(user.created_at).toLocaleDateString('ar-SA')}</div>
                       </td>
                       <td className="px-6 py-4">
-                        {user.is_banned ? <span className="px-2 py-1 rounded bg-red-500/10 text-red-400 text-xs border border-red-500/20">محظور</span> : <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20">نشط</span>}
+                        {user.is_banned ? 
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-500/10 text-red-400 text-xs border border-red-500/20"><Ban size={12}/> محظور</span> 
+                            : 
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20"><CheckCircle size={12}/> نشط</span>
+                        }
                       </td>
-                      <td className="px-6 py-4 text-center">
-                        <button onClick={() => toggleBan(user.id, user.is_banned)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${user.is_banned ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white" : "bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white"}`}>
-                          {user.is_banned ? "فك الحظر" : "حظر"}
-                        </button>
+                      <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => setSelectedUser(user)} title="عرض التفاصيل" className="p-2 bg-white/5 hover:bg-white/10 text-blue-400 rounded-lg transition"><Eye size={16} /></button>
+                            <button onClick={() => handleResetPassword(user.email)} title="إرسال رابط استعادة كلمة المرور" className="p-2 bg-white/5 hover:bg-white/10 text-yellow-400 rounded-lg transition"><KeyRound size={16} /></button>
+                            <button 
+                                onClick={() => handleToggleBan(user.id, user.is_banned, user.full_name || "المستخدم")} 
+                                title={user.is_banned ? "فك الحظر" : "حظر"} 
+                                className={`p-2 bg-white/5 hover:bg-white/10 rounded-lg transition ${user.is_banned ? "text-emerald-400" : "text-orange-400"}`}
+                            >
+                                {user.is_banned ? <CheckCircle size={16}/> : <Ban size={16}/>}
+                            </button>
+                            <button onClick={() => handleDeleteUser(user.id, user.full_name || "المستخدم")} title="حذف نهائي" className="p-2 bg-white/5 hover:bg-red-500/20 text-red-400 hover:text-red-500 rounded-lg transition"><Trash2 size={16} /></button>
+                          </div>
                       </td>
                     </tr>
                   ))}
@@ -301,6 +405,53 @@ export default function CustomersPage() {
           )}
         </div>
       </div>
+
+      {/* Modal: User Details */}
+      {selectedUser && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-[#252525] w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl overflow-hidden">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+                    <h3 className="text-xl font-bold flex items-center gap-2"><User size={20} className="text-[#C89B3C]"/> تفاصيل المستخدم</h3>
+                    <button onClick={() => setSelectedUser(null)} className="text-white/50 hover:text-white"><XCircle size={24}/></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-16 h-16 rounded-full bg-[#C89B3C]/20 flex items-center justify-center text-[#C89B3C] text-2xl font-bold">
+                            {selectedUser.full_name?.charAt(0)}
+                        </div>
+                        <div>
+                            <h4 className="text-xl font-bold">{selectedUser.full_name}</h4>
+                            <p className="text-sm text-white/50">{selectedUser.is_provider ? 'مزود خدمة' : 'سائح/زائر'}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-black/30 p-3 rounded-lg border border-white/5">
+                            <label className="text-xs text-white/40 block mb-1">البريد الإلكتروني</label>
+                            <div className="text-sm select-all dir-ltr text-left">{selectedUser.email}</div>
+                        </div>
+                        <div className="bg-black/30 p-3 rounded-lg border border-white/5">
+                            <label className="text-xs text-white/40 block mb-1">رقم الجوال</label>
+                            <div className="text-sm select-all dir-ltr text-left">{selectedUser.phone || "غير مسجل"}</div>
+                        </div>
+                        <div className="bg-black/30 p-3 rounded-lg border border-white/5">
+                            <label className="text-xs text-white/40 block mb-1">تاريخ الانضمام</label>
+                            <div className="text-sm">{new Date(selectedUser.created_at).toLocaleDateString('ar-SA')}</div>
+                        </div>
+                        <div className="bg-black/30 p-3 rounded-lg border border-white/5">
+                            <label className="text-xs text-white/40 block mb-1">الحالة</label>
+                            <div className={`text-sm ${selectedUser.is_banned ? 'text-red-400' : 'text-emerald-400'}`}>{selectedUser.is_banned ? 'محظور' : 'نشط'}</div>
+                        </div>
+                    </div>
+                </div>
+                <div className="p-4 bg-white/5 border-t border-white/10 flex justify-end gap-2">
+                    <button onClick={() => setSelectedUser(null)} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition">إغلاق</button>
+                    <button onClick={() => {handleDeleteUser(selectedUser.id, selectedUser.full_name); setSelectedUser(null);}} className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg text-sm transition border border-red-500/20">حذف الحساب</button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </main>
   );
 }

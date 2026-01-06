@@ -1,49 +1,57 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
+import Image from "next/image"; // نستخدمه للهيدر فقط
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
-import { MapPin, Star, User, ArrowRight, Loader2, Utensils, BedDouble } from "lucide-react";
+import { ArrowRight, Loader2, BedDouble, Hotel, MapPin, Utensils } from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
 export default function FacilitiesPage() {
   const [facilities, setFacilities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('all'); // لإضافة فلترة إذا احتجت مستقبلاً
 
   useEffect(() => {
     fetchFacilities();
   }, []);
 
   const fetchFacilities = async () => {
-    const { data, error } = await supabase
-      .from('services')
-      .select(`*, profiles:provider_id (full_name, avatar_url)`)
-      .in('service_type', ['accommodation', 'food'])
-      .eq('status', 'approved');
+    try {
+      // ✅ 1. الجلب من جدول places (وليس services)
+      // ✅ 2. النوع accommodation (حسب كود الأدمن)
+      const { data, error } = await supabase
+        .from('places')
+        .select('*')
+        .eq('type', 'accommodation') 
+        .eq('is_active', true);
 
-    if (data) setFacilities(data);
-    setLoading(false);
+      if (error) throw error;
+
+      if (data) {
+        setFacilities(data);
+      }
+    } catch (err) {
+      console.error("خطأ في جلب المرافق:", err);
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const filteredData = filter === 'all' 
-    ? facilities 
-    : facilities.filter(item => item.service_type === filter);
 
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
       
-      {/* HEADER SECTION */}
+      {/* HEADER */}
       <div className="relative h-[40vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
-        {/* ✅ تم استبدال الصورة المكسورة بالشعار */}
         <Image 
           src="/logo.png" 
           alt="Sayyir Logo" 
           fill 
+          sizes="100vw"
           className="object-contain p-20 opacity-30"
+          priority
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/70 to-[#0a0a0a]" />
         
@@ -59,22 +67,20 @@ export default function FacilitiesPage() {
         </Link>
       </div>
 
-      {/* FILTER TABS */}
-      <div className="container mx-auto px-4 mt-8 flex justify-center gap-4">
-        <button onClick={() => setFilter('all')} className={`px-6 py-2 rounded-full border transition ${filter === 'all' ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'border-white/20 text-white/60 hover:border-white'}`}>الكل</button>
-        <button onClick={() => setFilter('accommodation')} className={`px-6 py-2 rounded-full border transition flex items-center gap-2 ${filter === 'accommodation' ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'border-white/20 text-white/60 hover:border-white'}`}><BedDouble size={18} /> سكن</button>
-        <button onClick={() => setFilter('food')} className={`px-6 py-2 rounded-full border transition flex items-center gap-2 ${filter === 'food' ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'border-white/20 text-white/60 hover:border-white'}`}><Utensils size={18} /> مطاعم</button>
-      </div>
-
-      {/* CARDS GRID */}
-      <div className="container mx-auto px-4 py-12">
+      {/* LIST */}
+      <div className="container mx-auto px-4 py-16">
         {loading ? (
-          <div className="flex justify-center h-40 items-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div>
-        ) : filteredData.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10"><p className="text-white/30">لا توجد خدمات متاحة حالياً</p></div>
+          <div className="flex justify-center h-60 items-center">
+            <Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" />
+          </div>
+        ) : facilities.length === 0 ? (
+          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10">
+              <p className="text-white/30 mb-2">لا توجد مرافق متاحة حالياً</p>
+              <p className="text-xs text-white/20">تأكد من إضافة 'مرفق' وتفعيله من لوحة التحكم</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredData.map((item) => (<FacilityCard key={item.id} data={item} />))}
+            {facilities.map((item) => (<FacilityCard key={item.id} data={item} />))}
           </div>
         )}
       </div>
@@ -83,24 +89,64 @@ export default function FacilitiesPage() {
 }
 
 function FacilityCard({ data }: { data: any }) {
-  const isFood = data.service_type === 'food';
+  // ✅ استخدام media_urls بدلاً من images
+  // إذا لم توجد صورة، نستخدم صورة افتراضية
+  // ملاحظة: تأكد من وجود صورة اسمها placeholder.jpg في مجلد public لتختفي رسالة 404
+  const imageUrl = data.media_urls && data.media_urls.length > 0 
+    ? data.media_urls[0] 
+    : "/placeholder.jpg";
+
   return (
-    <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30">
-      <div className="relative h-64 w-full overflow-hidden">
-        <Image src={data.images && data.images[0] ? data.images[0] : "/placeholder.jpg"} alt={data.title} fill className="object-cover transition-transform duration-700 group-hover:scale-110"/>
-        <div className={`absolute top-4 left-4 backdrop-blur-md px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${isFood ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-           {isFood ? <Utensils size={14} /> : <BedDouble size={14} />}
-           <span>{isFood ? 'مطعم' : 'سكن'}</span>
+    <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
+      <div className="relative h-64 w-full overflow-hidden shrink-0">
+        
+        {/* ✅ الحل السحري: استخدام img بدلاً من Image لتفادي مشاكل الدومين */}
+        <img 
+          src={imageUrl} 
+          alt={data.name} 
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+          onError={(e) => {
+            // كود احتياطي: إذا فشلت الصورة، استبدلها برابط شعار الموقع أو أي صورة مضمونة
+            e.currentTarget.src = "/logo.png"; 
+            e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50"; // تنسيق للصورة البديلة
+          }}
+        />
+        
+        <div className="absolute top-4 left-4 backdrop-blur-md px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
+           <BedDouble size={14} />
+           <span>سكن</span>
         </div>
+
+        {/* عرض النوع الفرعي (فندق، شاليه...) */}
+        {data.subtype && (
+            <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg text-xs text-white flex items-center gap-1 border border-white/10">
+                <Hotel size={12} /> {data.subtype}
+            </div>
+        )}
       </div>
-      <div className="p-6">
+
+      <div className="p-6 flex flex-col flex-1">
         <div className="flex justify-between items-start mb-2">
-           <h3 className="text-xl font-bold group-hover:text-[#C89B3C] transition">{data.title}</h3>
-           <span className="text-[#C89B3C] font-bold text-lg">{data.price} ﷼</span>
+           <h3 className="text-xl font-bold group-hover:text-[#C89B3C] transition">{data.name}</h3>
+           <span className="text-[#C89B3C] font-bold text-lg">
+             {data.price ? `${data.price} ﷼` : 'مجاني'}
+           </span>
         </div>
-        <button className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-[#C89B3C] hover:text-[#2B1F17] transition-all mt-4">
-          {isFood ? 'احجز طاولة' : 'عرض الغرف'}
-        </button>
+        
+        {/* المدينة */}
+        {data.city && (
+            <div className="flex items-center gap-1 text-xs text-white/50 mb-3">
+                <MapPin size={14} /> {data.city}
+            </div>
+        )}
+
+        <p className="text-white/60 text-sm line-clamp-2 mb-4 flex-1">{data.description}</p>
+        
+        <Link href={`/place/${data.id}`} className="w-full block mt-auto">
+            <button className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-[#C89B3C] hover:text-[#2B1F17] transition-all">
+              عرض التفاصيل والحجز
+            </button>
+        </Link>
       </div>
     </div>
   );

@@ -2,13 +2,13 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
+// حذفنا import Image من next/image لتجنب المشاكل
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  LayoutDashboard, Users, CheckCircle, XCircle, Clock, Search, Loader2, Eye, LogOut, 
+  LayoutDashboard, Users, CheckCircle, XCircle, Search, Loader2, Eye, LogOut, 
   MapPin, Phone, Mail, Briefcase, X, ShieldAlert, Map as MapIcon, DollarSign, Settings, UserPlus,
-  Download, FileText, LayoutList, Menu, User, Home
+  Download, FileText, LayoutList, Menu, User, Home, Edit3 
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -18,9 +18,14 @@ import "mapbox-gl/dist/mapbox-gl.css";
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
 interface ProviderRequest {
-  id: string; name: string; email: string; phone: string; service_type: string;
+  id: string; 
+  name: string; 
+  email: string; 
+  phone: string; 
+  service_type: string;
   status: 'pending' | 'approved' | 'rejected';
-  created_at: string; dynamic_data: any; 
+  created_at: string; 
+  dynamic_data: any; 
 }
 
 export default function RequestsPage() {
@@ -34,8 +39,6 @@ export default function RequestsPage() {
   const [selectedRequest, setSelectedRequest] = useState<ProviderRequest | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [processing, setProcessing] = useState(false); 
-
-  // حالات القائمة الجانبية للجوال
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
 
@@ -61,30 +64,104 @@ export default function RequestsPage() {
     setLoading(false);
   };
 
-  const isImageArray = (value: any) => 
-    Array.isArray(value) && value.length > 0 && typeof value[0] === 'string' && 
-    (value[0].startsWith('http') || value[0].includes('supabase.co'));
+  // ✅ دالة استخراج الصور (الجوكر)
+  const extractImages = (value: any): string[] => {
+    if (!value) return [];
+    
+    let rawList: any[] = [];
 
-  const isLocation = (value: any) => value && typeof value === 'object' && 'lat' in value && 'lng' in value;
+    if (Array.isArray(value)) {
+        rawList = value;
+    } else if (typeof value === 'string') {
+        if (value.trim().startsWith('[') || value.trim().startsWith('{')) {
+            try {
+                const parsed = JSON.parse(value);
+                rawList = Array.isArray(parsed) ? parsed : [parsed];
+            } catch (e) {
+                rawList = [value];
+            }
+        } else {
+            rawList = [value];
+        }
+    }
+
+    // تصفية الروابط الصالحة فقط
+    return rawList
+        .map(item => typeof item === 'string' ? item : '')
+        .filter(item => {
+            const lower = item.toLowerCase();
+            return (
+                lower.includes('http') && 
+                (
+                    lower.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp|heic|mp4|mov)$/) || 
+                    lower.includes('supabase.co') || 
+                    lower.includes('/storage/v1/object')
+                )
+            );
+        })
+        .map(url => url.replace(/["'[\]]/g, '')); 
+  };
+
+  const isLocation = (value: any) => {
+      if (typeof value === 'object' && value !== null && 'lat' in value && 'lng' in value) return true;
+      if (typeof value === 'string' && value.includes('"lat"') && value.includes('"lng"')) return true;
+      return false;
+  };
+
+  const getParseLocation = (value: any) => {
+      if (typeof value === 'object') return value;
+      try { return JSON.parse(value); } catch { return null; }
+  };
 
   const getFieldLabel = (key: string) => {
     const field = fieldDefinitions.find(f => f.id === key);
-    return field ? field.label : "مرفق / معلومة إضافية";
+    return field ? field.label : key.replace(/_/g, ' ');
   };
 
+  // ✅ هنا التعديل المهم: إضافة requesterId للطلب
   const handleAction = async (id: string, action: 'approve' | 'reject') => {
-    if (!confirm(action === 'approve' ? "تأكيد القبول؟" : "تأكيد الرفض؟")) return;
+    let reason = "";
+    
+    if (action === 'approve') {
+        if (!confirm("تأكيد قبول الطلب؟ سيتم إنشاء حساب وإرسال كلمة المرور.")) return;
+    } else {
+        const input = prompt("الرجاء كتابة سبب الرفض (سيتم إرساله للمستخدم):");
+        if (input === null) return; 
+        if (!input.trim()) { alert("يجب كتابة سبب للرفض."); return; }
+        reason = input;
+    }
+
     setProcessing(true);
     try {
+      // 1. الحصول على جلسة المستخدم الحالي (الأدمن الذي ينفذ العملية)
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+          throw new Error("يجب تسجيل الدخول أولاً");
+      }
+
+      // 2. إرسال الطلب مع requesterId
       const response = await fetch(`/api/admin/${action}`, { 
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ requestId: id }) 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify({ 
+            requestId: id, 
+            reason: reason,
+            requesterId: session.user.id // ⚠️ هذا السطر ضروري جداً للحارس
+        }) 
       });
+
       const result = await response.json();
       if(!response.ok) throw new Error(result.error);
+      
       alert(result.message);
       fetchData();
       setSelectedRequest(null);
-    } catch(e: any) { alert("خطأ: " + e.message); } finally { setProcessing(false); }
+    } catch(e: any) { 
+        alert("خطأ: " + e.message); 
+    } finally { 
+        setProcessing(false); 
+    }
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
@@ -104,21 +181,18 @@ export default function RequestsPage() {
   return (
     <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      {/* Mobile Header Bar */}
+      {/* Mobile Header */}
       <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
           <Menu size={24} />
         </button>
-
         <Link href="/" className="absolute left-1/2 -translate-x-1/2">
-           <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
+           <img src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
         </Link>
-
         <div className="relative">
           <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
             <User size={20} />
           </button>
-          
           {isProfileMenuOpen && (
             <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
               <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
@@ -128,24 +202,12 @@ export default function RequestsPage() {
         </div>
       </div>
 
-      {/* Sidebar Overlay (Mobile) */}
-      {isSidebarOpen && (
-        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
-      )}
-
+      {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />}
+      
       {/* Sidebar */}
       <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
-        
-        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white">
-          <X size={24} />
-        </button>
-
-        <div className="mb-10 flex justify-center pt-4">
-          <Link href="/" title="العودة للرئيسية">
-             <Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
-          </Link>
-        </div>
-
+        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white"><X size={24} /></button>
+        <div className="mb-10 flex justify-center pt-4"><Link href="/"><img src="/logo.png" alt="Admin" width={120} height={50} className="opacity-90 hover:opacity-100 transition" /></Link></div>
         <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
           {menuItems.map((item, i) => item.show && (
             <Link key={i} href={item.href} onClick={() => setSidebarOpen(false)} className={`relative flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
@@ -163,17 +225,24 @@ export default function RequestsPage() {
                 <h1 className="text-3xl font-bold mb-2 flex items-center gap-2"><Briefcase className="text-[#C89B3C]" /> طلبات الانضمام</h1>
                 <p className="text-white/60">مراجعة واعتماد شركاء النجاح الجدد.</p>
             </div>
-            <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
-                <Home size={20} className="text-white/70" />
-            </Link>
+            
+            <div className="flex gap-3">
+                 <Link href="/register/provider" className="flex items-center gap-2 px-4 py-2 bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 rounded-xl hover:bg-[#C89B3C]/20 transition font-bold text-sm" target="_blank">
+                    <Eye size={18} /> معاينة النموذج
+                 </Link>
+                 <Link href="/admin/settings" className="flex items-center gap-2 px-4 py-2 bg-white/5 text-white border border-white/10 rounded-xl hover:bg-white/10 transition font-bold text-sm">
+                    <Edit3 size={18} /> تعديل الحقول
+                 </Link>
+            </div>
         </header>
 
-        {/* Mobile Header Title */}
-        <div className="md:hidden mb-6">
-             <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
-                <Briefcase className="text-[#C89B3C]" size={24} /> طلبات الانضمام
-             </h1>
-             <p className="text-white/60 text-sm">مراجعة طلبات الشركاء.</p>
+        {/* Mobile Header */}
+        <div className="md:hidden mb-6 flex justify-between items-end">
+              <div>
+                 <h1 className="text-2xl font-bold mb-1 flex items-center gap-2"><Briefcase className="text-[#C89B3C]" size={24} /> طلبات الانضمام</h1>
+                 <p className="text-white/60 text-sm">مراجعة طلبات الشركاء.</p>
+              </div>
+              <Link href="/register/provider" className="p-2 bg-[#C89B3C]/10 text-[#C89B3C] rounded-lg border border-[#C89B3C]/20"><Eye size={20} /></Link>
         </div>
         
         <div className="flex flex-col md:flex-row gap-4 mb-6 bg-white/5 p-4 rounded-2xl border border-white/10">
@@ -209,6 +278,7 @@ export default function RequestsPage() {
           )}
         </div>
         
+        {/* Modal التفاصيل */}
         {selectedRequest && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in">
             <div className="bg-[#1a1a1a] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
@@ -238,7 +308,11 @@ export default function RequestsPage() {
                         <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2 border-b border-white/5 pb-3"><FileText size={18}/> تفاصيل إضافية</h4>
                         <div className="space-y-4">
                             {Object.entries(selectedRequest.dynamic_data || {}).map(([key, value]: any) => {
-                                if(!isLocation(value) && !isImageArray(value) && typeof value !== 'boolean') 
+                                const images = extractImages(value);
+                                const loc = getParseLocation(value);
+                                const isLoc = isLocation(loc);
+                                
+                                if (!isLoc && images.length === 0 && typeof value !== 'boolean' && typeof value !== 'object') 
                                     return (
                                         <div key={key}>
                                             <p className="text-white/40 text-xs mb-1">{getFieldLabel(key)}</p>
@@ -251,28 +325,42 @@ export default function RequestsPage() {
                     </div>
                 </div>
 
+                {/* عرض الخرائط */}
                 {Object.entries(selectedRequest.dynamic_data || {}).map(([key, value]: any) => {
-                    if (isLocation(value)) return <div key={key} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-lg"><div className="p-4 bg-white/5 flex justify-between items-center"><h4 className="font-bold text-white flex items-center gap-2"><MapPin className="text-[#C89B3C]" size={18}/> {getFieldLabel(key)}</h4><a href={`https://www.google.com/maps/search/?api=1&query=${value.lat},${value.lng}`} target="_blank" className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-3 py-1 rounded hover:bg-[#C89B3C]/20 transition">Google Maps ↗</a></div><div className="h-64 w-full relative"><Map initialViewState={{ latitude: value.lat, longitude: value.lng, zoom: 14 }} mapStyle="mapbox://styles/mapbox/streets-v12" mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}><Marker latitude={value.lat} longitude={value.lng} color="#C89B3C" /><NavigationControl position="top-left" /></Map></div></div>;
+                    const loc = getParseLocation(value);
+                    if (isLocation(loc)) return (
+                        <div key={key} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-lg">
+                            <div className="p-4 bg-white/5 flex justify-between items-center">
+                                <h4 className="font-bold text-white flex items-center gap-2"><MapPin className="text-[#C89B3C]" size={18}/> {getFieldLabel(key)}</h4>
+                                <a href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`} target="_blank" className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-3 py-1 rounded hover:bg-[#C89B3C]/20 transition">Google Maps ↗</a>
+                            </div>
+                            <div className="h-64 w-full relative">
+                                <Map initialViewState={{ latitude: loc.lat, longitude: loc.lng, zoom: 14 }} mapStyle="mapbox://styles/mapbox/streets-v12" mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}>
+                                    <Marker latitude={loc.lat} longitude={loc.lng} color="#C89B3C" />
+                                    <NavigationControl position="top-left" />
+                                </Map>
+                            </div>
+                        </div>
+                    );
                     return null;
                 })}
 
+                {/* الصور والمرفقات */}
                 {Object.entries(selectedRequest.dynamic_data || {}).map(([key, value]: any) => {
-                    if (isImageArray(value)) return (
+                    const images = extractImages(value); 
+                    
+                    if (images.length > 0) return (
                         <div key={key} className="bg-white/5 border border-white/10 rounded-2xl p-6">
                             <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2 border-b border-white/5 pb-3"><Download size={18}/> {getFieldLabel(key)}</h4>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {value.map((url: string, idx: number) => (
+                                {images.map((url: string, idx: number) => (
                                     <a key={idx} href={url} target="_blank" rel="noreferrer" className="group relative aspect-square rounded-xl overflow-hidden border border-white/10 hover:border-[#C89B3C] transition bg-black/20 block">
-                                        {url.match(/\.(mp4|mov|webm)$/i) ? (
-                                            <div className="w-full h-full flex items-center justify-center"><span className="bg-black/60 px-2 py-1 rounded text-xs text-white">فيديو 🎥</span></div>
-                                        ) : (
-                                            <img 
-    src={`${url}?t=${new Date(selectedRequest.created_at).getTime()}`} 
-    className="w-full h-full object-cover group-hover:scale-105 transition duration-500" 
-    alt="attachment" 
-    crossOrigin="anonymous"
-/>
-                                        )}
+                                        <img 
+                                            src={url} 
+                                            className="w-full h-full object-cover group-hover:scale-105 transition duration-500" 
+                                            alt={`attachment-${idx}`} 
+                                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} 
+                                        />
                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition backdrop-blur-sm"><span className="text-white font-bold text-sm">عرض</span></div>
                                     </a>
                                 ))}
@@ -282,6 +370,7 @@ export default function RequestsPage() {
                     return null;
                 })}
 
+                {/* الإقرارات */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <h4 className="text-[#C89B3C] font-bold mb-4 border-b border-white/5 pb-3">الإقرارات</h4>
                     <div className="space-y-3">
@@ -300,6 +389,7 @@ export default function RequestsPage() {
                 </div>
 
               </div>
+              
               {selectedRequest.status === 'pending' && (
                   <div className="p-6 border-t border-white/10 bg-[#222] flex gap-4">
                     <button onClick={() => handleAction(selectedRequest.id, 'approve')} disabled={processing} className="flex-1 bg-emerald-500 text-black font-bold py-3 rounded-xl hover:bg-emerald-400 transition flex justify-center gap-2 items-center">{processing ? <Loader2 className="animate-spin"/> : <><CheckCircle size={18}/> قبول</>}</button>

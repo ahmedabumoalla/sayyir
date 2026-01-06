@@ -4,7 +4,8 @@ export const dynamic = "force-dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+// 1. اضفنا أيقونة Home هنا
+import { Eye, EyeOff, Loader2, Home } from "lucide-react"; // <--- تعديل هنا
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
@@ -46,19 +47,15 @@ export default function LoginPage() {
         .single();
 
       if (profileError || !profile) {
-        router.replace("/"); // افتراضياً للصفحة الرئيسية
+        router.replace("/");
         return;
       }
 
-      // --- منطق التوجيه الجديد (كما طلبت تماماً) ---
       if (profile.is_super_admin || profile.is_admin) {
-        // 1. الأدمن -> لوحة الأدمن مباشرة
         router.replace("/admin/dashboard");
       } else if (profile.is_provider) {
-        // 2. مزود الخدمة -> لوحة المزود مباشرة (لأنه جاي يشتغل)
         router.replace("/provider/dashboard");
       } else {
-        // 3. العميل العادي -> الصفحة الرئيسية (عشان يتصفح)
         router.replace("/"); 
       }
 
@@ -71,6 +68,17 @@ export default function LoginPage() {
 
   return (
     <main dir="rtl" className="relative min-h-screen flex items-center justify-center bg-black overflow-hidden">
+      
+      {/* 2. زر الرجوع للرئيسية (تمت إضافته هنا في الزاوية) */}
+      <Link 
+        href="/" 
+        className="absolute top-6 right-6 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 transition-all text-white text-sm font-bold group"
+      >
+        <Home size={18} className="group-hover:text-[#C89B3C] transition-colors" />
+        <span className="group-hover:text-[#C89B3C] transition-colors">الرئيسية</span>
+      </Link>
+      {/* -------------------------------------------------- */}
+
       <video autoPlay muted loop playsInline className="fixed inset-0 w-full h-full object-cover pointer-events-none opacity-60">
         <source src="/hero.mp4" type="video/mp4" />
       </video>
@@ -79,7 +87,6 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md px-6 animate-in zoom-in-95 duration-500">
         <div className="rounded-2xl backdrop-blur-2xl bg-white/10 border border-white/20 shadow-2xl p-8 text-white">
           
-          {/* ✅ تم إعادة المدخل السري للأدمن هنا */}
           <div className="flex justify-center mb-8">
             <button 
               type="button" 

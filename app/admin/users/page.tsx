@@ -5,48 +5,60 @@ import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  Shield, ShieldCheck, UserPlus, Loader2, LogOut, LayoutDashboard, Settings, 
-  Users, Map, DollarSign, Activity, X, Check, Lock, Briefcase, ShieldAlert
+  Shield, UserPlus, Loader2, LogOut, LayoutDashboard, Settings, 
+  Users, Map, DollarSign, Activity, X, Check, Lock, Briefcase, ShieldAlert,
+  Trash2, Ban, Unlock
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// تعريف الصلاحيات المتاحة
+// تعريف الصلاحيات المتاحة (محدثة وشاملة)
 const ALL_PERMISSIONS = [
   {
-    category: "المستخدمين والشركاء",
+    category: "إدارة المستخدمين",
     icon: Users,
     items: [
-      { key: "manage_users", label: "إدارة العملاء (إيقاف/تفعيل)" },
-      { key: "manage_providers", label: "إدارة المزودين (قبول/رفض/إيقاف)" },
+      { key: "users_view", label: "مشاهدة قائمة المستخدمين" },
+      { key: "users_manage", label: "حظر/تفعيل المستخدمين" }, // للأدمن العادي
+      { key: "users_delete", label: "حذف المستخدمين نهائياً" }, // خطير
     ]
   },
   {
-    category: "المحتوى والمعالم",
+    category: "طلبات الانضمام والمزودين",
+    icon: Briefcase,
+    items: [
+      { key: "requests_view", label: "مشاهدة الطلبات" },
+      { key: "requests_approve", label: "قبول/رفض الطلبات" },
+      { key: "providers_manage", label: "إدارة بيانات المزودين" },
+    ]
+  },
+  {
+    category: "المعالم والمحتوى",
     icon: Map,
     items: [
-      { key: "add_landmark", label: "إضافة معلم جديد" },
-      { key: "edit_landmark", label: "تعديل/إخفاء معلم" },
-      { key: "manage_reviews", label: "إدارة التعليقات والتقييمات" },
+      { key: "landmarks_add", label: "إضافة معلم جديد" },
+      { key: "landmarks_edit", label: "تعديل وحذف المعالم" },
+      { key: "content_moderation", label: "حذف التعليقات المسيئة" },
     ]
   },
   {
-    category: "المالية والمدفوعات",
+    category: "المالية والأرباح",
     icon: DollarSign,
     items: [
-      { key: "view_financials", label: "مشاهدة الإيرادات والأرباح" },
-      { key: "refund_payments", label: "إجراء استرداد (Refund)" },
-      { key: "approve_payouts", label: "الموافقة على السحب البنكي" },
+      { key: "finance_view", label: "الاطلاع على الأرباح والداشبورد المالي" },
+      { key: "payouts_approve", label: "اعتماد طلبات السحب" },
+      { key: "refunds_manage", label: "إجراء عمليات الاسترداد" },
     ]
   },
   {
-    category: "النظام",
-    icon: Activity,
+    category: "النظام والإعدادات",
+    icon: ShieldAlert,
     items: [
-      { key: "view_logs", label: "مشاهدة سجلات النشاط" },
-      { key: "manage_settings", label: "الوصول للإعدادات العامة" },
+      { key: "logs_view", label: "مشاهدة سجلات النشاط" },
+      { key: "settings_manage", label: "تغيير إعدادات المنصة العامة" },
+      { key: "admins_manage", label: "إدارة فريق العمل (للسوبر أدمن فقط)" }, // عادة للسوبر فقط
     ]
   }
 ];
@@ -59,18 +71,20 @@ interface Profile {
   role: string;
   is_admin: boolean;
   is_super_admin: boolean;
+  is_blocked: boolean; // ✅ أضفنا حالة الحظر
   permissions?: any; 
 }
 
 export default function UsersManagement() {
   const router = useRouter();
-  const pathname = usePathname(); // لمعرفة الصفحة الحالية
+  const pathname = usePathname();
   const [admins, setAdmins] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [newUser, setNewUser] = useState({ fullName: "", email: "", phone: "" });
+  const [processingId, setProcessingId] = useState<string | null>(null); // للعمليات
 
   const [selectedAdmin, setSelectedAdmin] = useState<Profile | null>(null);
   const [tempPermissions, setTempPermissions] = useState<Record<string, boolean>>({});
@@ -120,6 +134,48 @@ export default function UsersManagement() {
     }
   };
 
+  // --- دالة الحذف ---
+  const handleDeleteAdmin = async (targetId: string) => {
+    if (!confirm("⚠️ هل أنت متأكد من حذف هذا الأدمن نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.")) return;
+    setProcessingId(targetId);
+    try {
+        const res = await fetch('/api/admin/delete-user', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ targetUserId: targetId, requesterId: currentUserId })
+        });
+        if (!res.ok) throw new Error("فشل الحذف");
+        alert("✅ تم حذف المسؤول بنجاح");
+        fetchAdmins();
+    } catch (e) {
+        alert("فشل الحذف، تأكد من الصلاحيات");
+    } finally {
+        setProcessingId(null);
+    }
+  };
+
+  // --- دالة الحظر/فك الحظر ---
+  const handleToggleBlock = async (admin: Profile) => {
+    const action = admin.is_blocked ? "فك الحظر" : "حظر";
+    if (!confirm(`هل تريد ${action} عن ${admin.full_name}؟\n(لن يتمكن من الدخول للمنصة في حال الحظر)`)) return;
+    
+    setProcessingId(admin.id);
+    try {
+        const res = await fetch('/api/admin/toggle-block', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ targetUserId: admin.id, requesterId: currentUserId, block: !admin.is_blocked })
+        });
+        if (!res.ok) throw new Error("فشل التعديل");
+        alert(`✅ تم ${action} بنجاح`);
+        fetchAdmins();
+    } catch (e) {
+        alert("حدث خطأ أثناء تغيير الحالة");
+    } finally {
+        setProcessingId(null);
+    }
+  };
+
   const openPermissionsModal = (admin: Profile) => {
     setSelectedAdmin(admin);
     setTempPermissions(admin.permissions || {});
@@ -145,8 +201,7 @@ export default function UsersManagement() {
           requesterId: currentUserId 
         })
       });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error);
+      if (!res.ok) throw new Error("فشل التحديث");
 
       alert("✅ تم تحديث الصلاحيات بنجاح");
       setSelectedAdmin(null);
@@ -164,7 +219,6 @@ export default function UsersManagement() {
     router.replace("/login");
   };
 
-  // قائمة التنقل الموحدة (نفس الموجودة في باقي الصفحات)
   const menuItems = [
     { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
     { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true },
@@ -178,7 +232,7 @@ export default function UsersManagement() {
   return (
     <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className}`}>
       
-      {/* Sidebar الموحد */}
+      {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-black/40 border-l border-white/10 p-6 backdrop-blur-md">
         <div className="mb-10 flex justify-center pt-4">
           <Image src="/logo.png" alt="Sayyir Admin" width={120} height={50} priority className="opacity-90" />
@@ -208,7 +262,6 @@ export default function UsersManagement() {
           <p className="text-white/60">أضف مسؤولين جدد للنظام وحدد صلاحياتهم بدقة.</p>
         </header>
 
-        {/* إضافة مسؤول (للسوبر أدمن فقط) */}
         {isSuperAdmin && (
           <div className="bg-gradient-to-br from-white/10 to-white/5 border border-white/10 rounded-2xl p-6 mb-10 shadow-lg">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -235,7 +288,6 @@ export default function UsersManagement() {
           </div>
         )}
 
-        {/* جدول المسؤولين */}
         <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
           <div className="p-4 border-b border-white/10 bg-black/20 flex justify-between items-center">
             <h3 className="font-bold text-white">قائمة المسؤولين</h3>
@@ -256,13 +308,16 @@ export default function UsersManagement() {
               </thead>
               <tbody className="divide-y divide-white/5 text-sm">
                 {admins.map((user) => (
-                  <tr key={user.id} className="hover:bg-white/5 transition">
+                  <tr key={user.id} className={`hover:bg-white/5 transition ${user.is_blocked ? 'bg-red-500/5' : ''}`}>
                     <td className="px-6 py-4 font-bold flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#C89B3C]/20 to-white/5 flex items-center justify-center text-[#C89B3C] font-bold border border-[#C89B3C]/30">
                         {user.full_name?.charAt(0) || "A"}
                       </div>
                       <div>
-                        <div className="text-white">{user.full_name}</div>
+                        <div className="text-white flex items-center gap-2">
+                            {user.full_name}
+                            {user.is_blocked && <span className="text-[10px] bg-red-500 text-white px-1.5 rounded">محظور</span>}
+                        </div>
                         {user.id === currentUserId && <span className="text-[10px] text-[#C89B3C]">(حسابك)</span>}
                       </div>
                     </td>
@@ -275,18 +330,39 @@ export default function UsersManagement() {
                     </td>
                     {isSuperAdmin && (
                       <td className="px-6 py-4 text-center">
-                        <button 
-                          disabled={user.is_super_admin}
-                          onClick={() => openPermissionsModal(user)}
-                          className={`flex items-center justify-center gap-2 px-4 py-2 border rounded-lg text-sm transition mx-auto ${
-                            user.is_super_admin 
-                            ? "opacity-50 cursor-not-allowed bg-transparent border-white/5 text-white/30" 
-                            : "bg-white/5 hover:bg-white/10 border-white/10 text-[#C89B3C] hover:text-white"
-                          }`}
-                        >
-                          <Settings size={16} />
-                          <span>الصلاحيات</span>
-                        </button>
+                        <div className="flex justify-center items-center gap-2">
+                            
+                            {/* زر تعديل الصلاحيات */}
+                            <button 
+                              disabled={user.is_super_admin || processingId === user.id}
+                              onClick={() => openPermissionsModal(user)}
+                              className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent" : "bg-white/5 border-white/10 text-white hover:border-[#C89B3C] hover:text-[#C89B3C]"}`}
+                              title="تعديل الصلاحيات"
+                            >
+                              <Settings size={16} />
+                            </button>
+
+                            {/* زر الحظر/فك الحظر */}
+                            <button 
+                              disabled={user.is_super_admin || processingId === user.id}
+                              onClick={() => handleToggleBlock(user)}
+                              className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent" : user.is_blocked ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500 hover:text-white" : "bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white"}`}
+                              title={user.is_blocked ? "فك الحظر" : "حظر المستخدم"}
+                            >
+                                {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : user.is_blocked ? <Unlock size={16}/> : <Ban size={16} />}
+                            </button>
+
+                            {/* زر الحذف */}
+                            <button 
+                              disabled={user.is_super_admin || processingId === user.id}
+                              onClick={() => handleDeleteAdmin(user.id)}
+                              className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent" : "bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white"}`}
+                              title="حذف نهائي"
+                            >
+                              {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : <Trash2 size={16} />}
+                            </button>
+
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -296,44 +372,30 @@ export default function UsersManagement() {
           )}
         </div>
 
-        {/* ================= نافذة تعديل الصلاحيات (Modal) ================= */}
         {selectedAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-[#2B2B2B] border border-white/10 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
-              
-              {/* Header */}
               <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/5">
                 <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Lock size={20} className="text-[#C89B3C]" />
-                    تعديل صلاحيات: {selectedAdmin.full_name}
-                  </h3>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2"><Lock size={20} className="text-[#C89B3C]" /> تعديل صلاحيات: {selectedAdmin.full_name}</h3>
                   <p className="text-xs text-white/50 mt-1">حدد الإجراءات المسموح لهذا المسؤول القيام بها.</p>
                 </div>
                 <button onClick={() => setSelectedAdmin(null)} className="text-white/50 hover:text-white transition"><X size={24} /></button>
               </div>
-
-              {/* Body (Scrollable) */}
               <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {ALL_PERMISSIONS.map((group, idx) => {
                     const GroupIcon = group.icon;
                     return (
                       <div key={idx} className="bg-black/20 rounded-2xl p-4 border border-white/5">
-                        <div className="flex items-center gap-2 mb-4 text-[#C89B3C] font-bold pb-2 border-b border-white/5">
-                          <GroupIcon size={18} />
-                          {group.category}
-                        </div>
+                        <div className="flex items-center gap-2 mb-4 text-[#C89B3C] font-bold pb-2 border-b border-white/5"><GroupIcon size={18} /> {group.category}</div>
                         <div className="space-y-3">
                           {group.items.map((item) => {
                             const isChecked = tempPermissions[item.key] || false;
                             return (
                               <label key={item.key} className="flex items-center justify-between cursor-pointer group hover:bg-white/5 p-2 rounded-lg transition">
                                 <span className="text-sm text-white/80 group-hover:text-white transition">{item.label}</span>
-                                <div 
-                                  onClick={() => togglePermission(item.key)}
-                                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 ${isChecked ? 'bg-[#C89B3C]' : 'bg-white/10'}`}
-                                >
+                                <div onClick={() => togglePermission(item.key)} className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 ${isChecked ? 'bg-[#C89B3C]' : 'bg-white/10'}`}>
                                   <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ${isChecked ? '-translate-x-5' : 'translate-x-0'}`} />
                                 </div>
                               </label>
@@ -345,25 +407,15 @@ export default function UsersManagement() {
                   })}
                 </div>
               </div>
-
-              {/* Footer */}
               <div className="px-6 py-5 bg-black/20 border-t border-white/10 flex gap-3">
-                <button 
-                  onClick={savePermissions}
-                  disabled={savingPermissions}
-                  className="flex-1 py-3 rounded-xl bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/10"
-                >
+                <button onClick={savePermissions} disabled={savingPermissions} className="flex-1 py-3 rounded-xl bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/10">
                   {savingPermissions ? <Loader2 className="animate-spin" /> : <><Check size={18} /> حفظ التغييرات</>}
                 </button>
-                <button onClick={() => setSelectedAdmin(null)} className="px-6 py-3 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition">
-                  إلغاء
-                </button>
+                <button onClick={() => setSelectedAdmin(null)} className="px-6 py-3 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition">إلغاء</button>
               </div>
-
             </div>
           </div>
         )}
-
       </div>
     </main>
   );

@@ -4,9 +4,10 @@ export const dynamic = "force-dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { Eye, EyeOff, Loader2 } from "lucide-react"; // أضفت Loader2 للأيقونة
+import { Eye, EyeOff, Loader2, Home } from "lucide-react"; 
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { toast, Toaster } from "sonner"; // يفضل استخدام sonner للتنبيهات
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -18,14 +19,12 @@ export default function RegisterPage() {
     if (loading) return;
     setLoading(true);
 
-    // جلب البيانات من الحقول
     const full_name = (document.getElementById("name") as HTMLInputElement)?.value.trim();
     const phone = (document.getElementById("phone") as HTMLInputElement)?.value.trim();
     const email = (document.getElementById("email") as HTMLInputElement)?.value.trim();
     const password = (document.getElementById("password") as HTMLInputElement)?.value;
     const confirm = (document.getElementById("confirm") as HTMLInputElement)?.value;
 
-    // التحقق من صحة البيانات
     if (!full_name || !phone || !email || !password || !confirm) {
       alert("جميع الحقول مطلوبة");
       setLoading(false);
@@ -39,15 +38,19 @@ export default function RegisterPage() {
     }
 
     try {
-        // إرسال البيانات (الاسم والجوال) ليقوم التريقر (Trigger) بحفظها في profiles
+        // تحديد رابط العودة بعد التفعيل
+        // تأكد أنك ضفت هذا الرابط في Supabase -> Auth -> URL Configuration -> Redirect URLs
+        const redirectTo = `${window.location.origin}/auth/callback`;
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
+            emailRedirectTo: redirectTo, // مهم جداً عشان يرجع للموقع
             data: {
               full_name: full_name,
               phone: phone,
-              role: 'client' // الافتراضي عميل
+              role: 'client' 
             }
           }
         });
@@ -58,17 +61,15 @@ export default function RegisterPage() {
           return;
         }
 
-        // التحقق من نجاح العملية
-        if (data.user) {
-          // إذا تم إنشاء الجلسة بنجاح (الإيميل لا يحتاج تأكيد أو تم الدخول تلقائياً)
-          if (data.session) {
-            // ✅ التعديل هنا: التوجيه للصفحة الرئيسية بدلاً من الداشبورد
-            router.replace("/"); 
-          } else {
-            // إذا كان النظام يتطلب تأكيد الإيميل
-            alert("تم إنشاء الحساب بنجاح! يرجى التحقق من بريدك الإلكتروني لتفعيل الحساب.");
-            router.replace("/login");
-          }
+        // التحقق من الحالة
+        if (data.user && !data.session) {
+          // الحالة هنا: تم إنشاء اليوزر لكن الإيميل غير مؤكد
+          // Supabase أرسل الإيميل تلقائياً بناءً على إعدادات الداشبورد
+          alert("✅ تم إنشاء الحساب بنجاح!\n\nتم إرسال رابط التفعيل إلى بريدك الإلكتروني.\nالرجاء تأكيد الإيميل لتتمكن من تسجيل الدخول.");
+          router.replace("/login");
+        } else if (data.session) {
+          // في حال كان خيار تأكيد الإيميل مقفل (سيدخل مباشرة)
+          router.replace("/"); 
         }
 
     } catch (err) {
@@ -81,7 +82,16 @@ export default function RegisterPage() {
 
   return (
     <main dir="rtl" className="relative min-h-screen flex items-center justify-center bg-black overflow-hidden">
-      {/* خلفية الفيديو */}
+      
+      {/* زر الرجوع للرئيسية */}
+      <Link 
+        href="/" 
+        className="absolute top-6 right-6 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 transition-all text-white text-sm font-bold group"
+      >
+        <Home size={18} className="group-hover:text-[#C89B3C] transition-colors" />
+        <span className="group-hover:text-[#C89B3C] transition-colors">الرئيسية</span>
+      </Link>
+
       <video autoPlay muted loop playsInline className="fixed inset-0 w-full h-full object-cover pointer-events-none opacity-60">
         <source src="/hero.mp4" type="video/mp4" />
       </video>
