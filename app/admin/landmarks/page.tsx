@@ -7,23 +7,22 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map as MapIcon, DollarSign, Settings, ShieldAlert,
   Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video,
-  Menu, User, Home
+  Menu, User, Home, Camera, Mountain, History // أيقونات إضافية
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
-// مفتاح الماب بوكس (تأكد أنه يعمل)
+// مفتاح الماب بوكس
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiYWJkYWxsYWhtdWFsYSIsImEiOiJjbTV4b3I0aGgwM3FkMmFyMXF3ZDN3Y3IyIn0.DrD4wJ-M5a-RjC8tPXyQ4g"; 
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// الواجهة مطابقة تماماً لما كان عندك سابقاً
 interface Place {
   id?: string;
   name: string;
-  type: string;     // tourist / heritage
+  type: string;     // tourist / heritage / experience
   category?: string; 
   city?: string;    
   description: string;
@@ -49,7 +48,6 @@ export default function LandmarksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  // نفس الحالة القديمة بالضبط
   const [formData, setFormData] = useState<Place>({
     name: "", 
     type: "tourist", 
@@ -170,7 +168,6 @@ export default function LandmarksPage() {
     return uploadedUrls;
   };
 
-  // ✅ دالة الحفظ (تم إعادتها للعمل مع الحقول القديمة + إضافة السجل)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -179,37 +176,24 @@ export default function LandmarksPage() {
       const newUrls = await uploadFiles();
       const finalMediaUrls = [...(formData.media_urls || []), ...newUrls];
 
-      // البيانات التي سيتم حفظها (مطابقة تماماً لقاعدة بياناتك)
       const placeData = {
           ...formData,
           media_urls: finalMediaUrls
       };
 
-      // --- حساب تفاصيل السجل (Log Details) ---
       let details = "";
       if (!formData.id) {
-          details = `إضافة معلم جديد: ${formData.name}`;
+          details = `إضافة ${formData.type === 'experience' ? 'تجربة' : 'معلم'} جديد: ${formData.name}`;
       } else {
-          // مقارنة بسيطة للتعديل
-          const oldPlace = places.find(p => p.id === formData.id);
-          const changes = [];
-          if (oldPlace) {
-              if (oldPlace.name !== formData.name) changes.push(`الاسم: ${oldPlace.name} -> ${formData.name}`);
-              if (oldPlace.description !== formData.description) changes.push("تم تعديل الوصف");
-              if (oldPlace.is_active !== formData.is_active) changes.push(formData.is_active ? "تم التفعيل" : "تم الإخفاء");
-          }
-          details = changes.length > 0 ? `تعديل ${formData.name}: ${changes.join(", ")}` : `تحديث بيانات: ${formData.name}`;
+          details = `تحديث بيانات: ${formData.name}`;
       }
-      // -------------------------------------
 
-      // جلب التوكن
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
           alert("انتهت الجلسة، سجل دخول مرة أخرى");
           return;
       }
 
-      // الإرسال للـ API الموحد (الذي يسجل العملية ويحفظ البيانات)
       const response = await fetch('/api/admin/places/action', {
           method: 'POST',
           headers: { 
@@ -218,7 +202,7 @@ export default function LandmarksPage() {
           },
           body: JSON.stringify({ 
               action: 'save', 
-              data: placeData, // نرسل البيانات كما هي (بدون حقول إضافية تخرب الحفظ)
+              data: placeData, 
               logDetails: details 
           })
       });
@@ -230,7 +214,7 @@ export default function LandmarksPage() {
 
       alert("✅ تم الحفظ بنجاح");
       setIsModalOpen(false);
-      fetchPlaces(); // تحديث الجدول
+      fetchPlaces();
 
     } catch (error: any) {
       console.error(error);
@@ -240,7 +224,6 @@ export default function LandmarksPage() {
     }
   };
 
-  // ✅ دالة الحذف (مع السجل)
   const handleDelete = async (id: string) => {
     const placeToDelete = places.find(p => p.id === id);
     if (!confirm(`حذف "${placeToDelete?.name}"؟`)) return;
@@ -320,12 +303,12 @@ export default function LandmarksPage() {
         <header className="hidden md:flex justify-between items-center mb-10">
             <div>
                 <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-                <MapIcon className="text-[#C89B3C]" /> إدارة المعالم
+                <MapIcon className="text-[#C89B3C]" /> إدارة المعالم والتجارب
                 </h1>
-                <p className="text-white/60">إدارة الأماكن السياحية والتراثية.</p>
+                <p className="text-white/60">إدارة الأماكن السياحية والتراثية والتجارب.</p>
             </div>
             <div className="flex items-center gap-4">
-               <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] font-bold px-6 py-3 rounded-xl hover:bg-[#b38a35] transition flex items-center gap-2 shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /> إضافة معلم</button>
+               <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] font-bold px-6 py-3 rounded-xl hover:bg-[#b38a35] transition flex items-center gap-2 shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /> إضافة جديد</button>
                <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي"><Home size={20} className="text-white/70" /></Link>
             </div>
         </header>
@@ -334,9 +317,8 @@ export default function LandmarksPage() {
         <div className="md:hidden mb-6 flex justify-between items-center">
              <div>
                  <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
-                    <MapIcon className="text-[#C89B3C]" size={24} /> إدارة المعالم
+                    <MapIcon className="text-[#C89B3C]" size={24} /> المعالم
                  </h1>
-                 <p className="text-white/60 text-sm">إدارة الأماكن السياحية.</p>
              </div>
              <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] p-2.5 rounded-xl font-bold hover:bg-[#b38a35] transition shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /></button>
         </div>
@@ -350,7 +332,7 @@ export default function LandmarksPage() {
 
         <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
           {loading ? <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div> : 
-           filteredPlaces.length === 0 ? <div className="p-20 text-center text-white/40">لا توجد معالم.</div> : (
+           filteredPlaces.length === 0 ? <div className="p-20 text-center text-white/40">لا توجد بيانات.</div> : (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-right min-w-[800px]">
                 <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الميديا</th><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">المدينة</th><th className="px-6 py-4">التصنيف</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4">إجراءات</th></tr></thead>
@@ -369,8 +351,10 @@ export default function LandmarksPage() {
                     <td className="px-6 py-4">{p.city || '-'}</td>
                     <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                            <span className="text-[10px] text-white/50">{p.type === 'tourist' ? 'سياحي' : 'تراثي'}</span>
-                            <span className="px-2 py-0.5 rounded bg-white/10 text-xs w-fit">{p.category || '-'}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded w-fit ${p.type === 'experience' ? 'bg-emerald-500/20 text-emerald-400' : p.type === 'heritage' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                                {p.type === 'tourist' ? 'سياحي' : p.type === 'heritage' ? 'تراثي' : 'تجربة'}
+                            </span>
+                            <span className="text-xs text-white/50">{p.category || '-'}</span>
                         </div>
                     </td>
                     <td className="px-6 py-4"><span className={`w-2 h-2 rounded-full inline-block mr-2 ${p.is_active ? 'bg-emerald-400' : 'bg-red-400'}`}></span>{p.is_active ? "نشط" : "مخفي"}</td>
@@ -382,12 +366,12 @@ export default function LandmarksPage() {
           )}
         </div>
 
-        {/* Modal - نفس التصميم القديم بالضبط */}
+        {/* Modal */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
             <div className="bg-[#2B2B2B] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
               <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/5">
-                <h3 className="text-lg font-bold text-white">{formData.id ? "تعديل المعلم" : "إضافة معلم جديد"}</h3>
+                <h3 className="text-lg font-bold text-white">{formData.id ? "تعديل" : "إضافة جديدة"}</h3>
                 <button onClick={() => setIsModalOpen(false)}><X className="text-white/50 hover:text-white" /></button>
               </div>
               
@@ -395,20 +379,29 @@ export default function LandmarksPage() {
                 {/* القسم الأيمن: البيانات والملفات */}
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs text-white/60">اسم المكان</label>
-                    <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
+                    <label className="text-xs text-white/60">الاسم</label>
+                    <input required type="text" placeholder="اسم المعلم أو التجربة" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
                   </div>
                   
+                  {/* ✅ تعديل نوع الإضافة (3 أزرار واضحة) */}
+                  <div className="space-y-2">
+                    <label className="text-xs text-white/60">نوع الإضافة (اختر التصنيف)</label>
+                    <div className="grid grid-cols-3 gap-2">
+                        <button type="button" onClick={() => setFormData({...formData, type: 'tourist'})} className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition ${formData.type === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17] border-[#C89B3C]' : 'bg-black/30 text-white/60 border-white/10 hover:bg-white/5'}`}>
+                            <Mountain size={18} /> <span className="text-xs font-bold">معلم سياحي</span>
+                        </button>
+                        <button type="button" onClick={() => setFormData({...formData, type: 'heritage'})} className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition ${formData.type === 'heritage' ? 'bg-amber-600 text-white border-amber-600' : 'bg-black/30 text-white/60 border-white/10 hover:bg-white/5'}`}>
+                            <History size={18} /> <span className="text-xs font-bold">موقع تراثي</span>
+                        </button>
+                        <button type="button" onClick={() => setFormData({...formData, type: 'experience'})} className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition ${formData.type === 'experience' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-black/30 text-white/60 border-white/10 hover:bg-white/5'}`}>
+                            <Camera size={18} /> <span className="text-xs font-bold">تجربة سياحية</span>
+                        </button>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="text-xs text-white/60">النوع العام</label>
-                        <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                          <option value="tourist">🏔️ سياحي (طبيعة)</option>
-                          <option value="heritage">🏛️ تراثي (تاريخ)</option>
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs text-white/60">التصنيف الدقيق</label>
+                        <label className="text-xs text-white/60">التصنيف الفرعي</label>
                         <select required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
                           <option value="">اختر...</option>
                           {categoriesList.map(cat => (
@@ -416,16 +409,15 @@ export default function LandmarksPage() {
                           ))}
                         </select>
                       </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-white/60">المدينة / المحافظة</label>
-                    <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                        <option value="">اختر المدينة...</option>
-                        {citiesList.map(city => (
-                            <option key={city.id} value={city.name}>{city.name}</option>
-                        ))}
-                    </select>
+                      <div className="space-y-2">
+                        <label className="text-xs text-white/60">المدينة</label>
+                        <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
+                            <option value="">اختر المدينة...</option>
+                            {citiesList.map(city => (
+                                <option key={city.id} value={city.name}>{city.name}</option>
+                            ))}
+                        </select>
+                      </div>
                   </div>
 
                   <div className="space-y-2">
@@ -433,17 +425,18 @@ export default function LandmarksPage() {
                     <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white resize-none" />
                   </div>
 
+                  {/* ✅ قسم المرفقات */}
                   <div className="space-y-2">
-                    <label className="text-xs text-white/60">الصور والفيديو</label>
+                    <label className="text-xs text-white/60 flex items-center gap-1"><UploadCloud size={14}/> المرفقات (صور / فيديو)</label>
                     <div className="relative border-2 border-dashed border-white/10 bg-black/20 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-[#C89B3C]/50 transition cursor-pointer">
                       <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                       <UploadCloud size={30} className="text-[#C89B3C] mb-2" />
-                      <p className="text-sm text-white/60">اضغط للرفع</p>
+                      <p className="text-sm text-white/60">اضغط لإضافة مرفق جديد</p>
                     </div>
                     {previews.length > 0 && (
                       <div className="flex gap-2 overflow-x-auto py-2 custom-scrollbar">
                         {previews.map((src, idx) => (
-                          <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black/30 relative">
+                          <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black/30 relative group">
                              {src.includes('blob:http') && src.match(/mp4|webm/) ? ( 
                                <Video size={20} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/80" />
                              ) : (
@@ -457,7 +450,7 @@ export default function LandmarksPage() {
 
                   <div className="flex items-center gap-3 p-4 bg-black/20 rounded-xl border border-white/5">
                     <input type="checkbox" id="isActive" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} className="w-5 h-5 accent-[#C89B3C]" />
-                    <label htmlFor="isActive" className="text-sm cursor-pointer select-none">تفعيل المعلم</label>
+                    <label htmlFor="isActive" className="text-sm cursor-pointer select-none">تفعيل العرض للزوار</label>
                   </div>
                 </div>
 
