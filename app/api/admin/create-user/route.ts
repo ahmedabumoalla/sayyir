@@ -9,11 +9,8 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-// إعداد خدمة الإيميل (إعدادات SMTP دقيقة)
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // استخدام SSL
+  service: 'gmail',
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
@@ -24,58 +21,74 @@ export async function POST(req: Request) {
   try {
     const { fullName, email, phone, requesterId } = await req.json();
 
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-      return NextResponse.json({ error: "إعدادات البريد الإلكتروني مفقودة في السيرفر" }, { status: 500 });
+    // 1. التحقق من صلاحية السوبر أدمن
+    const { data: requester } = await supabaseAdmin.from('profiles').select('is_super_admin').eq('id', requesterId).single();
+    if (!requester?.is_super_admin) {
+        return NextResponse.json({ error: "غير مصرح لك بإضافة مسؤولين" }, { status: 403 });
     }
 
-    // 1. التحقق من صلاحيات السوبر أدمن
-    const { data: requester } = await supabaseAdmin.from('profiles').select('is_super_admin').eq('id', requesterId).single();
-    if (!requester?.is_super_admin) return NextResponse.json({ error: "غير مصرح لك" }, { status: 403 });
+    // 🛑 التعديل الجوهري هنا:
+    // بدلاً من البحث في profiles، نبحث في Auth Users مباشرة
+    // هذا يغطي حالة أن المستخدم موجود كحساب ولكن محذوف كبروفايل
+    const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
+    // نبحث عن المستخدم بالإيميل (بغض النظر عن حالة الأحرف)
+    const existingAuthUser = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
 
-    // 2. البحث عن المستخدم (نبحث في جدول profiles لأنه أدق)
-    const { data: existingProfile } = await supabaseAdmin.from('profiles').select('*').eq('email', email).single();
-    
-    // متغيرات للإيميل
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
     let emailSubject = '';
     let emailHTML = '';
-    let successMessage = '';
-    let tempPassword = '';
+    let message = '';
 
-    if (existingProfile) {
+    if (existingAuthUser) {
         // ==========================================
-        // الحالة أ: المستخدم موجود (ترقية)
+        // الحالة الأولى: المستخدم يملك حساباً في المنصة (سواء عميل، مزود، أو أدمن سابق محذوف البروفايل)
         // ==========================================
-        console.log("Creating admin: User exists, upgrading...");
+        
+        const userId = existingAuthUser.id;
 
-        // تحديث الصلاحيات
-        await supabaseAdmin.auth.admin.updateUserById(existingProfile.id, {
-            user_metadata: { ...existingProfile.user_metadata, is_admin: true }
+        // 1. تحديث بيانات المصادقة (Metadata)
+        await supabaseAdmin.auth.admin.updateUserById(userId, {
+            user_metadata: { 
+                ...existingAuthUser.user_metadata, 
+                full_name: fullName, // تحديث الاسم لو تغير
+                is_admin: true 
+            }
         });
-        await supabaseAdmin.from('profiles').update({ is_admin: true, role: 'admin' }).eq('id', existingProfile.id);
 
-        emailSubject = '✨ تمت ترقية حسابك إلى مسؤول - منصة سيّر';
+        // 2. تحديث أو إنشاء البروفايل (Upsert)
+        // Upsert مهمة هنا: لو البروفايل موجود يحدثه، لو محذوف يرجع ينشئه بنفس الـ ID
+        const { error: upsertError } = await supabaseAdmin.from('profiles').upsert({
+            id: userId,
+            email: email,
+            full_name: fullName,
+            phone: phone,
+            is_admin: true,
+            role: 'admin',
+            // نحافظ على السوبر أدمن لو كان هو، غير كذا false
+            is_super_admin: existingAuthUser.user_metadata?.is_super_admin || false 
+        });
+
+        if (upsertError) throw upsertError;
+
+        emailSubject = '✨ تحديث صلاحيات حسابك - منصة سيّر';
         emailHTML = `
-            <div dir="rtl" style="font-family: Arial; color: #333; padding: 20px; background-color: #f9f9f9;">
-                <h2 style="color: #C89B3C;">مرحباً ${existingProfile.full_name}</h2>
-                <p>تمت ترقية حسابك لتصبح <strong>مسؤولاً (Admin)</strong> في منصة سيّر.</p>
-                <p>يمكنك الدخول للوحة التحكم باستخدام كلمة المرور الحالية الخاصة بك.</p>
-                <br/>
-                <a href="${siteUrl}/admin/login" style="background: #C89B3C; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">الدخول كأدمن</a>
+            <div dir="rtl" style="font-family: Arial; padding: 20px;">
+                <h2 style="color: #C89B3C;">مرحباً ${fullName}</h2>
+                <p>تم تعيينك / ترقيتك لتصبح <strong>مسؤولاً (Admin)</strong> في منصة سيّر.</p>
+                <p>بما أن لديك حساباً سابقاً، يمكنك الدخول بنفس كلمة المرور الخاصة بك.</p>
+                <a href="${siteUrl}/admin/login" style="background: #C89B3C; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">دخول الأدمن</a>
             </div>
         `;
-        successMessage = "تمت ترقية المستخدم الموجود وإرسال التنبيه";
+        message = "المستخدم موجود مسبقاً، تمت ترقيته واستعادة صلاحياته بنجاح.";
 
     } else {
         // ==========================================
-        // الحالة ب: مستخدم جديد (إنشاء)
+        // الحالة الثانية: مستخدم جديد كلياً
         // ==========================================
-        console.log("Creating admin: New user...");
 
         const randomNum = Math.floor(1000 + Math.random() * 9000);
-        tempPassword = `Admin@${randomNum}`; // كلمة مرور قوية
+        const tempPassword = `Admin@${randomNum}`;
 
-        // إنشاء المستخدم
         const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: tempPassword,
@@ -84,53 +97,51 @@ export async function POST(req: Request) {
         });
 
         if (createError) throw createError;
+
         if (newUser.user) {
-            // تفعيل قسري + إنشاء بروفايل
-            await supabaseAdmin.auth.admin.updateUserById(newUser.user.id, { email_confirm: true });
-            await supabaseAdmin.from('profiles').upsert({
+            // إنشاء البروفايل
+            await supabaseAdmin.from('profiles').insert({
                 id: newUser.user.id,
-                email, full_name: fullName, phone, is_admin: true, role: 'admin'
+                email: email,
+                full_name: fullName,
+                phone: phone,
+                is_admin: true,
+                role: 'admin'
             });
         }
 
         emailSubject = 'دعوة للانضمام لفريق إدارة منصة سيّر';
         emailHTML = `
-            <div dir="rtl" style="font-family: Arial; color: #333; padding: 20px; background-color: #f9f9f9;">
+            <div dir="rtl" style="font-family: Arial; padding: 20px;">
                 <h2 style="color: #C89B3C;">مرحباً ${fullName}</h2>
-                <p>تم تعيينك كمسؤول في منصة سيّر.</p>
-                <div style="background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin: 20px 0;">
+                <p>تم إنشاء حسابك وتعيينك كمسؤول في منصة سيّر.</p>
+                <div style="background: #f9f9f9; padding: 15px; margin: 10px 0;">
                     <p><strong>البريد:</strong> ${email}</p>
-                    <p><strong>كلمة المرور المؤقتة:</strong> <code style="background: #eee; padding: 2px 5px;">${tempPassword}</code></p>
+                    <p><strong>كلمة المرور المؤقتة:</strong> ${tempPassword}</p>
                 </div>
-                <a href="${siteUrl}/admin/login" style="background: #C89B3C; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">تسجيل الدخول</a>
+                <a href="${siteUrl}/admin/login" style="background: #C89B3C; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">تسجيل الدخول</a>
             </div>
         `;
-        successMessage = "تم إنشاء حساب المسؤول الجديد بنجاح";
+        message = "تم إنشاء حساب المسؤول الجديد وإرسال الدعوة.";
     }
 
-    // 3. إرسال الإيميل (مع كشف الأخطاء)
+    // إرسال الإيميل
     try {
-        const info = await transporter.sendMail({
-            from: `"إدارة منصة سيّر" <${process.env.GMAIL_USER}>`,
+        await transporter.sendMail({
+            from: `"فريق إدارة سيّر" <${process.env.GMAIL_USER}>`,
             to: email,
             subject: emailSubject,
             html: emailHTML
         });
-        console.log("Email sent info:", info.messageId);
-    } catch (emailError: any) {
-        console.error("Failed to send email:", emailError);
-        // نرجع خطأ للواجهة حتى ينتبه الأدمن
-        return NextResponse.json({ 
-            success: true, // العملية تمت (الإنشاء/الترقية)
-            message: `${successMessage}، ولكن فشل إرسال الإيميل! (الخطأ: ${emailError.message})`,
-            warning: true 
-        });
+    } catch (mailError) {
+        console.error("Mail Error:", mailError);
+        return NextResponse.json({ success: true, message: message + " (فشل إرسال الإيميل)" });
     }
 
-    return NextResponse.json({ success: true, message: `${successMessage} وتم إرسال الإيميل.` });
+    return NextResponse.json({ success: true, message: message });
 
   } catch (error: any) {
-    console.error("API Error:", error);
+    console.error("Create User Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
