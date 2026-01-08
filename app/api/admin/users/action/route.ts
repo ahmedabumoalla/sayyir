@@ -1,47 +1,83 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-import { checkAdminPermission } from '@/lib/adminGuard'; // استدعاء الحارس
 
+// إعداد صلاحيات السوبر أدمن للتحكم الكامل
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { action, userId, requesterId } = body;
+    const { action, userId, requesterId, logDetails, newStatus } = await req.json();
 
-    // 🛑 الحماية: قبل ما نسوي أي شي، نفحص الصلاحية
+    // 1. التحقق من أن الطالب أدمن
+    const { data: requester } = await supabaseAdmin.from('profiles').select('is_admin').eq('id', requesterId).single();
+    if (!requester?.is_admin) return NextResponse.json({ error: "غير مصرح لك" }, { status: 403 });
+
+    // ==========================================
+    // حالة الحذف (الأرشفة الذكية)
+    // ==========================================
     if (action === 'delete') {
-        // نتحقق هل الأدمن يمتلك صلاحية 'users_delete'
-        const permissionCheck = await checkAdminPermission(requesterId, 'users_delete');
-        
-        if (!permissionCheck.success) {
-            // إذا ما عنده صلاحية، نرجّع خطأ ونوقف العملية
-            return NextResponse.json({ error: permissionCheck.message }, { status: 403 });
-        }
+      
+      // أ. جلب إيميل المستخدم الحالي أولاً
+      const { data: targetUser, error: fetchError } = await supabaseAdmin.auth.admin.getUserById(userId);
+      if (fetchError) throw fetchError;
 
-        // إذا وصلنا هنا، يعني الصلاحية موجودة ✅ .. نبدأ الحذف
-        
-        // 1. حذف من المصادقة (Auth)
-        const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-        if (deleteAuthError) throw deleteAuthError;
+      const originalEmail = targetUser.user.email;
+      const archivedEmail = `deleted_${Date.now()}_${originalEmail}`; // إيميل وهمي لتحرير الأصلي
 
-        // 2. حذف من البروفايل (Database) لضمان النظافة
-        await supabaseAdmin.from('profiles').delete().eq('id', userId);
+      // ب. تحديث بيانات المصادقة (Auth): تغيير الإيميل وحظر الدخول
+      // هذا يحرر الإيميل الأصلي فوراً
+      const { error: authUpdateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        email: archivedEmail,
+        ban_duration: '876000h', // حظر 100 سنة لهذا الحساب القديم
+        user_metadata: { is_deleted: true, original_email: originalEmail }
+      });
 
-        return NextResponse.json({ success: true, message: "تم حذف المستخدم بنجاح" });
+      if (authUpdateError) throw authUpdateError;
+
+      // ج. تحديث ملف البروفايل (Profile): وضع علامة محذوف وتحديث الإيميل
+      const { error: profileUpdateError } = await supabaseAdmin
+        .from('profiles')
+        .update({ 
+          is_deleted: true, 
+          is_blocked: true,
+          email: archivedEmail, // نحدثه هنا أيضاً ليعرف الأدمن أنه محذوف
+          deleted_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (profileUpdateError) throw profileUpdateError;
+
+      return NextResponse.json({ 
+        success: true, 
+        message: "تم حذف المستخدم وأرشفة بياناته. يمكنه الآن التسجيل مجدداً بنفس الإيميل." 
+      });
     }
 
-    // هنا ممكن تضيف شروط ثانية لو عندك actions غير الحذف (مثل الحظر)
-    // if (action === 'block') { ... }
+    // ==========================================
+    // حالة الحظر/فك الحظر (تعديل بسيط)
+    // ==========================================
+    if (action === 'toggle_ban') {
+       // تحديث البروفايل
+       const { error } = await supabaseAdmin.from('profiles').update({ is_blocked: newStatus }).eq('id', userId);
+       if (error) throw error;
+       
+       // تحديث الـ Auth
+       if (newStatus) {
+         await supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: '876000h' });
+       } else {
+         await supabaseAdmin.auth.admin.updateUserById(userId, { ban_duration: 'none' });
+       }
+       
+       return NextResponse.json({ success: true });
+    }
 
-    return NextResponse.json({ error: "إجراء غير معروف" }, { status: 400 });
+    return NextResponse.json({ error: "أمر غير معروف" }, { status: 400 });
 
   } catch (error: any) {
-    console.error("Delete Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Action Error:", error);
+    return NextResponse.json({ error: error.message || "حدث خطأ غير متوقع" }, { status: 500 });
   }
 }

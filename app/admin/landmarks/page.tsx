@@ -7,7 +7,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map as MapIcon, DollarSign, Settings, ShieldAlert,
   Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video,
-  Menu, User, Home, Camera, Mountain, History // أيقونات إضافية
+  Menu, User, Home, Camera, Mountain, History, Clock, CheckCircle, XCircle,
+  Calendar, Info, AlertTriangle, UserCheck, Activity, Hourglass, List
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -19,10 +20,27 @@ mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "pk.eyJ1IjoiYWJkY
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
+// تعريف هيكلة ساعات العمل
+interface WorkHour {
+  day: string;
+  from: string;
+  to: string;
+  is_active: boolean;
+}
+
+const DAYS_ARABIC = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+
+const defaultWorkHours: WorkHour[] = DAYS_ARABIC.map(day => ({
+  day,
+  from: "08:00",
+  to: "22:00",
+  is_active: true
+}));
+
 interface Place {
   id?: string;
   name: string;
-  type: string;     // tourist / heritage / experience
+  type: 'tourist' | 'heritage' | 'experience';
   category?: string; 
   city?: string;    
   description: string;
@@ -30,6 +48,14 @@ interface Place {
   lat: number;
   lng: number;
   is_active: boolean;
+  work_hours?: WorkHour[];
+  // الحقول الجديدة الاحترافية
+  price: number;           // السعر أو رسوم الدخول
+  services?: string;       // خدمات (للتراث)
+  duration?: string;       // مدة التجربة
+  difficulty?: string;     // صعوبة التجربة
+  max_capacity?: number;   // السعة القصوى (لإخفاء التجربة عند الامتلاء)
+  blocked_dates?: string[]; // تواريخ محددة للإغلاق أو الحجز الكامل (YYYY-MM-DD)
 }
 
 export default function LandmarksPage() {
@@ -48,6 +74,9 @@ export default function LandmarksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   
+  // حالة لإضافة تاريخ مغلق جديد
+  const [newBlockedDate, setNewBlockedDate] = useState("");
+
   const [formData, setFormData] = useState<Place>({
     name: "", 
     type: "tourist", 
@@ -57,7 +86,14 @@ export default function LandmarksPage() {
     media_urls: [], 
     lat: 18.2164, 
     lng: 42.5053, 
-    is_active: true
+    is_active: true,
+    work_hours: defaultWorkHours,
+    price: 0,
+    services: "",
+    duration: "",
+    difficulty: "سهل",
+    max_capacity: 0,
+    blocked_dates: []
   });
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -129,22 +165,65 @@ export default function LandmarksPage() {
     if (cats) setCategoriesList(cats);
   };
 
-  const handleAddNew = () => {
+  const handleAddNew = (type: 'tourist' | 'heritage' | 'experience') => {
     setFormData({ 
-        name: "", type: "tourist", category: "", city: "", 
-        description: "", media_urls: [], 
-        lat: 18.2164, lng: 42.5053, is_active: true 
+        name: "", 
+        type: type, 
+        category: "", 
+        city: "", 
+        description: "", 
+        media_urls: [], 
+        lat: 18.2164, 
+        lng: 42.5053, 
+        is_active: true,
+        work_hours: defaultWorkHours,
+        price: 0,
+        services: "",
+        duration: "",
+        difficulty: "سهل",
+        max_capacity: type === 'experience' ? 10 : 0,
+        blocked_dates: []
     });
     setSelectedFiles([]);
     setPreviews([]);
+    setNewBlockedDate("");
     setIsModalOpen(true);
   };
 
   const handleEdit = (place: Place) => {
-    setFormData(place);
+    setFormData({
+        ...place,
+        work_hours: place.work_hours || defaultWorkHours,
+        blocked_dates: place.blocked_dates || []
+    });
     setSelectedFiles([]);
     setPreviews(place.media_urls || []);
+    setNewBlockedDate("");
     setIsModalOpen(true);
+  };
+
+  const updateWorkHour = (index: number, field: keyof WorkHour, value: any) => {
+    const updatedHours = [...(formData.work_hours || defaultWorkHours)];
+    updatedHours[index] = { ...updatedHours[index], [field]: value };
+    setFormData({ ...formData, work_hours: updatedHours });
+  };
+
+  // إضافة تاريخ محجوز/مغلق
+  const addBlockedDate = () => {
+      if (newBlockedDate && !formData.blocked_dates?.includes(newBlockedDate)) {
+          setFormData(prev => ({
+              ...prev,
+              blocked_dates: [...(prev.blocked_dates || []), newBlockedDate]
+          }));
+          setNewBlockedDate("");
+      }
+  };
+
+  const removeBlockedDate = (dateToRemove: string) => {
+      setFormData(prev => ({
+          ...prev,
+          blocked_dates: prev.blocked_dates?.filter(d => d !== dateToRemove)
+      }));
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -181,9 +260,19 @@ export default function LandmarksPage() {
           media_urls: finalMediaUrls
       };
 
+      // تنظيف البيانات غير الضرورية حسب النوع
+      if (formData.type !== 'experience') {
+          delete placeData.duration;
+          delete placeData.difficulty;
+      }
+      if (formData.type !== 'heritage') {
+          delete placeData.services;
+      }
+
       let details = "";
       if (!formData.id) {
-          details = `إضافة ${formData.type === 'experience' ? 'تجربة' : 'معلم'} جديد: ${formData.name}`;
+          const typeName = formData.type === 'experience' ? 'تجربة' : formData.type === 'heritage' ? 'موقع تراثي' : 'معلم سياحي';
+          details = `إضافة ${typeName} جديد: ${formData.name}`;
       } else {
           details = `تحديث بيانات: ${formData.name}`;
       }
@@ -271,7 +360,7 @@ export default function LandmarksPage() {
   return (
     <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      {/* Sidebar & Header */}
+      {/* Sidebar & Header (نفس الكود السابق) */}
       <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><Menu size={24} /></button>
         <Link href="/" className="absolute left-1/2 -translate-x-1/2"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
@@ -305,24 +394,36 @@ export default function LandmarksPage() {
                 <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
                 <MapIcon className="text-[#C89B3C]" /> إدارة المعالم والتجارب
                 </h1>
-                <p className="text-white/60">إدارة الأماكن السياحية والتراثية والتجارب.</p>
+                <p className="text-white/60">إدارة الأماكن السياحية، المواقع التراثية، والتجارب.</p>
             </div>
-            <div className="flex items-center gap-4">
-               <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] font-bold px-6 py-3 rounded-xl hover:bg-[#b38a35] transition flex items-center gap-2 shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /> إضافة جديد</button>
-               <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي"><Home size={20} className="text-white/70" /></Link>
+            
+            <div className="flex items-center gap-3">
+               <button onClick={() => handleAddNew('tourist')} className="bg-[#1a1a1a] border border-[#C89B3C]/50 text-white px-4 py-2.5 rounded-xl hover:bg-[#C89B3C] hover:text-[#2B1F17] transition flex items-center gap-2 text-sm font-bold">
+                  <Mountain size={18} /> إضافة معلم سياحي
+               </button>
+               <button onClick={() => handleAddNew('heritage')} className="bg-[#1a1a1a] border border-amber-500/50 text-white px-4 py-2.5 rounded-xl hover:bg-amber-600 transition flex items-center gap-2 text-sm font-bold">
+                  <History size={18} /> إضافة موقع تراثي
+               </button>
+               <button onClick={() => handleAddNew('experience')} className="bg-[#1a1a1a] border border-emerald-500/50 text-white px-4 py-2.5 rounded-xl hover:bg-emerald-600 transition flex items-center gap-2 text-sm font-bold">
+                  <Camera size={18} /> إضافة تجربة
+               </button>
             </div>
         </header>
 
-        {/* Mobile Header */}
-        <div className="md:hidden mb-6 flex justify-between items-center">
-             <div>
-                 <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
-                    <MapIcon className="text-[#C89B3C]" size={24} /> المعالم
-                 </h1>
-             </div>
-             <button onClick={handleAddNew} className="bg-[#C89B3C] text-[#2B1F17] p-2.5 rounded-xl font-bold hover:bg-[#b38a35] transition shadow-lg shadow-[#C89B3C]/20"><Plus size={20} /></button>
+        {/* Mobile Buttons */}
+        <div className="md:hidden grid grid-cols-3 gap-2 mb-6">
+           <button onClick={() => handleAddNew('tourist')} className="bg-[#C89B3C]/10 border border-[#C89B3C]/30 text-[#C89B3C] p-2 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold">
+              <Mountain size={20} /> معلم
+           </button>
+           <button onClick={() => handleAddNew('heritage')} className="bg-amber-500/10 border border-amber-500/30 text-amber-500 p-2 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold">
+              <History size={20} /> تراث
+           </button>
+           <button onClick={() => handleAddNew('experience')} className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 p-2 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold">
+              <Camera size={20} /> تجربة
+           </button>
         </div>
 
+        {/* Search Bar */}
         <div className="mb-6 bg-white/5 p-4 rounded-2xl border border-white/10 flex gap-4">
           <div className="relative flex-1">
             <Search className="absolute right-3 top-3 text-white/40" size={20} />
@@ -330,12 +431,13 @@ export default function LandmarksPage() {
           </div>
         </div>
 
+        {/* Table */}
         <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
           {loading ? <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div> : 
            filteredPlaces.length === 0 ? <div className="p-20 text-center text-white/40">لا توجد بيانات.</div> : (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-right min-w-[800px]">
-                <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الميديا</th><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">المدينة</th><th className="px-6 py-4">التصنيف</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4">إجراءات</th></tr></thead>
+                <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الميديا</th><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">المدينة</th><th className="px-6 py-4">النوع</th><th className="px-6 py-4">السعر</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4">إجراءات</th></tr></thead>
                 <tbody className="divide-y divide-white/5 text-sm">{filteredPlaces.map(p => (
                     <tr key={p.id} className="hover:bg-white/5">
                     <td className="px-6 py-4">
@@ -350,13 +452,12 @@ export default function LandmarksPage() {
                     <td className="px-6 py-4 font-bold">{p.name}</td>
                     <td className="px-6 py-4">{p.city || '-'}</td>
                     <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                            <span className={`text-[10px] px-2 py-0.5 rounded w-fit ${p.type === 'experience' ? 'bg-emerald-500/20 text-emerald-400' : p.type === 'heritage' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                                {p.type === 'tourist' ? 'سياحي' : p.type === 'heritage' ? 'تراثي' : 'تجربة'}
-                            </span>
-                            <span className="text-xs text-white/50">{p.category || '-'}</span>
-                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded w-fit flex items-center gap-1 w-fit ${p.type === 'experience' ? 'bg-emerald-500/20 text-emerald-400' : p.type === 'heritage' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                            {p.type === 'tourist' ? <Mountain size={12}/> : p.type === 'heritage' ? <History size={12}/> : <Camera size={12}/>}
+                            {p.type === 'tourist' ? 'سياحي' : p.type === 'heritage' ? 'تراثي' : 'تجربة'}
+                        </span>
                     </td>
+                    <td className="px-6 py-4 font-mono text-[#C89B3C]">{p.price > 0 ? `${p.price} ريال` : 'مجاني'}</td>
                     <td className="px-6 py-4"><span className={`w-2 h-2 rounded-full inline-block mr-2 ${p.is_active ? 'bg-emerald-400' : 'bg-red-400'}`}></span>{p.is_active ? "نشط" : "مخفي"}</td>
                     <td className="px-6 py-4 flex gap-2"><button onClick={() => handleEdit(p)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white"><Edit size={16}/></button><button onClick={() => handleDelete(p.id!)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white"><Trash2 size={16}/></button></td>
                     </tr>
@@ -369,104 +470,205 @@ export default function LandmarksPage() {
         {/* Modal */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-[#2B2B2B] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="bg-[#2B2B2B] w-full max-w-6xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
               <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/5">
-                <h3 className="text-lg font-bold text-white">{formData.id ? "تعديل" : "إضافة جديدة"}</h3>
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${formData.type === 'experience' ? 'bg-emerald-500/20 text-emerald-500' : formData.type === 'heritage' ? 'bg-amber-500/20 text-amber-500' : 'bg-[#C89B3C]/20 text-[#C89B3C]'}`}>
+                        {formData.type === 'tourist' ? <Mountain size={20}/> : formData.type === 'heritage' ? <History size={20}/> : <Camera size={20}/>}
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-white">{formData.id ? "تعديل البيانات" : 
+                            formData.type === 'tourist' ? "إضافة معلم سياحي جديد" : 
+                            formData.type === 'heritage' ? "إضافة موقع تراثي جديد" : 
+                            "إضافة تجربة سياحية جديدة"}
+                        </h3>
+                    </div>
+                </div>
                 <button onClick={() => setIsModalOpen(false)}><X className="text-white/50 hover:text-white" /></button>
               </div>
               
-              <form onSubmit={handleSave} className="flex-1 overflow-y-auto custom-scrollbar p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* القسم الأيمن: البيانات والملفات */}
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs text-white/60">الاسم</label>
-                    <input required type="text" placeholder="اسم المعلم أو التجربة" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
-                  </div>
-                  
-                  {/* ✅ تعديل نوع الإضافة (3 أزرار واضحة) */}
-                  <div className="space-y-2">
-                    <label className="text-xs text-white/60">نوع الإضافة (اختر التصنيف)</label>
-                    <div className="grid grid-cols-3 gap-2">
-                        <button type="button" onClick={() => setFormData({...formData, type: 'tourist'})} className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition ${formData.type === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17] border-[#C89B3C]' : 'bg-black/30 text-white/60 border-white/10 hover:bg-white/5'}`}>
-                            <Mountain size={18} /> <span className="text-xs font-bold">معلم سياحي</span>
-                        </button>
-                        <button type="button" onClick={() => setFormData({...formData, type: 'heritage'})} className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition ${formData.type === 'heritage' ? 'bg-amber-600 text-white border-amber-600' : 'bg-black/30 text-white/60 border-white/10 hover:bg-white/5'}`}>
-                            <History size={18} /> <span className="text-xs font-bold">موقع تراثي</span>
-                        </button>
-                        <button type="button" onClick={() => setFormData({...formData, type: 'experience'})} className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition ${formData.type === 'experience' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-black/30 text-white/60 border-white/10 hover:bg-white/5'}`}>
-                            <Camera size={18} /> <span className="text-xs font-bold">تجربة سياحية</span>
-                        </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-xs text-white/60">التصنيف الفرعي</label>
-                        <select required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                          <option value="">اختر...</option>
-                          {categoriesList.map(cat => (
-                             <option key={cat.id} value={cat.name}>{cat.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs text-white/60">المدينة</label>
-                        <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                            <option value="">اختر المدينة...</option>
-                            {citiesList.map(city => (
-                                <option key={city.id} value={city.name}>{city.name}</option>
-                            ))}
-                        </select>
-                      </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs text-white/60">الوصف</label>
-                    <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white resize-none" />
-                  </div>
-
-                  {/* ✅ قسم المرفقات */}
-                  <div className="space-y-2">
-                    <label className="text-xs text-white/60 flex items-center gap-1"><UploadCloud size={14}/> المرفقات (صور / فيديو)</label>
-                    <div className="relative border-2 border-dashed border-white/10 bg-black/20 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-[#C89B3C]/50 transition cursor-pointer">
-                      <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                      <UploadCloud size={30} className="text-[#C89B3C] mb-2" />
-                      <p className="text-sm text-white/60">اضغط لإضافة مرفق جديد</p>
-                    </div>
-                    {previews.length > 0 && (
-                      <div className="flex gap-2 overflow-x-auto py-2 custom-scrollbar">
-                        {previews.map((src, idx) => (
-                          <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black/30 relative group">
-                             {src.includes('blob:http') && src.match(/mp4|webm/) ? ( 
-                               <Video size={20} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/80" />
-                             ) : (
-                               <img src={src} alt="Preview" className="w-full h-full object-cover" />
-                             )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3 p-4 bg-black/20 rounded-xl border border-white/5">
-                    <input type="checkbox" id="isActive" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} className="w-5 h-5 accent-[#C89B3C]" />
-                    <label htmlFor="isActive" className="text-sm cursor-pointer select-none">تفعيل العرض للزوار</label>
-                  </div>
+              <form onSubmit={handleSave} className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                
+                {/* Visual Type Indicator */}
+                <div className="flex bg-black/30 p-1 rounded-xl mb-6 w-fit mx-auto border border-white/10">
+                    <button type="button" onClick={() => setFormData({...formData, type: 'tourist'})} className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${formData.type === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17] font-bold' : 'text-white/60 hover:text-white'}`}><Mountain size={16}/> معلم سياحي</button>
+                    <button type="button" onClick={() => setFormData({...formData, type: 'heritage'})} className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${formData.type === 'heritage' ? 'bg-amber-600 text-white font-bold' : 'text-white/60 hover:text-white'}`}><History size={16}/> موقع تراثي</button>
+                    <button type="button" onClick={() => setFormData({...formData, type: 'experience'})} className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${formData.type === 'experience' ? 'bg-emerald-600 text-white font-bold' : 'text-white/60 hover:text-white'}`}><Camera size={16}/> تجربة</button>
                 </div>
 
-                {/* القسم الأيسر: الخريطة */}
-                <div className="flex flex-col h-full">
-                  <label className="text-xs text-white/60 mb-2">تحديد الموقع</label>
-                  <div className="flex-1 rounded-2xl overflow-hidden border border-white/10 relative min-h-[300px]">
-                    <div ref={mapContainer} className="w-full h-full absolute inset-0" />
-                    <div className="absolute bottom-2 left-2 bg-white/90 text-black text-[10px] px-2 py-1 rounded shadow font-mono">
-                      {formData.lat.toFixed(5)}, {formData.lng.toFixed(5)}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    {/* Column 1: Basic Info (Left) - Span 7 */}
+                    <div className="lg:col-span-7 space-y-6">
+                         
+                         {/* Basic Info */}
+                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                            <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Settings size={16}/> البيانات الأساسية</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2 md:col-span-2">
+                                    <label className="text-xs text-white/60">الاسم</label>
+                                    <input required type="text" placeholder="الاسم..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs text-white/60">التصنيف</label>
+                                    <select required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
+                                    <option value="">اختر...</option>
+                                    {categoriesList.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs text-white/60">المدينة</label>
+                                    <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
+                                        <option value="">اختر...</option>
+                                        {citiesList.map(city => <option key={city.id} value={city.name}>{city.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs text-white/60">الوصف</label>
+                                <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white resize-none" />
+                            </div>
+                         </div>
+
+                         {/* Dynamic Details Block - يظهر بناء على النوع */}
+                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                            <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Info size={16}/> تفاصيل {formData.type === 'experience' ? 'التجربة' : 'المكان'}</h4>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Price (All Types) */}
+                                <div className="space-y-2">
+                                    <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type === 'tourist' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
+                                    <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
+                                </div>
+
+                                {/* Heritage Specific */}
+                                {formData.type === 'heritage' && (
+                                    <div className="space-y-2 md:col-span-2">
+                                        <label className="text-xs text-white/60 flex items-center gap-1"><List size={12}/> الخدمات المتوفرة (اكتبها نصياً)</label>
+                                        <textarea rows={2} placeholder="مثال: مرشد سياحي، دورات مياه، مواقف سيارات..." value={formData.services} onChange={e => setFormData({...formData, services: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
+                                    </div>
+                                )}
+
+                                {/* Experience Specific */}
+                                {formData.type === 'experience' && (
+                                    <>
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-white/60 flex items-center gap-1"><UserCheck size={12}/> السعة القصوى (لإغلاق الحجز)</label>
+                                            <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-white/60 flex items-center gap-1"><Activity size={12}/> مستوى الصعوبة</label>
+                                            <select value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
+                                                <option value="سهل">سهل 🟢</option>
+                                                <option value="متوسط">متوسط 🟡</option>
+                                                <option value="صعب">صعب 🔴</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-white/60 flex items-center gap-1"><Hourglass size={12}/> المدة (مثال: ساعتين، يوم كامل)</label>
+                                            <input type="text" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                         </div>
+
+                         {/* Work Hours & Blocked Dates */}
+                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                            <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Clock size={16}/> التوفر والجدول الزمني</h4>
+                            
+                            {/* Tabs for Availability */}
+                            <div className="space-y-4">
+                                {/* 1. Weekly Schedule */}
+                                <div className="space-y-2">
+                                    <label className="text-xs text-white/40 block mb-2">1. الجدول الأسبوعي العام (الأيام المتاحة عادة)</label>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        {formData.work_hours?.map((wh, idx) => (
+                                            <div key={idx} className={`flex items-center justify-between p-2 rounded-lg border ${wh.is_active ? 'bg-black/20 border-white/10' : 'bg-red-500/5 border-red-500/10'}`}>
+                                                <div className="flex items-center gap-2">
+                                                    <button type="button" onClick={() => updateWorkHour(idx, 'is_active', !wh.is_active)} className={`p-1 rounded-full ${wh.is_active ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                        {wh.is_active ? <CheckCircle size={16}/> : <XCircle size={16}/>}
+                                                    </button>
+                                                    <span className="text-sm font-bold w-12">{wh.day}</span>
+                                                </div>
+                                                {wh.is_active ? (
+                                                    <div className="flex gap-1 items-center dir-ltr">
+                                                        <input type="time" value={wh.from} onChange={(e) => updateWorkHour(idx, 'from', e.target.value)} className="bg-transparent text-xs text-center w-16 outline-none"/>
+                                                        <span>-</span>
+                                                        <input type="time" value={wh.to} onChange={(e) => updateWorkHour(idx, 'to', e.target.value)} className="bg-transparent text-xs text-center w-16 outline-none"/>
+                                                    </div>
+                                                ) : <span className="text-xs text-red-500/50">مغلق</span>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* 2. Blocked Dates (Exceptions) */}
+                                <div className="pt-4 border-t border-white/10">
+                                    <label className="text-xs text-white/60 block mb-2 flex items-center gap-2"><AlertTriangle size={12} className="text-amber-500"/> 2. استثناءات / أيام محجوزة بالكامل (لن تظهر للمستخدم)</label>
+                                    <div className="flex gap-2 mb-3">
+                                        <input type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-red-500 flex-1" />
+                                        <button type="button" onClick={addBlockedDate} className="bg-red-500/20 text-red-400 px-4 py-2 rounded-xl hover:bg-red-500 hover:text-white transition text-sm font-bold">حظر التاريخ</button>
+                                    </div>
+                                    {formData.blocked_dates && formData.blocked_dates.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                            {formData.blocked_dates.map((date, idx) => (
+                                                <div key={idx} className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-1 rounded-full text-xs flex items-center gap-2">
+                                                    {date}
+                                                    <button type="button" onClick={() => removeBlockedDate(date)}><X size={12} className="hover:text-red-200"/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                         </div>
                     </div>
-                  </div>
+
+                    {/* Column 2: Media & Map (Right) - Span 5 */}
+                    <div className="lg:col-span-5 space-y-6">
+                        {/* Map */}
+                        <div className="bg-white/5 p-5 rounded-2xl border border-white/5 flex flex-col h-[350px]">
+                            <label className="text-xs text-white/60 mb-2 flex items-center gap-1"><MapPin size={14}/> تحديد الموقع الجغرافي</label>
+                            <div className="flex-1 rounded-xl overflow-hidden border border-white/10 relative">
+                                <div ref={mapContainer} className="w-full h-full absolute inset-0" />
+                                <div className="absolute bottom-2 left-2 bg-white/90 text-black text-[10px] px-2 py-1 rounded shadow font-mono dir-ltr">
+                                {formData.lat.toFixed(5)}, {formData.lng.toFixed(5)}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Attachments */}
+                        <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                            <label className="text-xs text-white/60 flex items-center gap-1"><UploadCloud size={14}/> المرفقات (صور / فيديو)</label>
+                            <div className="relative border-2 border-dashed border-white/10 bg-black/20 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-[#C89B3C]/50 transition cursor-pointer group">
+                                <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                <UploadCloud size={30} className="text-[#C89B3C] mb-2 group-hover:scale-110 transition" />
+                                <p className="text-sm text-white/60">اضغط لإضافة صور أو فيديو</p>
+                            </div>
+                            {previews.length > 0 && (
+                                <div className="flex gap-2 overflow-x-auto py-2 custom-scrollbar">
+                                    {previews.map((src, idx) => (
+                                    <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black/30 relative">
+                                        {src.includes('blob:http') && src.match(/mp4|webm/) ? ( 
+                                            <Video size={20} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/80" />
+                                        ) : (
+                                            <img src={src} alt="Preview" className="w-full h-full object-cover" />
+                                        )}
+                                    </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex items-center gap-3 p-4 bg-black/20 rounded-xl border border-white/5">
+                            <input type="checkbox" id="isActive" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} className="w-5 h-5 accent-[#C89B3C]" />
+                            <label htmlFor="isActive" className="text-sm cursor-pointer select-none">تفعيل العرض للزوار</label>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Footer Buttons */}
-                <div className="md:col-span-2 pt-4 flex gap-3 border-t border-white/10">
+                <div className="pt-6 mt-6 flex gap-3 border-t border-white/10 sticky bottom-0 bg-[#2B2B2B] z-10">
                   <button type="submit" disabled={saving} className="flex-1 bg-[#C89B3C] text-[#2B1F17] font-bold py-3 rounded-xl hover:bg-[#b38a35] transition flex justify-center items-center gap-2">
                     {saving ? <Loader2 className="animate-spin"/> : <><Save size={18}/> حفظ البيانات</>}
                   </button>

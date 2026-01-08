@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
-import { ArrowRight, Loader2, Compass, Clock, Activity } from "lucide-react";
+import { ArrowRight, Loader2, Compass, Clock, Activity, MapPin } from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
@@ -14,23 +13,70 @@ export default function ExperiencesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchExperiences();
+    fetchAllExperiences();
   }, []);
 
-  const fetchExperiences = async () => {
+  const fetchAllExperiences = async () => {
     try {
-      // ✅ التعديل الجذري: نجلب من جدول places بدلاً من services
-      const { data, error } = await supabase
-        .from('places') 
+      setLoading(true);
+
+      // 1. جلب تجارب المزودين (من جدول services)
+      const providerQuery = supabase
+        .from('services')
         .select('*')
-        .eq('type', 'experience') // حسب كود الأدمن، النوع هو experience
-        .eq('is_active', true);   // نجلب فقط العناصر النشطة
+        .eq('service_category', 'experience')
+        .eq('status', 'approved');
 
-      if (error) throw error;
+      // 2. جلب تجارب الأدمن (من جدول places)
+      const adminQuery = supabase
+        .from('places')
+        .select('*')
+        .eq('type', 'experience')
+        .eq('is_active', true);
 
-      if (data) {
-        setExperiences(data);
-      }
+      // تنفيذ الطلبين معاً
+      const [providerRes, adminRes] = await Promise.all([providerQuery, adminQuery]);
+
+      if (providerRes.error) console.error("Error fetching provider experiences:", providerRes.error);
+      if (adminRes.error) console.error("Error fetching admin experiences:", adminRes.error);
+
+      // 3. توحيد البيانات (Normalization)
+
+      // أ) بيانات المزودين
+      const providerItems = (providerRes.data || []).map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        price: item.price,
+        // صورة المزود (غالباً في menu_items)
+        image: item.menu_items && item.menu_items.length > 0 && item.menu_items[0].image 
+               ? item.menu_items[0].image 
+               : "/placeholder-experience.jpg",
+        activity_type: item.activity_type || 'تجربة مميزة',
+        duration: item.duration,
+        difficulty_level: item.difficulty_level,
+        meeting_point: item.meeting_point,
+        source: 'service' // المصدر: خدمة
+      }));
+
+      // ب) بيانات الأدمن
+      const adminItems = (adminRes.data || []).map((item: any) => ({
+        id: item.id,
+        title: item.name, // في places الاسم name
+        description: item.description,
+        price: item.price || 0,
+        // صورة الأدمن (في media_urls)
+        image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "/placeholder-experience.jpg",
+        activity_type: item.category || 'تجربة سياحية', // الأدمن يحدد التصنيف
+        duration: item.duration, // تأكد أنك أضفت هذا العمود في places للتجارب
+        difficulty_level: item.difficulty, // تأكد أنك أضفت هذا العمود في places للتجارب
+        meeting_point: item.city || 'عسير',
+        source: 'place' // المصدر: مكان
+      }));
+
+      // دمج الكل
+      setExperiences([...providerItems, ...adminItems]);
+
     } catch (err) {
       console.error("خطأ في جلب البيانات:", err);
     } finally {
@@ -43,25 +89,18 @@ export default function ExperiencesPage() {
       
       {/* HEADER */}
       <div className="relative h-[40vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
-        <Image 
-          src="/logo.png" 
-          alt="Sayyir Logo" 
-          fill 
-          sizes="100vw"
-          className="object-contain p-20 opacity-30"
-          priority
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/70 to-[#0a0a0a]" />
+        <div className="absolute inset-0 bg-[url('/experiences-bg.jpg')] bg-cover bg-center opacity-40 mix-blend-overlay"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/60 to-[#0a0a0a]" />
         
-        <div className="relative z-10 text-center px-4">
-          <h1 className="text-4xl md:text-6xl font-bold mb-4">التجارب السياحية</h1>
-          <p className="text-xl text-white/80 max-w-2xl mx-auto">
-            عش مغامرات لا تُنسى مع أهل المنطقة، من الهايكنج في الجبال إلى جلسات السمر التراثية.
+        <div className="relative z-10 text-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <h1 className="text-4xl md:text-6xl font-bold mb-4 tracking-tight">التجارب السياحية</h1>
+          <p className="text-xl text-white/90 max-w-2xl mx-auto font-light">
+            اكتشف مغامرات لا تُنسى مع أهل المنطقة، من الهايكنج في أعالي الجبال إلى جلسات السمر التراثية.
           </p>
         </div>
         
-        <Link href="/" className="absolute top-8 right-8 z-20 p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition">
-           <ArrowRight className="text-white" />
+        <Link href="/" className="absolute top-8 right-8 z-20 p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition group">
+           <ArrowRight className="text-white group-hover:-translate-x-1 transition-transform" />
         </Link>
       </div>
 
@@ -73,13 +112,14 @@ export default function ExperiencesPage() {
           </div>
         ) : experiences.length === 0 ? (
           <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10">
+            <Compass size={48} className="mx-auto text-white/20 mb-4"/>
             <h3 className="text-2xl font-bold text-white/50">لا توجد تجارب متاحة حالياً</h3>
-            <p className="text-white/30 mt-2">تأكد من إضافة تجارب من لوحة التحكم وتفعيلها</p>
+            <p className="text-white/30 mt-2">ترقبوا تجارب جديدة ومميزة قريباً!</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {experiences.map((exp) => (
-              <ExperienceCard key={exp.id} data={exp} />
+              <ExperienceCard key={`${exp.source}-${exp.id}`} data={exp} />
             ))}
           </div>
         )}
@@ -89,53 +129,67 @@ export default function ExperiencesPage() {
 }
 
 function ExperienceCard({ data }: { data: any }) {
-  // ✅ التعديل: استخدام media_urls بدلاً من images حسب كود الأدمن
-  const imageUrl = data.media_urls && data.media_urls[0] ? data.media_urls[0] : "/placeholder.jpg";
-  
-  // ✅ التعديل: استخدام name بدلاً من title
-  const title = data.name;
+  // الرابط الصحيح بناءً على المصدر
+// نوحد التوجيه لصفحة الخدمات لجميع العناصر (المزودين والأدمن)
+const linkHref = `/service/${data.id}`;
+  const buttonText = data.source === 'service' ? 'احجز تجربتك' : 'استكشف التجربة';
 
   return (
     <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
       <div className="relative h-64 w-full overflow-hidden shrink-0">
-        {/* استخدام img العادية لتفادي مشاكل الدومين والسيرفر */}
-<img 
-  src={imageUrl} 
-  alt={title} 
-  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-/>
-        <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl">
-          <span className="text-[#C89B3C] font-bold text-lg">
-             {data.price && data.price > 0 ? `${data.price} ﷼` : 'مجاني'}
-          </span>
-        </div>
+        <img 
+          src={data.image} 
+          alt={data.title} 
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+          onError={(e) => {
+            e.currentTarget.src = "/logo.png"; 
+            e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; 
+          }}
+        />
         
-        {/* Subtype Badge */}
-        {data.subtype && (
-            <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1">
-                <Compass size={12} /> {data.subtype}
+        {/* السعر */}
+        {data.price > 0 && (
+            <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl">
+            <span className="text-[#C89B3C] font-bold text-lg">
+                {data.price} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span>
+            </span>
             </div>
         )}
+        
+        {/* نوع النشاط */}
+        <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10">
+            <Compass size={12} /> {data.activity_type}
+        </div>
       </div>
       
       <div className="p-6 flex flex-col flex-1">
-        <h3 className="text-2xl font-bold mb-2 group-hover:text-[#C89B3C] transition">{title}</h3>
+        <div className="flex justify-between items-start mb-2">
+            <h3 className="text-2xl font-bold group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3>
+        </div>
         
-        {/* معلومات إضافية (المدة والصعوبة) إذا وجدت */}
-        <div className="flex gap-4 mb-3 text-xs text-white/50">
+        {/* معلومات إضافية */}
+        <div className="flex flex-wrap gap-4 mb-4 text-xs text-white/50 bg-white/5 p-3 rounded-xl border border-white/5">
             {data.duration && (
                 <div className="flex items-center gap-1"><Clock size={14} className="text-[#C89B3C]"/> {data.duration}</div>
             )}
-            {data.difficulty && (
-                <div className="flex items-center gap-1"><Activity size={14} className="text-[#C89B3C]"/> {data.difficulty}</div>
+            {data.difficulty_level && (
+                <div className="flex items-center gap-1">
+                    <Activity size={14} className="text-[#C89B3C]"/> 
+                    {data.difficulty_level === 'easy' ? 'سهل' : data.difficulty_level === 'medium' ? 'متوسط' : data.difficulty_level === 'hard' ? 'صعب' : data.difficulty_level}
+                </div>
+            )}
+            {data.meeting_point && (
+                <div className="flex items-center gap-1 line-clamp-1"><MapPin size={14} className="text-[#C89B3C]"/> {data.meeting_point}</div>
             )}
         </div>
 
-        <p className="text-white/60 text-sm line-clamp-2 mb-6 flex-1">{data.description}</p>
+        <p className="text-white/60 text-sm line-clamp-3 mb-6 flex-1 leading-relaxed">
+            {data.description}
+        </p>
         
-        <Link href={`/place/${data.id}`} className="w-full block">
-            <button className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-[#C89B3C] hover:text-[#2B1F17] transition-all">
-            احجز تجربتك
+        <Link href={linkHref} className="w-full block mt-auto">
+            <button className="w-full py-3 rounded-xl bg-[#C89B3C] text-black font-bold hover:bg-[#b38a35] transition-all flex items-center justify-center gap-2">
+               {buttonText} <ArrowRight size={18}/>
             </button>
         </Link>
       </div>

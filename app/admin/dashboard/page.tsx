@@ -30,29 +30,28 @@ export default function AdminDashboard() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
 
-  // حالة النافذة المنبثقة للتفاصيل
   const [selectedLog, setSelectedLog] = useState<any>(null);
-  
-  // حالة "عرض الكل" للسجلات
   const [showAllLogs, setShowAllLogs] = useState(false);
 
+  // ✅ تحديث الحالة لتشمل تفاصيل العدادات المنفصلة
   const [stats, setStats] = useState({
     revenue: 0,
     users: 0,
     providers: 0,
-    pendingTotal: 0,
-    pendingPayouts: 0 
+    pendingServices: 0,   // عداد الخدمات المعلقة
+    pendingProviders: 0,  // عداد طلبات الانضمام المعلقة
+    pendingPayouts: 0,    // عداد السحوبات المالية المعلقة
+    pendingTotal: 0       // الإجمالي (للعرض في البطاقات العلوية)
   });
 
   const [activityLog, setActivityLog] = useState<any[]>([]);
 
-  // تعريف دالة جلب البيانات
   const fetchData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.replace("/login"); return; }
 
-      // 1. معلومات الأدمن الحالي
+      // 1. معلومات الأدمن
       const { data: profile } = await supabase
         .from('profiles')
         .select('full_name, is_super_admin')
@@ -71,42 +70,36 @@ export default function AdminDashboard() {
       const { count: usersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'client');
       const { count: providersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_provider', true);
 
+      // ✅ جلب العدادات بشكل منفصل
       const { count: pendingServices } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('status', 'pending');
       const { count: pendingProviders } = await supabase.from('provider_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending');
       const { count: pendingPayouts } = await supabase.from('payout_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending');
       
       const totalPending = (pendingServices || 0) + (pendingProviders || 0) + (pendingPayouts || 0);
 
+      // ✅ تخزين العدادات بشكل صحيح ومنفصل
       setStats({
         revenue: totalRevenue,
         users: usersCount || 0,
         providers: providersCount || 0,
-        pendingTotal: totalPending,
-        pendingPayouts: pendingPayouts || 0
+        pendingServices: pendingServices || 0,
+        pendingProviders: pendingProviders || 0,
+        pendingPayouts: pendingPayouts || 0,
+        pendingTotal: totalPending
       });
 
-      // ============================================================
-      // 3. سجل العمليات (جلب عدد أكبر لزر عرض الكل)
-      // ============================================================
-
-      // أ) جلب السجلات الجديدة من admin_logs (زيادة الحد إلى 50)
+      // 3. سجل العمليات (كما هو)
       const { data: newLogs } = await supabase
         .from('admin_logs')
         .select('*')
         .not('action_type', 'in', '("manage_admins", "delete_admin", "change_permissions")') 
         .order('created_at', { ascending: false })
-        .limit(50); // زدنا العدد هنا
+        .limit(50);
 
-      // ب) جلب أسماء الأدمنز
       let logsWithNames: any[] = [];
       if (newLogs && newLogs.length > 0) {
           const adminIds = [...new Set(newLogs.map(l => l.admin_id).filter(Boolean))];
-          
-          const { data: profiles } = await supabase
-              .from('profiles')
-              .select('id, full_name')
-              .in('id', adminIds);
-          
+          const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', adminIds);
           const namesMap: Record<string, string> = {};
           profiles?.forEach(p => { namesMap[p.id] = p.full_name });
 
@@ -117,7 +110,6 @@ export default function AdminDashboard() {
           }));
       }
 
-      // ج) جلب البيانات القديمة (زيادة الحد إلى 10 للاحتياط)
       const { data: reqs } = await supabase.from('provider_requests').select('id, name, created_at, status').order('created_at', { ascending: false }).limit(10);
       const { data: servs } = await supabase.from('services').select('id, title, created_at, status').order('created_at', { ascending: false }).limit(10);
       const { data: pays } = await supabase.from('payout_requests').select('id, amount, created_at, status').order('created_at', { ascending: false }).limit(10);
@@ -149,11 +141,10 @@ export default function AdminDashboard() {
           }))
       ];
 
-      // د) الدمج والترتيب
       const combinedLogs = [...logsWithNames, ...formattedOldLogs];
       const sortedLogs = combinedLogs
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 50); // نحتفظ بآخر 50 عملية
+          .slice(0, 50);
 
       setActivityLog(sortedLogs);
 
@@ -174,7 +165,6 @@ export default function AdminDashboard() {
   };
 
   const getLogStyle = (type: string) => {
-      // إعدادات الأيقونات والألوان
       if (type === 'update_settings') return { icon: Settings, color: 'text-gray-400', bg: 'bg-gray-400/10', label: 'تحديث إعدادات' };
       if (type.includes('approve_payout')) return { icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-400/10', label: 'موافقة مالية' };
       if (type.includes('reject_payout')) return { icon: XCircle, color: 'text-red-400', bg: 'bg-red-400/10', label: 'رفض مالي' };
@@ -188,22 +178,29 @@ export default function AdminDashboard() {
       if (type.includes('payout')) return { icon: DollarSign, color: 'text-amber-400', bg: 'bg-amber-400/10', label: 'عملية مالية' };
       if (type.includes('service')) return { icon: FileBox, color: 'text-purple-400', bg: 'bg-purple-400/10', label: 'خدمة' };
       if (type.includes('new_request')) return { icon: UserPlus, color: 'text-blue-400', bg: 'bg-blue-400/10', label: 'طلب جديد' };
-      
       return { icon: Activity, color: 'text-white', bg: 'bg-white/10', label: 'عملية' };
   };
 
+  // ✅ تصحيح توزيع العدادات على القائمة
   const menuItems = [
     { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
-    { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true, badge: stats.pendingTotal > 0 ? stats.pendingTotal : 0 },
-    { label: "مراجعة الخدمات", icon: CheckCircle, href: "/admin/review-services", show: true },
+    
+    // عداد طلبات الانضمام فقط
+    { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true, badge: stats.pendingProviders },
+    
+    // عداد الخدمات المعلقة فقط
+    { label: "مراجعة الخدمات", icon: CheckCircle, href: "/admin/review-services", show: true, badge: stats.pendingServices },
+    
     { label: "إدارة المعالم", icon: Map, href: "/admin/landmarks", show: true },
     { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
-    { label: "المالية والأرباح", icon: DollarSign, href: "/admin/finance", show: true, badge: stats.pendingPayouts }, 
+    
+    // عداد المالية فقط
+    { label: "المالية والأرباح", icon: DollarSign, href: "/admin/finance", show: true, badge: stats.pendingPayouts },
+    
     { label: "فريق الإدارة", icon: ShieldAlert, href: "/admin/users", show: isSuperAdmin },
     { label: "الإعدادات", icon: Settings, href: "/admin/settings", show: true },
   ];
 
-  // تحديد السجلات المعروضة (5 أو الكل)
   const displayedLogs = showAllLogs ? activityLog : activityLog.slice(0, 5);
 
   return (
@@ -214,16 +211,13 @@ export default function AdminDashboard() {
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
           <Menu size={24} />
         </button>
-
         <Link href="/" className="absolute left-1/2 -translate-x-1/2">
            <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
         </Link>
-
         <div className="relative">
           <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
             <User size={20} />
           </button>
-          
           {isProfileMenuOpen && (
             <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
               <div className="p-3 border-b border-white/5 text-xs text-white/50">أهلاً، {adminName}</div>
@@ -234,7 +228,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Sidebar Overlay */}
       {isSidebarOpen && (
         <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />
       )}
@@ -314,17 +307,12 @@ export default function AdminDashboard() {
                     <Activity className="text-[#C89B3C]" size={20}/>
                     سجل العمليات الحديثة
                   </h3>
-                  {/* زر عرض الكل / عرض أقل */}
                   {activityLog.length > 5 && (
                     <button 
                       onClick={() => setShowAllLogs(!showAllLogs)}
                       className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1"
                     >
-                      {showAllLogs ? (
-                        <>عرض أقل <ChevronUp size={14}/></>
-                      ) : (
-                        <>عرض الكل <ChevronDown size={14}/></>
-                      )}
+                      {showAllLogs ? (<>عرض أقل <ChevronUp size={14}/></>) : (<>عرض الكل <ChevronDown size={14}/></>)}
                     </button>
                   )}
                 </div>

@@ -86,21 +86,27 @@ export async function POST(req: Request) {
         // الحالة الثانية: مستخدم جديد كلياً
         // ==========================================
 
-        const randomNum = Math.floor(1000 + Math.random() * 9000);
+       const randomNum = Math.floor(1000 + Math.random() * 9000);
         const tempPassword = `Admin@${randomNum}`;
 
         const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: tempPassword,
             email_confirm: true,
-            user_metadata: { full_name: fullName, is_admin: true }
+            user_metadata: { 
+                full_name: fullName, 
+                is_admin: true, 
+                role: 'admin', // <--- ضروري جداً عشان التريجر يفهمه صح من البداية
+                phone: phone 
+            }
         });
 
         if (createError) throw createError;
 
         if (newUser.user) {
-            // إنشاء البروفايل
-            await supabaseAdmin.from('profiles').insert({
+            // التعديل 2: استخدام upsert بدلاً من insert
+            // هذا يحل المشكلة لو التريجر سبِقنا وأنشأ الملف كـ client، نقوم نحن بفرضه كـ admin
+            await supabaseAdmin.from('profiles').upsert({
                 id: newUser.user.id,
                 email: email,
                 full_name: fullName,

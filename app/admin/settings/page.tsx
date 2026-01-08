@@ -10,7 +10,7 @@ import {
   Phone,
   Mail,
   FileText,
-  Target,
+  Target, 
   Eye,
   Twitter,
   Instagram,
@@ -40,16 +40,25 @@ export default function AdminSettingsPage() {
   const [activeTab, setActiveTab] = useState("app_settings");
   const router = useRouter();
 
-  // ==================== منطق حقول الخدمات ====================
+  // ==================== منطق حقول الخدمات والتسجيل ====================
   const [fields, setFields] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentField, setCurrentField] = useState<any>({ label: "", field_type: "text", options: [], is_required: false, sort_order: 0 });
+  
+  const [currentField, setCurrentField] = useState<any>({ 
+    label: "", 
+    field_type: "text", 
+    options: [], 
+    is_required: false, 
+    sort_order: 0,
+    scope: "service" 
+  });
+  
   const [optionsText, setOptionsText] = useState("");
   const [fieldSaving, setFieldSaving] = useState(false);
 
   // دالة جلب الحقول
   const fetchFields = async () => {
-    const { data } = await supabase.from('registration_fields').select('*').order('sort_order', { ascending: true });
+    const { data } = await supabase.from('registration_fields').select('*').order('scope', { ascending: false }).order('sort_order', { ascending: true });
     if (data) setFields(data);
   };
 
@@ -58,7 +67,14 @@ export default function AdminSettingsPage() {
   }, []);
 
   const handleAddNewField = () => {
-    setCurrentField({ label: "", field_type: "text", options: [], is_required: false, sort_order: fields.length + 1 });
+    setCurrentField({ 
+        label: "", 
+        field_type: "text", 
+        options: [], 
+        is_required: false, 
+        sort_order: fields.length + 1,
+        scope: "service" 
+    });
     setOptionsText("");
     setIsModalOpen(true);
   };
@@ -77,8 +93,6 @@ export default function AdminSettingsPage() {
     }
   };
 
-  // ✅ الدالة المصححة للحفظ
-  // ✅ دالة الحفظ المطورة (تكتشف التغييرات)
   const handleSaveField = async (e: React.FormEvent) => {
     e.preventDefault();
     setFieldSaving(true);
@@ -87,39 +101,18 @@ export default function AdminSettingsPage() {
       if (currentField.field_type === 'select') finalOptions = optionsText.split(',').map(s => s.trim()).filter(Boolean);
       else if (currentField.field_type === 'policy') finalOptions = [optionsText];
 
-      const fieldData = { ...currentField, options: finalOptions, is_required: currentField.field_type === 'policy' ? true : currentField.is_required };
+      const fieldData = { 
+          ...currentField, 
+          options: finalOptions, 
+          is_required: currentField.field_type === 'policy' ? true : currentField.is_required 
+      };
       
-      // --- بداية منطق كشف التغييرات ---
       let detailsMsg = "";
-      
       if (!currentField.id) {
-          // حالة إضافة جديدة
-          detailsMsg = `إضافة حقل جديد بعنوان: "${fieldData.label}"`;
+          detailsMsg = `إضافة حقل (${fieldData.scope === 'service' ? 'خدمة' : 'تسجيل'}) جديد: "${fieldData.label}"`;
       } else {
-          // حالة تعديل: نقارن مع الحقل القديم الموجود في الـ State
-          const oldField = fields.find(f => f.id === currentField.id);
-          const changes = [];
-
-          if (oldField) {
-              if (oldField.label !== fieldData.label) {
-                  changes.push(`تغيير العنوان من "${oldField.label}" إلى "${fieldData.label}"`);
-              }
-              if (oldField.field_type !== fieldData.field_type) {
-                  changes.push(`تغيير النوع من ${oldField.field_type} إلى ${fieldData.field_type}`);
-              }
-              if (oldField.is_required !== fieldData.is_required) {
-                  changes.push(fieldData.is_required ? "تم جعله إجبارياً" : "تم جعله اختيارياً");
-              }
-              // يمكن إضافة المزيد من المقارنات هنا
-          }
-          
-          if (changes.length > 0) {
-              detailsMsg = `تعديل حقل "${fieldData.label}": ` + changes.join("، ");
-          } else {
-              detailsMsg = `تحديث بيانات الحقل: "${fieldData.label}"`;
-          }
+          detailsMsg = `تحديث حقل: "${fieldData.label}"`;
       }
-      // --- نهاية منطق كشف التغييرات ---
 
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -135,7 +128,6 @@ export default function AdminSettingsPage() {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${session.access_token}` 
           },
-          // نرسل التفاصيل التي حسبناها
           body: JSON.stringify({ fields: fieldData, logDetails: detailsMsg }) 
       });
 
@@ -154,12 +146,6 @@ export default function AdminSettingsPage() {
     }
   };
 
-  // ... (باقي الكود الخاص بالإعدادات العامة والتقنية يبقى كما هو تماماً دون تغيير) ...
-  // لتوفير المساحة، سأضع لك بداية ونهاية الأقسام فقط، انسخ المحتوى السابق وضعه هنا إذا لم يتغير، 
-  // أو إذا أردت الكود كاملاً (300+ سطر) أخبرني وسأرسله.
-  
-  // (هنا يأتي كود formData, techData, useEffect, fetchSettings, handleSave كما كان في ردودي السابقة)
-  
   // ==================== البيانات العامة والتقنية ====================
   const [formData, setFormData] = useState({
     is_app_active: true,
@@ -278,7 +264,7 @@ export default function AdminSettingsPage() {
         {[
           { id: "app_settings", label: "إعدادات التطبيق", icon: <Globe size={16}/> },
           { id: "tech_link", label: "الربط والتقنية", icon: <Server size={16}/> },
-          { id: "fields", label: "إدارة نموذج طلبات الانضمام", icon: <Database size={16}/> },
+          { id: "fields", label: "إدارة الحقول والنماذج", icon: <Database size={16}/> },
           { id: "cities", label: "المدن والتصنيفات", icon: <MapPin size={16}/> },
           { id: "account", label: "حسابي", icon: <User size={16}/> }
         ].map((tab) => (
@@ -297,6 +283,7 @@ export default function AdminSettingsPage() {
         ))}
       </div>
 
+      {/* ============== تبويب إعدادات التطبيق ============== */}
       {activeTab === "app_settings" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
@@ -385,6 +372,7 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
+      {/* ============== تبويب إعدادات الربط والتقنية ============== */}
       {activeTab === "tech_link" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
@@ -474,13 +462,17 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
+      {/* ============== تبويب إدارة الحقول (المعدل) ============== */}
       {activeTab === "fields" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2">
-                  <Database size={20} /> إدارة حقول ونماذج التسجيل
-                </h2>
+                <div className="space-y-1">
+                    <h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2">
+                        <Database size={20} /> إدارة الحقول والنماذج
+                    </h2>
+                    <p className="text-xs text-white/50">تحكم بالحقول التي تظهر في (تسجيل مزود جديد) و (إضافة خدمة جديدة).</p>
+                </div>
                 <button onClick={handleAddNewField} className="bg-[#C89B3C] text-black px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-[#b38a35] text-sm">
                    <Plus size={16} /> إضافة حقل
                 </button>
@@ -491,6 +483,7 @@ export default function AdminSettingsPage() {
                     <thead className="bg-black/20 text-white/50 text-xs uppercase">
                         <tr>
                             <th className="px-4 py-3">الترتيب</th>
+                            <th className="px-4 py-3">النطاق (Target)</th>
                             <th className="px-4 py-3">العنوان</th>
                             <th className="px-4 py-3">النوع</th>
                             <th className="px-4 py-3">إجراءات</th>
@@ -500,6 +493,12 @@ export default function AdminSettingsPage() {
                         {fields.map(f => (
                         <tr key={f.id} className="hover:bg-white/5 transition">
                             <td className="px-4 py-3 font-mono text-[#C89B3C]">{f.sort_order}</td>
+                            <td className="px-4 py-3">
+                                <span className={`flex items-center gap-1 w-fit px-2 py-1 rounded text-xs font-bold ${f.scope === 'registration' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
+                                    {f.scope === 'registration' ? <User size={12}/> : <Database size={12}/>}
+                                    {f.scope === 'registration' ? 'تسجيل جديد' : 'إضافة خدمة'}
+                                </span>
+                            </td>
                             <td className="px-4 py-3 font-bold">{f.label}</td>
                             <td className="px-4 py-3">
                                 <span className={`px-2 py-1 rounded text-xs ${f.field_type === 'policy' ? 'bg-[#C89B3C]/20 text-[#C89B3C]' : 'bg-white/10'}`}>
@@ -525,6 +524,18 @@ export default function AdminSettingsPage() {
                     <button onClick={()=>setIsModalOpen(false)}><X className="text-white/50 hover:text-white"/></button>
                 </div>
                 <form onSubmit={handleSaveField} className="space-y-4">
+                  <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                      <label className="text-xs text-[#C89B3C] mb-2 block font-bold">نطاق الحقل (أين يظهر؟)</label>
+                      <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={()=>setCurrentField({...currentField, scope: 'registration'})} className={`p-2 rounded-lg text-sm border transition ${currentField.scope === 'registration' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-black/20 border-white/10 hover:bg-white/5'}`}>
+                             صفحة تسجيل مزود جديد
+                          </button>
+                          <button type="button" onClick={()=>setCurrentField({...currentField, scope: 'service'})} className={`p-2 rounded-lg text-sm border transition ${currentField.scope === 'service' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-black/20 border-white/10 hover:bg-white/5'}`}>
+                             صفحة إضافة خدمة
+                          </button>
+                      </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                       <div><label className="text-xs text-white/60 mb-1 block">النوع</label><select className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm" value={currentField.field_type} onChange={e=>setCurrentField({...currentField, field_type:e.target.value})}><option value="text">نص</option><option value="policy">سياسة</option><option value="map">خريطة</option><option value="file">ملف</option><option value="tel">جوال</option><option value="select">قائمة</option><option value="textarea">نص طويل</option></select></div>
                       <div><label className="text-xs text-white/60 mb-1 block">الترتيب</label><input type="number" className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm" value={currentField.sort_order} onChange={e=>setCurrentField({...currentField, sort_order: +e.target.value})}/></div>
@@ -537,6 +548,11 @@ export default function AdminSettingsPage() {
                       </div>
                   )}
 
+                  <div className="flex items-center gap-2 pt-2">
+                      <input type="checkbox" id="isRequired" checked={currentField.is_required} onChange={e=>setCurrentField({...currentField, is_required: e.target.checked})} className="accent-[#C89B3C]"/>
+                      <label htmlFor="isRequired" className="text-sm text-white/80 select-none cursor-pointer">هذا الحقل إجباري</label>
+                  </div>
+
                   <button disabled={fieldSaving} className="w-full bg-[#C89B3C] text-black font-bold py-2 rounded-lg hover:bg-[#b38a35] mt-2">
                     {fieldSaving ? "جاري الحفظ..." : "حفظ التغييرات"}
                   </button>
@@ -547,7 +563,7 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      {/* باقي التبويبات (Cities, Account) كما هي ... */}
+      {/* ============== تبويب المدن (Cities) ============== */}
       {activeTab === "cities" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -588,6 +604,7 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
+      {/* ============== تبويب الحساب (Account) ============== */}
       {activeTab === "account" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">

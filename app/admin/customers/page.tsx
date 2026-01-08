@@ -25,6 +25,8 @@ interface Profile {
   is_admin: boolean;
   city?: string;
   gender?: string;
+  is_deleted?: boolean; // أضف هذا
+  deleted_at?: string;  // أضف هذا
 }
 
 export default function CustomersPage() {
@@ -77,15 +79,17 @@ export default function CustomersPage() {
 
   const fetchData = async () => {
     setLoading(true);
+    // ✅ التعديل هنا: استبعاد أي مستخدم لديه صلاحية أدمن من هذه القائمة
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
+      .not('is_admin', 'eq', true) 
       .order('created_at', { ascending: false });
 
     if (!error && data) {
       setAllUsers(data as any);
       
-      const clientsCount = data.filter((u: any) => !u.is_provider && !u.is_admin).length;
+      const clientsCount = data.filter((u: any) => !u.is_provider).length;
       const providersCount = data.filter((u: any) => u.is_provider).length;
 
       setStats({
@@ -100,7 +104,7 @@ export default function CustomersPage() {
     let result = allUsers;
 
     if (typeFilter === 'clients') {
-      result = result.filter(u => !u.is_provider && !u.is_admin);
+      result = result.filter(u => !u.is_provider);
     } else if (typeFilter === 'providers') {
       result = result.filter(u => u.is_provider);
     }
@@ -123,7 +127,7 @@ export default function CustomersPage() {
     setDisplayedUsers(result);
   };
 
-  // --- الإجراءات المعدلة (ترتبط بالـ API) ---
+  // --- الإجراءات (نفس المنطق السابق) ---
 
   const handleToggleBan = async (id: string, currentStatus: boolean, userName: string) => {
     const actionText = currentStatus ? "فك الحظر عن" : "حظر";
@@ -133,7 +137,6 @@ export default function CustomersPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("جلسة العمل مفقودة");
 
-      // إعداد تفاصيل السجل
       const newStatus = !currentStatus;
       const logMsg = newStatus 
         ? `تم حظر المستخدم: ${userName}` 
@@ -158,7 +161,6 @@ export default function CustomersPage() {
           throw new Error(res.error || "فشل العملية");
       }
       
-      // تحديث الحالة محلياً
       setAllUsers(prev => prev.map(u => u.id === id ? { ...u, is_banned: newStatus } : u));
       alert(`تم ${actionText} المستخدم بنجاح.`);
 
@@ -178,12 +180,10 @@ export default function CustomersPage() {
           method: 'POST',
           headers: { 
               'Content-Type': 'application/json',
-              // لا نحتاج Authorization في الهيدر لأننا نرسل requesterId في البودي للتحقق
           },
           body: JSON.stringify({ 
               action: 'delete', 
               userId: id, 
-              // 👇 هذا هو التعديل المهم: نرسل هوية الأدمن للحارس
               requesterId: session.user.id, 
               logDetails: `تم حذف المستخدم نهائياً: ${userName}`
           })
@@ -192,11 +192,9 @@ export default function CustomersPage() {
       const res = await response.json();
 
       if (!response.ok) {
-          // هنا ستظهر رسالة "ليس لديك صلاحية" إذا منعه الحارس
           throw new Error(res.error || "فشل الحذف");
       }
       
-      // تحديث الواجهة بعد النجاح
       setAllUsers(prev => prev.filter(u => u.id !== id));
       alert("✅ " + (res.message || "تم حذف المستخدم نهائياً."));
 
@@ -286,7 +284,7 @@ export default function CustomersPage() {
              <h1 className="text-2xl font-bold mb-1 flex items-center gap-2"><Users className="text-[#C89B3C]" size={24} /> إدارة العملاء</h1>
         </div>
 
-        {/* بطاقات الإحصائيات (قابلة للنقر الآن) */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div 
               onClick={() => setTypeFilter('clients')}
@@ -315,7 +313,7 @@ export default function CustomersPage() {
             </div>
         </div>
 
-        {/* الفلتر والبحث */}
+        {/* Filter & Search */}
         <div className="flex flex-col md:flex-row gap-4 mb-6 bg-white/5 p-4 rounded-2xl border border-white/10">
           <div className="relative flex-1">
             <Search className="absolute right-3 top-3 text-white/40" size={20} />
@@ -332,6 +330,7 @@ export default function CustomersPage() {
           </div>
         </div>
 
+        {/* Users Table */}
         <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl min-h-[400px]">
           {loading ? (
             <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div>
@@ -363,6 +362,7 @@ export default function CustomersPage() {
                           <div>
                             <div className="font-bold text-white flex items-center gap-2">
                                 {user.full_name || "مستخدم بدون اسم"}
+                                {user.is_deleted && <span className="text-[10px] bg-red-900/50 text-red-200 px-2 py-0.5 rounded border border-red-500/50 font-bold">محذوف 🗑️</span>}
                                 {user.is_provider && <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded border border-purple-500/20">مزود</span>}
                             </div>
                             <div className="text-xs text-white/40 font-mono">ID: {user.id.slice(0, 6)}...</div>
@@ -377,12 +377,20 @@ export default function CustomersPage() {
                         <div className="flex items-center gap-2"><Calendar size={14} /> {new Date(user.created_at).toLocaleDateString('ar-SA')}</div>
                       </td>
                       <td className="px-6 py-4">
-                        {user.is_banned ? 
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-500/10 text-red-400 text-xs border border-red-500/20"><Ban size={12}/> محظور</span> 
-                            : 
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20"><CheckCircle size={12}/> نشط</span>
-                        }
-                      </td>
+  {user.is_deleted ? (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-700 text-gray-300 text-xs border border-gray-600">
+        <Trash2 size={12}/> مؤرشف
+      </span>
+  ) : user.is_banned ? (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-500/10 text-red-400 text-xs border border-red-500/20">
+        <Ban size={12}/> محظور
+      </span>
+  ) : (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20">
+        <CheckCircle size={12}/> نشط
+      </span>
+  )}
+</td>
                       <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
                             <button onClick={() => setSelectedUser(user)} title="عرض التفاصيل" className="p-2 bg-white/5 hover:bg-white/10 text-blue-400 rounded-lg transition"><Eye size={16} /></button>

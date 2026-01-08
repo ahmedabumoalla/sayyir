@@ -21,6 +21,11 @@ export default function AddServicePage() {
 
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
+  
+  // 1. إضافة متغيرات التواريخ
+  const [availableFrom, setAvailableFrom] = useState("");
+  const [availableTo, setAvailableTo] = useState("");
+
   const [location, setLocation] = useState<{ lat: number; lng: number }>({
     lat: 21.543333,
     lng: 39.172778,
@@ -70,6 +75,7 @@ export default function AddServicePage() {
       return;
     }
 
+    // 2. تجهيز البيانات مع التواريخ
     const payload = {
       provider_id: session.user.id,
       title,
@@ -78,6 +84,9 @@ export default function AddServicePage() {
       location_lat: config?.requires_location ? location.lat : null,
       location_lng: config?.requires_location ? location.lng : null,
       status: "pending",
+      // إذا الحقل فاضي نرسل null يعني متاح دائماً
+      available_from: availableFrom || null, 
+      available_to: availableTo || null,
     };
 
     const { error } = await supabase.from("services").insert([payload]);
@@ -126,19 +135,45 @@ export default function AddServicePage() {
           onChange={(e) => setPrice(e.target.value)}
         />
 
+        {/* 3. حقول اختيار الوقت والتاريخ */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label className="block text-sm text-gray-400 mb-2">متاح من تاريخ (اختياري)</label>
+                <input
+                    type="datetime-local"
+                    className="w-full p-3 rounded-xl bg-[#252525] border border-white/10 text-white scheme-dark"
+                    value={availableFrom}
+                    onChange={(e) => setAvailableFrom(e.target.value)}
+                />
+            </div>
+            <div>
+                <label className="block text-sm text-gray-400 mb-2">ينتهي بتاريخ (اختياري)</label>
+                <input
+                    type="datetime-local"
+                    className="w-full p-3 rounded-xl bg-[#252525] border border-white/10 text-white scheme-dark"
+                    value={availableTo}
+                    onChange={(e) => setAvailableTo(e.target.value)}
+                />
+                <p className="text-[10px] text-gray-500 mt-1">إذا تركتها فارغة ستكون الخدمة متاحة دائماً</p>
+            </div>
+        </div>
+
         {config?.requires_location && (
-          <LocationPicker
-            lat={location.lat}
-            lng={location.lng}
-            onLocationChange={(lat: number, lng: number) =>
-              setLocation({ lat, lng })
-            }
-          />
+          <div className="space-y-2">
+             <label className="block text-sm text-gray-400">موقع الخدمة</label>
+             <LocationPicker
+                lat={location.lat}
+                lng={location.lng}
+                onLocationChange={(lat: number, lng: number) =>
+                setLocation({ lat, lng })
+                }
+             />
+          </div>
         )}
 
         <button
           disabled={loading}
-          className="w-full bg-[#C89B3C] text-black py-4 rounded-xl font-bold hover:bg-[#b38a35]"
+          className="w-full bg-[#C89B3C] text-black py-4 rounded-xl font-bold hover:bg-[#b38a35] transition"
         >
           {loading ? "جاري الإرسال..." : "🚀 رفع الخدمة"}
         </button>
