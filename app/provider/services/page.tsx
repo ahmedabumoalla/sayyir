@@ -8,7 +8,8 @@ import {
   Home, Utensils, Camera, Eye, AlertCircle,
   Wifi, Car, Waves, Sparkles, Box, 
   Tv, Wind, ShieldCheck, Coffee, Flame, HeartPulse,
-  Mountain, Footprints, Compass, Map as MapIcon, Calendar
+  Mountain, Footprints, Compass, Map as MapIcon, Calendar,
+  UploadCloud, Image as ImageIcon 
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -19,7 +20,6 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 // --- أنواع البيانات ---
 interface Shift { from: string; to: string; }
 interface WorkDay { day: string; active: boolean; shifts: Shift[]; }
-// ✅ تعديل: أضفنا file لحفظ الملف مؤقتاً قبل الرفع
 interface Item { id: string; name: string; price: number; image: string | null; qty?: number; file?: File | null } 
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -58,7 +58,12 @@ export default function ProviderServicesPage() {
     room_count: 1, amenities: [] as string[], 
     activity_type: "", difficulty_level: "easy", duration: "", meeting_point: "", included_items: "", requirements: "",
     lat: 18.2164, lng: 42.5053,
+    // ✅ إضافة جديدة: صور المكان
+    place_images: [] as File[],
   });
+
+  // حالة لمعاينة صور المكان
+  const [placeImagePreviews, setPlaceImagePreviews] = useState<string[]>([]);
 
   const [schedule, setSchedule] = useState<WorkDay[]>(
     DAYS.map(d => ({ day: d, active: true, shifts: [{ from: "09:00", to: "22:00" }] }))
@@ -86,19 +91,33 @@ export default function ProviderServicesPage() {
   };
 
   const uploadSingleFile = async (file: File, folder: string) => {
-    // تأكد أن اسم البكت صحيح وموجود في Supabase
     const fileName = `${folder}/${Date.now()}_${file.name.replace(/\s/g, '-')}`;
-    const { error } = await supabase.storage.from('provider-files').upload(fileName, file);
+    const { error } = await supabase.storage.from('provider-files').upload(fileName, file); // تأكد من اسم البكت: provider-files
     if (error) throw error;
     const { data } = supabase.storage.from('provider-files').getPublicUrl(fileName);
     return data.publicUrl;
+  };
+
+  // ✅ دالة التعامل مع صور المكان
+  const handlePlaceImagesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const newFiles = Array.from(e.target.files);
+      setFormData(prev => ({ ...prev, place_images: [...prev.place_images, ...newFiles] }));
+      
+      const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+      setPlaceImagePreviews(prev => [...prev, ...newPreviews]);
+    }
+  };
+
+  const removePlaceImage = (index: number) => {
+    setFormData(prev => ({ ...prev, place_images: prev.place_images.filter((_, i) => i !== index) }));
+    setPlaceImagePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleAddItem = () => {
     if (!newItem.name || !newItem.price) return alert("أدخل البيانات المطلوبة");
     if (selectedSubCategory === 'craft' && (!newItem.qty || newItem.qty < 1)) return alert("أدخل كمية المخزون لهذه القطعة");
     
-    // ✅ نحفظ الملف الفعلي (itemImageFile) عشان نرفعه وقت الحفظ النهائي
     setItemsList([...itemsList, { 
         ...newItem, 
         id: Date.now().toString(), 
@@ -115,7 +134,6 @@ export default function ProviderServicesPage() {
       else setFormData({...formData, amenities: [...formData.amenities, id]});
   };
 
-  // --- دالة الحفظ (مع إصلاح رفع الصور) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -123,28 +141,29 @@ export default function ProviderServicesPage() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("يجب تسجيل الدخول");
         
-        // 1. رفع ملف الترخيص (إذا وجد)
+        // 1. رفع ملف الترخيص
         let licenseUrl = null;
         if (formData.commercial_license) licenseUrl = await uploadSingleFile(formData.commercial_license, 'licenses');
 
-        // 2. ✅ رفع صور المنتجات/المنيو (الإصلاح)
+        // 2. رفع صور المكان (الجديد)
+        const uploadedPlaceImages: string[] = [];
+        for (const file of formData.place_images) {
+            const url = await uploadSingleFile(file, 'places');
+            uploadedPlaceImages.push(url);
+        }
+
+        // 3. رفع صور المنتجات
         const processedItems = await Promise.all(itemsList.map(async (item) => {
             let publicUrl = item.image;
-            // إذا كان فيه ملف جديد، نرفعه
             if (item.file) {
                 publicUrl = await uploadSingleFile(item.file, 'menu-items');
             }
-            // نرجع العنصر بدون كائن الملف (عشان الداتابيس ما تقبله) ونحط الرابط الجديد
             return { 
-                id: item.id, 
-                name: item.name, 
-                price: item.price, 
-                qty: item.qty, 
-                image: publicUrl 
+                id: item.id, name: item.name, price: item.price, qty: item.qty, image: publicUrl 
             };
         }));
 
-        // 3. الحفظ في قاعدة البيانات
+        // 4. الحفظ
         const { error } = await supabase.from('services').insert([{
             provider_id: session.user.id,
             service_category: selectedCategory, sub_category: selectedSubCategory,
@@ -159,9 +178,16 @@ export default function ProviderServicesPage() {
             meeting_point: selectedCategory === 'experience' ? formData.meeting_point : null,
             included_items: selectedCategory === 'experience' ? formData.included_items : null,
             requirements: selectedCategory === 'experience' ? formData.requirements : null,
-            menu_items: processedItems, // نستخدم القائمة بعد الرفع
+            menu_items: processedItems, 
             location_lat: formData.lat, location_lng: formData.lng,
-            status: 'pending', service_type: selectedCategory === 'experience' ? 'experience' : 'general'
+            status: 'pending', service_type: selectedCategory === 'experience' ? 'experience' : 'general',
+            
+            // ✅ حفظ الصورة الرئيسية وباقي الصور
+            image_url: uploadedPlaceImages[0] || null, 
+            details: {
+                images: uploadedPlaceImages, // كل صور المكان
+                features: formData.amenities
+            }
         }]);
 
         if (error) throw error;
@@ -173,8 +199,9 @@ export default function ProviderServicesPage() {
 
   const resetForm = () => {
       setStep(1); setSelectedCategory(null); setSelectedSubCategory(null);
-      setFormData({ title: "", description: "", price: "", commercial_license: null, capacity_type: "unlimited", max_capacity: 0, room_count: 1, amenities: [], activity_type: "", difficulty_level: "easy", duration: "", meeting_point: "", included_items: "", requirements: "", lat: 18.2164, lng: 42.5053 });
+      setFormData({ title: "", description: "", price: "", commercial_license: null, capacity_type: "unlimited", max_capacity: 0, room_count: 1, amenities: [], activity_type: "", difficulty_level: "easy", duration: "", meeting_point: "", included_items: "", requirements: "", lat: 18.2164, lng: 42.5053, place_images: [] });
       setItemsList([]);
+      setPlaceImagePreviews([]);
   };
 
   const renderStepContent = () => {
@@ -182,26 +209,60 @@ export default function ProviderServicesPage() {
       if (step === 2 && selectedCategory === 'facility') { return ( <div className="space-y-6 text-center py-10"> <h3 className="text-xl font-bold text-white mb-8">حدد نوع المرفق</h3> <div className="grid grid-cols-1 md:grid-cols-3 gap-4"> <button type="button" onClick={() => { setSelectedSubCategory('food'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> <Utensils size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">أكل ومشروبات</span> </button> <button type="button" onClick={() => { setSelectedSubCategory('craft'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> <Box size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">حرف ومنتجات</span> </button> <button type="button" onClick={() => { setSelectedSubCategory('lodging'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> <Home size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">نزل وتأجير</span> </button> </div> <button type="button" onClick={() => setStep(1)} className="text-sm text-white/50 underline">رجوع</button> </div> ); }
       return ( <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in"> 
         <div className="flex items-center gap-2 text-sm text-[#C89B3C] bg-[#C89B3C]/10 p-3 rounded-xl w-fit"> <span className="font-bold">{selectedCategory === 'experience' ? 'تجربة سياحية' : selectedSubCategory === 'food' ? 'مرفق: أكل ومشروبات' : selectedSubCategory === 'craft' ? 'مرفق: حرف ومنتجات' : 'مرفق: نزل وتأجير'}</span> <button type="button" onClick={resetForm} className="text-white hover:underline text-xs ml-2">(تغيير)</button> </div> 
+        
+        {/* === القسم 1: المعلومات الأساسية + المتطلبات الإدارية === */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> 
             <div className="space-y-4"> 
                 <div> <label className="block text-sm text-white/70 mb-1"> {selectedCategory === 'experience' ? 'عنوان التجربة' : 'اسم المكان/المتجر'} <span className="text-red-500">*</span> </label> <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> 
                 <div> <label className="block text-sm text-white/70 mb-1"> {selectedSubCategory === 'lodging' ? 'سعر الليلة (يبدأ من)' : selectedCategory === 'experience' ? 'سعر الشخص الواحد' : 'رسوم الدخول / الحد الأدنى'} <span className="text-red-500">*</span> </label> <input required type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> 
+                
+                {/* المتطلبات الإدارية */}
                 {selectedSubCategory === 'lodging' && ( <> <div> <label className="block text-sm text-white/70 mb-1">عدد الوحدات/الغرف المتاحة</label> <input type="number" min="1" value={formData.room_count} onChange={e => setFormData({...formData, room_count: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> <div> <label className="block text-sm text-white/70 mb-1">الطاقة الاستيعابية (أشخاص)</label> <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> </> )} 
                 {selectedCategory === 'experience' && ( <> <div> <label className="block text-sm text-white/70 mb-1">نوع النشاط</label> <input placeholder="مثال: هايكنج، ركوب خيل، جولة..." value={formData.activity_type} onChange={e => setFormData({...formData, activity_type: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> <div className="grid grid-cols-2 gap-2"> <div> <label className="block text-sm text-white/70 mb-1">المدة</label> <input placeholder="3 ساعات" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> <div> <label className="block text-sm text-white/70 mb-1">الصعوبة</label> <select value={formData.difficulty_level} onChange={e => setFormData({...formData, difficulty_level: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"> <option value="easy">سهل 🟢</option> <option value="medium">متوسط 🟡</option> <option value="hard">صعب 🔴</option> <option value="extreme">محترف 💀</option> </select> </div> </div> </> )} 
-                <div> <label className="block text-sm text-white/70 mb-1">الترخيص التجاري (اختياري)</label> <div className="relative border border-dashed border-white/20 rounded-xl p-3 text-center cursor-pointer hover:border-[#C89B3C] transition"> <input type="file" accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => setFormData({...formData, commercial_license: e.target.files?.[0] || null})} /> <span className="text-xs text-white/50">{formData.commercial_license ? formData.commercial_license.name : "رفع ملف الترخيص (PDF/Image)"}</span> </div> </div> 
+                
+                <div> <label className="block text-sm text-white/70 mb-1">الترخيص التجاري (مطلوب من الإدارة)</label> <div className="relative border border-dashed border-white/20 rounded-xl p-3 text-center cursor-pointer hover:border-[#C89B3C] transition"> <input type="file" accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => setFormData({...formData, commercial_license: e.target.files?.[0] || null})} /> <span className="text-xs text-white/50">{formData.commercial_license ? formData.commercial_license.name : "رفع ملف الترخيص (PDF/Image)"}</span> </div> </div> 
             </div> 
             <div className="space-y-4"> 
                 <div> <label className="block text-sm text-white/70 mb-1">الوصف التفصيلي <span className="text-red-500">*</span></label> <textarea required rows={selectedCategory === 'experience' ? 3 : 8} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> </div> 
                 {selectedCategory === 'experience' && ( <> <div> <label className="block text-sm text-white/70 mb-1">ماذا تشمل التجربة؟ (العدة، الوجبات)</label> <textarea rows={2} placeholder="مثال: خوذة، ماء، وجبة غداء..." value={formData.included_items} onChange={e => setFormData({...formData, included_items: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> </div> <div> <label className="block text-sm text-white/70 mb-1">المتطلبات من العميل</label> <textarea rows={2} placeholder="مثال: لبس رياضي، لياقة متوسطة..." value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> </div> <div> <label className="block text-sm text-white/70 mb-1">نقطة التجمع</label> <input placeholder="وصف مكان اللقاء..." value={formData.meeting_point} onChange={e => setFormData({...formData, meeting_point: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> </> )} 
             </div> 
         </div> 
+
+        {/* ✅ القسم الجديد: صور المكان (قبل المنيو والخدمات) */}
+        <div className="bg-[#1a1a1a] p-5 rounded-2xl border border-white/5">
+            <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2">
+                <ImageIcon size={18}/> صور المكان / المرفق (مهم للعميل)
+            </h4>
+            <div className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center hover:border-[#C89B3C]/50 transition bg-black/20 relative group">
+                <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*"
+                    onChange={handlePlaceImagesSelect}
+                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                />
+                <div className="flex flex-col items-center gap-2">
+                    <UploadCloud className="text-white/50 group-hover:text-[#C89B3C] transition"/>
+                    <span className="text-sm text-white/70">اضغط لرفع صور المكان (واجهة، جلسات، مدخل)</span>
+                </div>
+            </div>
+            {placeImagePreviews.length > 0 && (
+                <div className="flex gap-3 overflow-x-auto mt-4 pb-2">
+                    {placeImagePreviews.map((src, i) => (
+                        <div key={i} className="relative w-20 h-20 shrink-0 rounded-lg overflow-hidden border border-white/10 group">
+                            <Image src={src} fill className="object-cover" alt="Place Preview"/>
+                            <button type="button" onClick={() => removePlaceImage(i)} className="absolute top-1 right-1 bg-red-500/80 p-1 rounded-full text-white opacity-0 group-hover:opacity-100 transition"><X size={12}/></button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+
         {selectedSubCategory === 'lodging' && ( <div className="bg-black/20 p-5 rounded-2xl border border-white/5"> <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2"><Sparkles size={18}/> الخدمات والمميزات المتوفرة</h4> <div className="grid grid-cols-2 md:grid-cols-4 gap-3"> {AMENITIES_OPTIONS.map((am) => ( <label key={am.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${formData.amenities.includes(am.id) ? 'bg-[#C89B3C]/10 border-[#C89B3C] text-white' : 'bg-black/20 border-white/5 text-white/50'}`}> <input type="checkbox" checked={formData.amenities.includes(am.id)} onChange={() => toggleAmenity(am.id)} className="hidden"/> <am.icon size={18} className={formData.amenities.includes(am.id) ? "text-[#C89B3C]" : ""}/> <span className="text-sm font-bold">{am.label}</span> </label> ))} </div> </div> )} 
+        
         {(selectedSubCategory === 'food' || selectedSubCategory === 'craft') && ( <div className="bg-black/20 p-5 rounded-2xl border border-white/5"> <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2"> {selectedSubCategory === 'food' ? <Utensils size={18}/> : <Box size={18}/>} {selectedSubCategory === 'food' ? 'قائمة الطعام (المنيو)' : 'المنتجات المعروضة (الحرف)'} </h4> <div className="flex flex-wrap gap-2 mb-4 items-end bg-white/5 p-3 rounded-xl"> <div className="flex-1 min-w-[150px]"> <label className="text-xs text-white/50 block mb-1">اسم المنتج</label> <input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> <div className="w-24"> <label className="text-xs text-white/50 block mb-1">السعر</label> <input type="number" value={newItem.price || ''} onChange={e => setNewItem({...newItem, price: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> {selectedSubCategory === 'craft' && ( <div className="w-24"> <label className="text-xs text-white/50 block mb-1">المخزون</label> <input type="number" value={newItem.qty || 1} onChange={e => setNewItem({...newItem, qty: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> )} <div className="w-10"> <label className="block w-full h-[38px] bg-white/5 border border-white/10 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/10"> <Camera size={16} className="text-white/50"/> <input type="file" accept="image/*" className="hidden" onChange={e => setItemImageFile(e.target.files?.[0] || null)}/> </label> </div> <button type="button" onClick={handleAddItem} className="bg-[#C89B3C] text-black px-4 h-[38px] rounded-lg text-sm font-bold">إضافة</button> </div> <div className="space-y-2"> {itemsList.map((item, i) => ( <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5"> <div className="flex items-center gap-3"> {item.image ? <img src={item.image} className="w-10 h-10 rounded-lg object-cover"/> : <div className="w-10 h-10 bg-white/10 rounded-lg"/>} <div> <p className="font-bold text-sm">{item.name}</p> {selectedSubCategory === 'craft' && <p className="text-xs text-white/40">متبقي: {item.qty} قطعة</p>} </div> </div> <div className="flex items-center gap-3"> <span className="text-[#C89B3C] font-mono">{item.price} ﷼</span> <button type="button" onClick={() => setItemsList(itemsList.filter(m => m.id !== item.id))} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button> </div> </div> ))} </div> </div> )} 
-        <div className="space-y-4"> <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><Clock size={18}/> {selectedSubCategory === 'lodging' ? 'أيام استقبال النزلاء' : 'أوقات العمل والدوام'} </h4> <div className="grid grid-cols-1 gap-2 bg-black/20 p-4 rounded-xl border border-white/5"> {schedule.map((day, dIdx) => ( <div key={dIdx} className={`flex flex-wrap items-center gap-3 p-2 rounded-lg border ${day.active ? 'border-white/10' : 'border-red-500/10 bg-red-500/5'}`}> <div className="flex items-center gap-2 w-24"> <input type="checkbox" checked={day.active} onChange={() => { const newSched = [...schedule]; newSched[dIdx].active = !newSched[dIdx].active; setSchedule(newSched); }} className="accent-[#C89B3C] w-4 h-4"/> <span className="text-sm font-bold">{day.day}</span> </div> {day.active ? ( <div className="flex flex-wrap gap-2 flex-1"> {day.shifts.map((shift, sIdx) => ( <div key={sIdx} className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/10"> <input type="time" value={shift.from} onChange={e => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].from = e.target.value; setSchedule(newSched); }} className="bg-transparent text-white text-xs outline-none"/> <span>-</span> <input type="time" value={shift.to} onChange={e => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].to = e.target.value; setSchedule(newSched); }} className="bg-transparent text-white text-xs outline-none"/> </div> ))} </div> ) : <span className="text-xs text-red-400/50">مغلق</span>} </div> ))} </div> 
         
-        {/* ✅ إصلاح التقويم: أضفنا class [color-scheme:dark] ليظهر التقويم أبيض */}
-        <div className="flex gap-4 items-center pt-2"> <label className="text-sm text-white/70">حجب تاريخ معين:</label> <input type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-lg p-2 text-white text-xs outline-none [color-scheme:dark]"/> <button type="button" onClick={() => {if(newBlockedDate) { setBlockedDates([...blockedDates, newBlockedDate]); setNewBlockedDate(""); }}} className="bg-red-500/20 text-red-400 px-3 py-1 rounded text-xs font-bold">حجب</button> </div> <div className="flex flex-wrap gap-2"> {blockedDates.map((date, i) => ( <span key={i} className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/20 flex items-center gap-1"> {date} <button type="button" onClick={() => setBlockedDates(blockedDates.filter(d => d !== date))}><X size={10}/></button> </span> ))} </div> </div> 
-        
+        <div className="space-y-4"> <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><Clock size={18}/> {selectedSubCategory === 'lodging' ? 'أيام استقبال النزلاء' : 'أوقات العمل والدوام'} </h4> <div className="grid grid-cols-1 gap-2 bg-black/20 p-4 rounded-xl border border-white/5"> {schedule.map((day, dIdx) => ( <div key={dIdx} className={`flex flex-wrap items-center gap-3 p-2 rounded-lg border ${day.active ? 'border-white/10' : 'border-red-500/10 bg-red-500/5'}`}> <div className="flex items-center gap-2 w-24"> <input type="checkbox" checked={day.active} onChange={() => { const newSched = [...schedule]; newSched[dIdx].active = !newSched[dIdx].active; setSchedule(newSched); }} className="accent-[#C89B3C] w-4 h-4"/> <span className="text-sm font-bold">{day.day}</span> </div> {day.active ? ( <div className="flex flex-wrap gap-2 flex-1"> {day.shifts.map((shift, sIdx) => ( <div key={sIdx} className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/10"> <input type="time" value={shift.from} onChange={e => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].from = e.target.value; setSchedule(newSched); }} className="bg-transparent text-white text-xs outline-none"/> <span>-</span> <input type="time" value={shift.to} onChange={e => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].to = e.target.value; setSchedule(newSched); }} className="bg-transparent text-white text-xs outline-none"/> </div> ))} </div> ) : <span className="text-xs text-red-400/50">مغلق</span>} </div> ))} </div> <div className="flex gap-4 items-center pt-2"> <label className="text-sm text-white/70">حجب تاريخ معين:</label> <input type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-lg p-2 text-white text-xs outline-none [color-scheme:dark]"/> <button type="button" onClick={() => {if(newBlockedDate) { setBlockedDates([...blockedDates, newBlockedDate]); setNewBlockedDate(""); }}} className="bg-red-500/20 text-red-400 px-3 py-1 rounded text-xs font-bold">حجب</button> </div> <div className="flex flex-wrap gap-2"> {blockedDates.map((date, i) => ( <span key={i} className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/20 flex items-center gap-1"> {date} <button type="button" onClick={() => setBlockedDates(blockedDates.filter(d => d !== date))}><X size={10}/></button> </span> ))} </div> </div> 
         {selectedCategory === 'experience' && ( <div className="space-y-4"> <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><User size={18}/> العدد المسموح</h4> <div className="bg-black/20 p-4 rounded-xl border border-white/5"> <label className="block text-sm text-white/70 mb-2">العدد الأقصى للمشتركين (يومياً)</label> <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> <p className="text-xs text-white/40 mt-2">* يغلق الحجز تلقائياً عند الاكتمال.</p> </div> </div> )} <div className="h-72 rounded-2xl overflow-hidden border border-white/10 relative shadow-2xl group"> <div className="absolute inset-0 z-0 bg-black/40 pointer-events-none" /> <Map initialViewState={{ latitude: 18.2164, longitude: 42.5053, zoom: 11 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN} onClick={(e) => setFormData({...formData, lat: e.lngLat.lat, lng: e.lngLat.lng})} cursor="crosshair"> <NavigationControl position="top-left" showCompass={false} /> <Marker latitude={formData.lat} longitude={formData.lng} anchor="bottom"> <div className="relative flex flex-col items-center animate-bounce-slow"> <div className="w-12 h-12 rounded-full bg-[#C89B3C] border-4 border-white/20 text-black flex items-center justify-center shadow-[0_0_20px_rgba(200,155,60,0.6)] z-20"> <MapPin size={24} fill="currentColor" /> </div> <div className="w-4 h-4 bg-[#C89B3C] rotate-45 -mt-2 z-10 border-r border-b border-white/20"></div> </div> </Marker> </Map> <div className="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none"> <div className="bg-black/80 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 text-white shadow-xl"> <p className="text-[10px] text-white/50 uppercase tracking-wider mb-0.5">الإحداثيات الحالية</p> <p className="text-xs font-mono text-[#C89B3C] dir-ltr"> {formData.lat.toFixed(5)}, {formData.lng.toFixed(5)} </p> </div> <div className="bg-[#C89B3C] text-black px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg flex items-center gap-2 animate-pulse"> <MapPin size={14}/> اضغط لتحديد الموقع </div> </div> </div> <div className="flex gap-4 pt-4 border-t border-white/10"> <button disabled={submitting} type="submit" className="flex-1 bg-[#C89B3C] hover:bg-[#b38a35] text-black font-bold py-3 rounded-xl transition flex justify-center items-center gap-2"> {submitting ? <Loader2 className="animate-spin"/> : <><CheckCircle size={20}/> إرسال للمراجعة</>} </button> <button type="button" onClick={() => setIsModalOpen(false)} className="px-8 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition">إلغاء</button> </div> </form> );
   };
 
@@ -215,7 +276,7 @@ export default function ProviderServicesPage() {
           <button onClick={() => { setIsModalOpen(true); setStep(1); }} className="bg-[#C89B3C] text-black px-4 py-2 rounded-xl font-bold hover:bg-[#b38a35] flex items-center gap-2"><Plus size={18}/> خدمة جديدة</button>
        </div>
 
-       {/* ✅ عرض الخدمات (كما هو - لم يتغير) */}
+       {/* قائمة الخدمات - لم يتم لمسها */}
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
            {services.length === 0 && !loading && (
                <div className="col-span-full text-center py-20 bg-white/5 rounded-3xl border border-white/5 text-white/30">
@@ -255,7 +316,7 @@ export default function ProviderServicesPage() {
            ))}
        </div>
 
-       {/* ✅ نافذة العرض (كما هي - لم تتغير) */}
+       {/* نافذة العرض (View Modal) */}
        {viewService && (
          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
@@ -268,7 +329,6 @@ export default function ProviderServicesPage() {
                   <button onClick={() => setViewService(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition"><X size={20}/></button>
                </div>
                <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-                  {/* ... نفس كود التفاصيل السابق ... */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       <div className="space-y-6">
                           <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
@@ -312,14 +372,14 @@ export default function ProviderServicesPage() {
          </div>
        )}
 
-       {/* MODAL (للإضافة - كما هو) */}
+       {/* MODAL الإضافة */}
        {isModalOpen && (
          <div className="fixed inset-0 z-50 flex justify-center items-start pt-10 sm:items-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
             <div className="bg-[#1a1a1a] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col relative my-auto max-h-[90vh]">
                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl shrink-0 sticky top-0 z-10 backdrop-blur-md">
                   <div>
-                     <h3 className="text-xl font-bold text-white">إضافة خدمة جديدة</h3>
-                     <span className="text-xs text-white/40">خطوة {step} من 3</span>
+                      <h3 className="text-xl font-bold text-white">إضافة خدمة جديدة</h3>
+                      <span className="text-xs text-white/40">خطوة {step} من 3</span>
                   </div>
                   <button onClick={() => setIsModalOpen(false)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition"><X className="text-white"/></button>
                </div>
