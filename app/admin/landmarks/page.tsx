@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Map as MapIcon, DollarSign, Settings, ShieldAlert,
   Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video,
   Menu, User, Home, Camera, Mountain, History, Clock, CheckCircle, XCircle,
-  Calendar, Info, AlertTriangle, UserCheck, Activity, Hourglass, List
+  Calendar, Info, AlertTriangle, UserCheck, Activity, Hourglass, List, PlayCircle
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -49,16 +49,22 @@ interface Place {
   lng: number;
   is_active: boolean;
   work_hours?: WorkHour[];
-  // الحقول الجديدة الاحترافية
-  price: number;           // السعر أو رسوم الدخول
-  services?: string;       // خدمات (للتراث)
-  duration?: string;       // مدة التجربة
-  difficulty?: string;     // صعوبة التجربة
-  max_capacity?: number;   // السعة القصوى (لإخفاء التجربة عند الامتلاء)
-  blocked_dates?: string[]; // تواريخ محددة للإغلاق أو الحجز الكامل (YYYY-MM-DD)
+  price: number;           
+  services?: string;       
+  duration?: string;       
+  difficulty?: string;     
+  max_capacity?: number;   
+  blocked_dates?: string[];
 }
 
-export default function LandmarksPage() {
+// واجهة مساعدة للمعاينة
+interface MediaPreview {
+    url: string;
+    type: 'image' | 'video';
+    file?: File; // الملف الأصلي في حال كان جديداً
+}
+
+export default function AdminLandmarksPage() {
   const router = useRouter();
   const pathname = usePathname();
   
@@ -74,7 +80,6 @@ export default function LandmarksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  // حالة لإضافة تاريخ مغلق جديد
   const [newBlockedDate, setNewBlockedDate] = useState("");
 
   const [formData, setFormData] = useState<Place>({
@@ -96,8 +101,8 @@ export default function LandmarksPage() {
     blocked_dates: []
   });
 
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  // تم تغيير طريقة المعاينة لتكون أدق
+  const [mediaPreviews, setMediaPreviews] = useState<MediaPreview[]>([]);
   
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -109,15 +114,16 @@ export default function LandmarksPage() {
     checkRole();
   }, []);
 
+  // Mapbox Initialization
   useEffect(() => {
     if (isModalOpen && mapContainer.current) {
       setTimeout(() => {
         if (!map.current) {
           map.current = new mapboxgl.Map({
             container: mapContainer.current!,
-            style: 'mapbox://styles/mapbox/streets-v12', 
+            style: 'mapbox://styles/mapbox/satellite-streets-v12', // ✅ قمر صناعي
             center: [formData.lng, formData.lat],
-            zoom: 12,
+            zoom: 14,
           });
 
           marker.current = new mapboxgl.Marker({ color: "#C89B3C", draggable: true })
@@ -133,12 +139,13 @@ export default function LandmarksPage() {
             marker.current!.setLngLat(e.lngLat);
             setFormData(prev => ({ ...prev, lat: e.lngLat.lat, lng: e.lngLat.lng }));
           });
+        } else {
+            // تحديث الموقع إذا كانت الخريطة موجودة مسبقاً
+            map.current.flyTo({ center: [formData.lng, formData.lat] });
+            marker.current?.setLngLat([formData.lng, formData.lat]);
         }
       }, 200);
-    } else {
-      map.current?.remove();
-      map.current = null;
-    }
+    } 
   }, [isModalOpen]);
 
   const checkRole = async () => {
@@ -167,27 +174,19 @@ export default function LandmarksPage() {
 
   const handleAddNew = (type: 'tourist' | 'heritage' | 'experience') => {
     setFormData({ 
-        name: "", 
-        type: type, 
-        category: "", 
-        city: "", 
-        description: "", 
-        media_urls: [], 
-        lat: 18.2164, 
-        lng: 42.5053, 
-        is_active: true,
-        work_hours: defaultWorkHours,
-        price: 0,
-        services: "",
-        duration: "",
-        difficulty: "سهل",
-        max_capacity: type === 'experience' ? 10 : 0,
-        blocked_dates: []
+        name: "", type: type, category: "", city: "", description: "", media_urls: [], 
+        lat: 18.2164, lng: 42.5053, is_active: true, work_hours: defaultWorkHours,
+        price: 0, services: "", duration: "", difficulty: "سهل", max_capacity: type === 'experience' ? 10 : 0, blocked_dates: []
     });
-    setSelectedFiles([]);
-    setPreviews([]);
+    setMediaPreviews([]);
     setNewBlockedDate("");
     setIsModalOpen(true);
+  };
+
+  // دالة مساعدة لتحديد نوع الوسائط من الرابط
+  const getMediaType = (url: string): 'image' | 'video' => {
+      const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video');
+      return isVideo ? 'video' : 'image';
   };
 
   const handleEdit = (place: Place) => {
@@ -196,8 +195,14 @@ export default function LandmarksPage() {
         work_hours: place.work_hours || defaultWorkHours,
         blocked_dates: place.blocked_dates || []
     });
-    setSelectedFiles([]);
-    setPreviews(place.media_urls || []);
+    
+    // تحويل الروابط الموجودة إلى هيكل المعاينة
+    const existingPreviews: MediaPreview[] = (place.media_urls || []).map(url => ({
+        url,
+        type: getMediaType(url)
+    }));
+    setMediaPreviews(existingPreviews);
+    
     setNewBlockedDate("");
     setIsModalOpen(true);
   };
@@ -208,7 +213,6 @@ export default function LandmarksPage() {
     setFormData({ ...formData, work_hours: updatedHours });
   };
 
-  // إضافة تاريخ محجوز/مغلق
   const addBlockedDate = () => {
       if (newBlockedDate && !formData.blocked_dates?.includes(newBlockedDate)) {
           setFormData(prev => ({
@@ -226,21 +230,46 @@ export default function LandmarksPage() {
       }));
   };
 
+  // ✅ تصحيح منطق اختيار الملفات والمعاينة
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
-      setSelectedFiles(prev => [...prev, ...filesArray]);
-      const newPreviews = filesArray.map(file => URL.createObjectURL(file));
-      setPreviews(prev => [...prev, ...newPreviews]);
+      
+      const newPreviews: MediaPreview[] = filesArray.map(file => ({
+          url: URL.createObjectURL(file),
+          type: file.type.startsWith('video/') ? 'video' : 'image', // تحديد النوع من الملف مباشرة
+          file: file
+      }));
+
+      setMediaPreviews(prev => [...prev, ...newPreviews]);
     }
+  };
+
+  // حذف وسائط من المعاينة
+  const removeMedia = (index: number) => {
+      setMediaPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   const uploadFiles = async (): Promise<string[]> => {
     const uploadedUrls: string[] = [];
-    for (const file of selectedFiles) {
-      const fileName = `${Date.now()}-${file.name.replace(/\s/g, '-')}`;
-      const { data, error } = await supabase.storage.from('landmarks').upload(fileName, file);
+    
+    // نقسم الوسائط إلى: موجودة مسبقاً (روابط) وجديدة (ملفات)
+    const existingUrls = mediaPreviews.filter(p => !p.file).map(p => p.url);
+    const newFiles = mediaPreviews.filter(p => p.file).map(p => p.file!);
+
+    uploadedUrls.push(...existingUrls);
+
+    for (const file of newFiles) {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      
+      // ✅ إضافة خيارات الرفع لتحديد نوع المحتوى (يساعد في تشغيل الفيديو)
+      const { data, error } = await supabase.storage.from('landmarks').upload(fileName, file, {
+          contentType: file.type
+      });
+      
       if (error) { console.error("Upload error:", error); continue; }
+      
       const { data: urlData } = supabase.storage.from('landmarks').getPublicUrl(fileName);
       uploadedUrls.push(urlData.publicUrl);
     }
@@ -252,15 +281,13 @@ export default function LandmarksPage() {
     setSaving(true);
 
     try {
-      const newUrls = await uploadFiles();
-      const finalMediaUrls = [...(formData.media_urls || []), ...newUrls];
+      const finalMediaUrls = await uploadFiles();
 
       const placeData = {
           ...formData,
           media_urls: finalMediaUrls
       };
 
-      // تنظيف البيانات غير الضرورية حسب النوع
       if (formData.type !== 'experience') {
           delete placeData.duration;
           delete placeData.difficulty;
@@ -271,8 +298,7 @@ export default function LandmarksPage() {
 
       let details = "";
       if (!formData.id) {
-          const typeName = formData.type === 'experience' ? 'تجربة' : formData.type === 'heritage' ? 'موقع تراثي' : 'معلم سياحي';
-          details = `إضافة ${typeName} جديد: ${formData.name}`;
+          details = `إضافة ${formData.type} جديد: ${formData.name}`;
       } else {
           details = `تحديث بيانات: ${formData.name}`;
       }
@@ -360,7 +386,7 @@ export default function LandmarksPage() {
   return (
     <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      {/* Sidebar & Header (نفس الكود السابق) */}
+      {/* Sidebar & Header */}
       <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><Menu size={24} /></button>
         <Link href="/" className="absolute left-1/2 -translate-x-1/2"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
@@ -441,11 +467,11 @@ export default function LandmarksPage() {
                 <tbody className="divide-y divide-white/5 text-sm">{filteredPlaces.map(p => (
                     <tr key={p.id} className="hover:bg-white/5">
                     <td className="px-6 py-4">
-                        <div className="w-16 h-12 bg-white/10 rounded-lg overflow-hidden border border-white/10">
+                        <div className="w-16 h-12 bg-white/10 rounded-lg overflow-hidden border border-white/10 relative">
                         {p.media_urls && p.media_urls[0] ? (
-                            p.media_urls[0].includes('mp4') || p.media_urls[0].includes('webm') 
-                            ? <video src={p.media_urls[0]} className="w-full h-full object-cover" />
-                            : <img src={p.media_urls[0]} alt={p.name} className="w-full h-full object-cover" />
+                            getMediaType(p.media_urls[0]) === 'video'
+                            ? <div className="w-full h-full flex items-center justify-center bg-black"><PlayCircle size={20} className="text-white"/></div>
+                            : <Image src={p.media_urls[0]} alt={p.name} fill className="object-cover" />
                         ) : <div className="flex justify-center items-center h-full"><ImageIcon size={16}/></div>}
                         </div>
                     </td>
@@ -499,9 +525,9 @@ export default function LandmarksPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                     {/* Column 1: Basic Info (Left) - Span 7 */}
                     <div className="lg:col-span-7 space-y-6">
-                         
-                         {/* Basic Info */}
-                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                          
+                          {/* Basic Info */}
+                          <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
                             <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Settings size={16}/> البيانات الأساسية</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2 md:col-span-2">
@@ -518,8 +544,8 @@ export default function LandmarksPage() {
                                 <div className="space-y-2">
                                     <label className="text-xs text-white/60">المدينة</label>
                                     <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                                        <option value="">اختر...</option>
-                                        {citiesList.map(city => <option key={city.id} value={city.name}>{city.name}</option>)}
+                                            <option value="">اختر...</option>
+                                            {citiesList.map(city => <option key={city.id} value={city.name}>{city.name}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -527,87 +553,82 @@ export default function LandmarksPage() {
                                 <label className="text-xs text-white/60">الوصف</label>
                                 <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white resize-none" />
                             </div>
-                         </div>
+                          </div>
 
-                         {/* Dynamic Details Block - يظهر بناء على النوع */}
-                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                          {/* Dynamic Details Block */}
+                          <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
                             <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Info size={16}/> تفاصيل {formData.type === 'experience' ? 'التجربة' : 'المكان'}</h4>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Price (All Types) */}
                                 <div className="space-y-2">
-                                    <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type === 'tourist' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
+                                    <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type === 'tourist' || formData.type === 'heritage' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
                                     <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
                                 </div>
 
                                 {/* Heritage Specific */}
                                 {formData.type === 'heritage' && (
                                     <div className="space-y-2 md:col-span-2">
-                                        <label className="text-xs text-white/60 flex items-center gap-1"><List size={12}/> الخدمات المتوفرة (اكتبها نصياً)</label>
-                                        <textarea rows={2} placeholder="مثال: مرشد سياحي، دورات مياه، مواقف سيارات..." value={formData.services} onChange={e => setFormData({...formData, services: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
+                                            <label className="text-xs text-white/60 flex items-center gap-1"><List size={12}/> الخدمات المتوفرة (اكتبها نصياً)</label>
+                                            <textarea rows={2} placeholder="مثال: مرشد سياحي، دورات مياه، مواقف سيارات..." value={formData.services} onChange={e => setFormData({...formData, services: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
                                     </div>
                                 )}
 
                                 {/* Experience Specific */}
                                 {formData.type === 'experience' && (
                                     <>
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-white/60 flex items-center gap-1"><UserCheck size={12}/> السعة القصوى (لإغلاق الحجز)</label>
-                                            <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-white/60 flex items-center gap-1"><Activity size={12}/> مستوى الصعوبة</label>
-                                            <select value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                                                <option value="سهل">سهل 🟢</option>
-                                                <option value="متوسط">متوسط 🟡</option>
-                                                <option value="صعب">صعب 🔴</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-xs text-white/60 flex items-center gap-1"><Hourglass size={12}/> المدة (مثال: ساعتين، يوم كامل)</label>
-                                            <input type="text" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
-                                        </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-white/60 flex items-center gap-1"><UserCheck size={12}/> السعة القصوى</label>
+                                                <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-white/60 flex items-center gap-1"><Activity size={12}/> مستوى الصعوبة</label>
+                                                <select value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
+                                                    <option value="سهل">سهل 🟢</option>
+                                                    <option value="متوسط">متوسط 🟡</option>
+                                                    <option value="صعب">صعب 🔴</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs text-white/60 flex items-center gap-1"><Hourglass size={12}/> المدة (مثال: ساعتين)</label>
+                                                <input type="text" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
+                                            </div>
                                     </>
                                 )}
                             </div>
-                         </div>
+                          </div>
 
-                         {/* Work Hours & Blocked Dates */}
-                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                          {/* Work Hours & Blocked Dates (Same as before) */}
+                          <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
                             <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Clock size={16}/> التوفر والجدول الزمني</h4>
-                            
-                            {/* Tabs for Availability */}
                             <div className="space-y-4">
-                                {/* 1. Weekly Schedule */}
                                 <div className="space-y-2">
-                                    <label className="text-xs text-white/40 block mb-2">1. الجدول الأسبوعي العام (الأيام المتاحة عادة)</label>
+                                    <label className="text-xs text-white/40 block mb-2">1. الجدول الأسبوعي العام</label>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                        {formData.work_hours?.map((wh, idx) => (
-                                            <div key={idx} className={`flex items-center justify-between p-2 rounded-lg border ${wh.is_active ? 'bg-black/20 border-white/10' : 'bg-red-500/5 border-red-500/10'}`}>
-                                                <div className="flex items-center gap-2">
-                                                    <button type="button" onClick={() => updateWorkHour(idx, 'is_active', !wh.is_active)} className={`p-1 rounded-full ${wh.is_active ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                        {wh.is_active ? <CheckCircle size={16}/> : <XCircle size={16}/>}
-                                                    </button>
-                                                    <span className="text-sm font-bold w-12">{wh.day}</span>
-                                                </div>
-                                                {wh.is_active ? (
-                                                    <div className="flex gap-1 items-center dir-ltr">
-                                                        <input type="time" value={wh.from} onChange={(e) => updateWorkHour(idx, 'from', e.target.value)} className="bg-transparent text-xs text-center w-16 outline-none"/>
-                                                        <span>-</span>
-                                                        <input type="time" value={wh.to} onChange={(e) => updateWorkHour(idx, 'to', e.target.value)} className="bg-transparent text-xs text-center w-16 outline-none"/>
+                                            {formData.work_hours?.map((wh, idx) => (
+                                                <div key={idx} className={`flex items-center justify-between p-2 rounded-lg border ${wh.is_active ? 'bg-black/20 border-white/10' : 'bg-red-500/5 border-red-500/10'}`}>
+                                                    <div className="flex items-center gap-2">
+                                                        <button type="button" onClick={() => updateWorkHour(idx, 'is_active', !wh.is_active)} className={`p-1 rounded-full ${wh.is_active ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                            {wh.is_active ? <CheckCircle size={16}/> : <XCircle size={16}/>}
+                                                        </button>
+                                                        <span className="text-sm font-bold w-12">{wh.day}</span>
                                                     </div>
-                                                ) : <span className="text-xs text-red-500/50">مغلق</span>}
-                                            </div>
-                                        ))}
+                                                    {wh.is_active ? (
+                                                        <div className="flex gap-1 items-center dir-ltr">
+                                                            <input type="time" value={wh.from} onChange={(e) => updateWorkHour(idx, 'from', e.target.value)} className="bg-transparent text-xs text-center w-16 outline-none"/>
+                                                            <span>-</span>
+                                                            <input type="time" value={wh.to} onChange={(e) => updateWorkHour(idx, 'to', e.target.value)} className="bg-transparent text-xs text-center w-16 outline-none"/>
+                                                        </div>
+                                                    ) : <span className="text-xs text-red-500/50">مغلق</span>}
+                                                </div>
+                                            ))}
                                     </div>
                                 </div>
-
-                                {/* 2. Blocked Dates (Exceptions) */}
                                 <div className="pt-4 border-t border-white/10">
-                                    <label className="text-xs text-white/60 block mb-2 flex items-center gap-2"><AlertTriangle size={12} className="text-amber-500"/> 2. استثناءات / أيام محجوزة بالكامل (لن تظهر للمستخدم)</label>
+                                    <label className="text-xs text-white/60 block mb-2 flex items-center gap-2"><AlertTriangle size={12} className="text-amber-500"/> 2. استثناءات / أيام محجوزة</label>
                                     <div className="flex gap-2 mb-3">
-                                        <input type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-red-500 flex-1" />
-                                        <button type="button" onClick={addBlockedDate} className="bg-red-500/20 text-red-400 px-4 py-2 rounded-xl hover:bg-red-500 hover:text-white transition text-sm font-bold">حظر التاريخ</button>
+                                            <input type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-red-500 flex-1" />
+                                            <button type="button" onClick={addBlockedDate} className="bg-red-500/20 text-red-400 px-4 py-2 rounded-xl hover:bg-red-500 hover:text-white transition text-sm font-bold">حظر التاريخ</button>
                                     </div>
                                     {formData.blocked_dates && formData.blocked_dates.length > 0 && (
                                         <div className="flex flex-wrap gap-2">
@@ -621,14 +642,14 @@ export default function LandmarksPage() {
                                     )}
                                 </div>
                             </div>
-                         </div>
+                          </div>
                     </div>
 
                     {/* Column 2: Media & Map (Right) - Span 5 */}
                     <div className="lg:col-span-5 space-y-6">
                         {/* Map */}
                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 flex flex-col h-[350px]">
-                            <label className="text-xs text-white/60 mb-2 flex items-center gap-1"><MapPin size={14}/> تحديد الموقع الجغرافي</label>
+                            <label className="text-xs text-white/60 mb-2 flex items-center gap-1"><MapPin size={14}/> تحديد الموقع الجغرافي (قمر صناعي)</label>
                             <div className="flex-1 rounded-xl overflow-hidden border border-white/10 relative">
                                 <div ref={mapContainer} className="w-full h-full absolute inset-0" />
                                 <div className="absolute bottom-2 left-2 bg-white/90 text-black text-[10px] px-2 py-1 rounded shadow font-mono dir-ltr">
@@ -637,23 +658,32 @@ export default function LandmarksPage() {
                             </div>
                         </div>
 
-                        {/* Attachments */}
+                        {/* Attachments (Video & Images) */}
                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
                             <label className="text-xs text-white/60 flex items-center gap-1"><UploadCloud size={14}/> المرفقات (صور / فيديو)</label>
                             <div className="relative border-2 border-dashed border-white/10 bg-black/20 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-[#C89B3C]/50 transition cursor-pointer group">
                                 <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                                 <UploadCloud size={30} className="text-[#C89B3C] mb-2 group-hover:scale-110 transition" />
-                                <p className="text-sm text-white/60">اضغط لإضافة صور أو فيديو</p>
+                                <p className="text-sm text-white/60">اضغط لرفع صور أو فيديو</p>
                             </div>
-                            {previews.length > 0 && (
+                            {mediaPreviews.length > 0 && (
                                 <div className="flex gap-2 overflow-x-auto py-2 custom-scrollbar">
-                                    {previews.map((src, idx) => (
-                                    <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black/30 relative">
-                                        {src.includes('blob:http') && src.match(/mp4|webm/) ? ( 
-                                            <Video size={20} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/80" />
+                                    {mediaPreviews.map((media, idx) => (
+                                    <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black/30 relative group">
+                                        {media.type === 'video' ? ( 
+                                            <div className="w-full h-full bg-black flex items-center justify-center">
+                                                <PlayCircle size={20} className="text-white/80" />
+                                            </div>
                                         ) : (
-                                            <img src={src} alt="Preview" className="w-full h-full object-cover" />
+                                            <img src={media.url} alt="Preview" className="w-full h-full object-cover" />
                                         )}
+                                        <button 
+                                            type="button" 
+                                            onClick={() => removeMedia(idx)}
+                                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
+                                        >
+                                            <X size={12}/>
+                                        </button>
                                     </div>
                                     ))}
                                 </div>

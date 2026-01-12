@@ -188,8 +188,8 @@ export default function AdminDashboard() {
     // عداد طلبات الانضمام فقط
     { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true, badge: stats.pendingProviders },
     
-    // عداد الخدمات المعلقة فقط
-    { label: "مراجعة الخدمات", icon: CheckCircle, href: "/admin/review-services", show: true, badge: stats.pendingServices },
+    // ✅ تم تعديل الرابط هنا ليوجه إلى الصفحة الصحيحة
+    { label: "مراجعة الخدمات", icon: CheckCircle, href: "/admin/requests", show: true, badge: stats.pendingServices },
     
     { label: "إدارة المعالم", icon: Map, href: "/admin/landmarks", show: true },
     { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
@@ -372,7 +372,8 @@ export default function AdminDashboard() {
                    <h3 className="font-bold mb-4 text-white/80">إجراءات سريعة</h3>
                    <div className="grid grid-cols-1 gap-3">
                        <QuickAction label="إدارة طلبات الانضمام" icon={UserPlus} href="/admin/requests" />
-                       <QuickAction label="مراجعة الخدمات" icon={CheckCircle} href="/admin/review-services" />
+                       {/* ✅ تم تعديل الرابط هنا أيضاً */}
+                       <QuickAction label="مراجعة الخدمات" icon={CheckCircle} href="/admin/requests" />
                        <QuickAction label="إدارة المعالم" icon={Map} href="/admin/landmarks" />
                        <QuickAction label="إعدادات المنصة" icon={Settings} href="/admin/settings" />
                    </div>

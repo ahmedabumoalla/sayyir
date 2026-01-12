@@ -233,7 +233,7 @@ export default function HomePage() {
           <div className="relative bg-black py-20 px-4 border-t border-white/5">
             <div className="container mx-auto max-w-6xl">
               <div className="text-center mb-16">
-                 <h2 className="text-3xl md:text-4xl font-bold text-[#C89B3C] mb-4">عن منصة سَير</h2>
+                 <h2 className="text-3xl md:text-4xl font-bold text-[#C89B3C] mb-4">عن منصة سَيّر</h2>
                  <p className="text-white/60 max-w-2xl mx-auto">{platformInfo.about_us || "منصة سياحية متكاملة لاكتشاف منطقة عسير..."}</p>
               </div>
               

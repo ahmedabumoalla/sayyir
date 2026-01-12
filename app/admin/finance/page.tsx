@@ -7,14 +7,15 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
   Save, Loader2, CreditCard, CheckCircle, Banknote, LogOut, Briefcase,
-  Menu, X, User, Home, Copy, Ticket, Percent, Trash2, Plus, Power
+  Menu, X, User, Home, Ticket, Percent, Trash2, Plus,
+  FileText, Download, Printer, Clock, XCircle, AlertTriangle
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// الأنواع (Types)
+// --- الأنواع (Types) ---
 interface PayoutRequest {
   id: string;
   provider_id: string;
@@ -30,7 +31,6 @@ interface PlatformSettings {
   commission_tourist: string;
   commission_housing: string;
   commission_food: string;
-  // إعدادات الخصم العام الجديدة
   general_discount_percent: string;
   is_general_discount_active: boolean;
 }
@@ -44,11 +44,22 @@ interface Coupon {
   created_at: string;
 }
 
+interface BookingReport {
+    id: string;
+    service_title: string;
+    provider_name: string;
+    client_name: string;
+    status: string;
+    total_price: number;
+    created_at: string;
+    rejection_reason?: string;
+}
+
 export default function FinancePage() {
   const router = useRouter();
   const pathname = usePathname();
   
-  // States
+  // --- States ---
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -56,33 +67,32 @@ export default function FinancePage() {
   // UI States
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [reportTab, setReportTab] = useState<'all' | 'pending_approval' | 'pending_payment' | 'completed' | 'rejected'>('all');
 
   // Data States
   const [settings, setSettings] = useState<PlatformSettings>({
-    commission_tourist: "0",
-    commission_housing: "0",
-    commission_food: "0",
-    general_discount_percent: "0",
-    is_general_discount_active: false
+    commission_tourist: "0", commission_housing: "0", commission_food: "0",
+    general_discount_percent: "0", is_general_discount_active: false
   });
   
   const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
-  
+  const [bookings, setBookings] = useState<BookingReport[]>([]); // تقرير الحجوزات
+
   // New Coupon Form
-  const [newCoupon, setNewCoupon] = useState({
-    code: '',
-    discount_percent: '',
-    marketer_name: '',
-    marketer_commission: ''
-  });
+  const [newCoupon, setNewCoupon] = useState({ code: '', discount_percent: '', marketer_name: '', marketer_commission: '' });
   const [addingCoupon, setAddingCoupon] = useState(false);
   
   // Stats
   const [stats, setStats] = useState({ 
     totalRevenue: 0, 
     pendingPayouts: 0, 
-    netProfit: 0 
+    netProfit: 0,
+    // Booking Stats
+    pendingApproval: 0,
+    pendingPayment: 0,
+    completedBookings: 0,
+    rejectedBookings: 0
   });
 
   useEffect(() => {
@@ -104,13 +114,8 @@ export default function FinancePage() {
     setLoading(true);
 
     try {
-        // 1. جلب إعدادات المنصة (العمولات + الخصم العام)
-        const { data: settingsData } = await supabase
-            .from('platform_settings')
-            .select('*')
-            .eq('id', 1)
-            .single();
-
+        // 1. Settings (إعدادات المنصة)
+        const { data: settingsData } = await supabase.from('platform_settings').select('*').eq('id', 1).single();
         if (settingsData) {
             setSettings({
                 commission_tourist: settingsData.commission_tourist?.toString() || "0",
@@ -121,43 +126,52 @@ export default function FinancePage() {
             });
         }
 
-        // 2. جلب الكوبونات
-        const { data: couponsData } = await supabase
-            .from('coupons')
-            .select('*')
-            .order('created_at', { ascending: false });
-            
+        // 2. Coupons (الكوبونات)
+        const { data: couponsData } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
         if (couponsData) setCoupons(couponsData);
 
-        // 3. جلب طلبات السحب
-        const { data: payoutsData } = await supabase
-            .from('payout_requests')
-            .select(`*, profiles:provider_id (full_name)`)
-            .order('created_at', { ascending: false });
-
-        const realPayouts = payoutsData ? payoutsData.map((p: any) => ({
-            ...p,
-            provider_name: p.profiles?.full_name || "مستخدم غير معروف"
-        })) : [];
-        
+        // 3. Payouts (طلبات السحب)
+        const { data: payoutsData } = await supabase.from('payout_requests').select(`*, profiles:provider_id (full_name)`).order('created_at', { ascending: false });
+        const realPayouts = payoutsData ? payoutsData.map((p: any) => ({ ...p, provider_name: p.profiles?.full_name || "مستخدم غير معروف" })) : [];
         setPayouts(realPayouts);
 
-        // 4. الحسابات المالية (تقريبية)
-        const { data: paymentsData } = await supabase
-            .from('payments') // تأكد أن لديك جدول payments
-            .select('amount')
-            .eq('status', 'succeeded');
+        // 4. Bookings Report (تقرير الحجوزات)
+        const { data: bookingsData } = await supabase
+            .from('bookings')
+            .select(`
+                id, status, total_price, created_at, rejection_reason,
+                services:service_id (title),
+                provider:provider_id (full_name),
+                client:user_id (full_name)
+            `)
+            .order('created_at', { ascending: false });
 
+        const formattedBookings: BookingReport[] = bookingsData ? bookingsData.map((b: any) => ({
+            id: b.id,
+            service_title: b.services?.title || "خدمة محذوفة",
+            provider_name: b.provider?.full_name || "غير معروف",
+            client_name: b.client?.full_name || "غير معروف",
+            status: b.status,
+            total_price: b.total_price,
+            created_at: b.created_at,
+            rejection_reason: b.rejection_reason
+        })) : [];
+
+        setBookings(formattedBookings);
+
+        // Stats Calculation (الحسابات)
+        const { data: paymentsData } = await supabase.from('payments').select('amount').eq('status', 'succeeded');
         const totalRevenueCalc = paymentsData?.reduce((acc, curr) => acc + curr.amount, 0) || 0;
-        const pendingTotalCalc = realPayouts.filter(p => p.status === 'pending').reduce((acc, curr) => acc + curr.amount, 0);
+        const pendingPayoutsCalc = realPayouts.filter(p => p.status === 'pending').reduce((acc, curr) => acc + curr.amount, 0);
         
-        // حساب تقريبي للربح (يمكن تعديله لاحقاً ليكون أدق)
-        const netProfitCalc = totalRevenueCalc * 0.10; // افتراض هامش ربح 10% للتجربة
-
         setStats({
             totalRevenue: totalRevenueCalc,
-            pendingPayouts: pendingTotalCalc,
-            netProfit: netProfitCalc
+            pendingPayouts: pendingPayoutsCalc,
+            netProfit: totalRevenueCalc * 0.10,
+            pendingApproval: formattedBookings.filter(b => b.status === 'pending').length,
+            pendingPayment: formattedBookings.filter(b => b.status === 'approved_unpaid').length,
+            completedBookings: formattedBookings.filter(b => b.status === 'confirmed').length,
+            rejectedBookings: formattedBookings.filter(b => b.status === 'rejected' || b.status === 'cancelled').length
         });
 
     } catch (error) {
@@ -167,20 +181,18 @@ export default function FinancePage() {
     }
   };
 
+  // --- Handlers (الإجراءات) ---
+
   const handleSaveSettings = async () => {
     setSaving(true);
     try {
-      // تحديث الجدول مباشرة (أو عبر API لو كنت تفضل ذلك)
-      const { error } = await supabase
-        .from('platform_settings')
-        .update({
+      const { error } = await supabase.from('platform_settings').update({
             commission_tourist: parseFloat(settings.commission_tourist),
             commission_housing: parseFloat(settings.commission_housing),
             commission_food: parseFloat(settings.commission_food),
             general_discount_percent: parseFloat(settings.general_discount_percent),
             is_general_discount_active: settings.is_general_discount_active
-        })
-        .eq('id', 1);
+        }).eq('id', 1);
 
       if (error) throw error;
       alert("✅ تم حفظ الإعدادات والخصومات بنجاح");
@@ -192,11 +204,7 @@ export default function FinancePage() {
   };
 
   const handleAddCoupon = async () => {
-    if (!newCoupon.code || !newCoupon.discount_percent) {
-        alert("يرجى تعبئة الكود ونسبة الخصم");
-        return;
-    }
-
+    if (!newCoupon.code || !newCoupon.discount_percent) return alert("يرجى تعبئة الكود ونسبة الخصم");
     setAddingCoupon(true);
     try {
         const { data, error } = await supabase.from('coupons').insert([{
@@ -205,19 +213,13 @@ export default function FinancePage() {
             marketer_name: newCoupon.marketer_name || 'بدون مسوق',
             marketer_commission: parseFloat(newCoupon.marketer_commission || '0'),
         }]).select();
-
         if (error) throw error;
-
         if (data) {
             setCoupons([data[0], ...coupons]);
             setNewCoupon({ code: '', discount_percent: '', marketer_name: '', marketer_commission: '' });
             alert("✅ تم إضافة الكوبون");
         }
-    } catch (error: any) {
-        alert("خطأ: " + error.message);
-    } finally {
-        setAddingCoupon(false);
-    }
+    } catch (error: any) { alert("خطأ: " + error.message); } finally { setAddingCoupon(false); }
   };
 
   const handleDeleteCoupon = async (id: string) => {
@@ -228,21 +230,29 @@ export default function FinancePage() {
 
   const handlePayoutAction = async (id: string, action: 'paid' | 'rejected') => {
     if(!confirm(action === 'paid' ? "تأكيد التحويل؟" : "رفض الطلب؟")) return;
-    
-    // تحديث الحالة محلياً وقاعدة البيانات
-    const { error } = await supabase
-        .from('payout_requests')
-        .update({ status: action })
-        .eq('id', id);
-
+    const { error } = await supabase.from('payout_requests').update({ status: action }).eq('id', id);
     if (!error) {
         setPayouts(prev => prev.map(p => p.id === id ? { ...p, status: action } : p));
         alert("تم تحديث الحالة ✅");
-    } else {
-        alert("خطأ في التحديث");
     }
   };
 
+  const exportToCSV = () => {
+      const headers = ["رقم الحجز", "الخدمة", "المزود", "العميل", "السعر", "الحالة", "تاريخ الحجز", "سبب الرفض"];
+      const rows = bookings.map(b => [
+          b.id, b.service_title, b.provider_name, b.client_name, b.total_price,
+          b.status, new Date(b.created_at).toLocaleDateString('ar-SA'), b.rejection_reason || '-'
+      ]);
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "bookings_report.csv");
+      document.body.appendChild(link);
+      link.click();
+  };
+
+  const handlePrint = () => { window.print(); };
   const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
 
   const menuItems = [
@@ -255,13 +265,22 @@ export default function FinancePage() {
     { label: "الإعدادات", icon: Settings, href: "/admin/settings", show: true },
   ];
 
+  const filteredBookings = bookings.filter(b => {
+      if (reportTab === 'all') return true;
+      if (reportTab === 'pending_approval') return b.status === 'pending';
+      if (reportTab === 'pending_payment') return b.status === 'approved_unpaid';
+      if (reportTab === 'completed') return b.status === 'confirmed';
+      if (reportTab === 'rejected') return b.status === 'rejected' || b.status === 'cancelled';
+      return true;
+  });
+
   return (
-    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
+    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative print:bg-white print:text-black`}>
       
-      {/* Sidebar & Mobile Header (نفس الكود السابق للحفاظ على التصميم) */}
-      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
+      {/* Sidebar & Header (Hidden on Print) */}
+      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center print:hidden">
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><Menu size={24} /></button>
-        <Link href="/" className="absolute left-1/2 -translate-x-1/2"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
+        <Link href="/"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
         <div className="relative">
           <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10"><User size={20} /></button>
           {isProfileMenuOpen && (
@@ -271,8 +290,10 @@ export default function FinancePage() {
           )}
         </div>
       </div>
-      {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />}
-      <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+
+      {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm print:hidden" />}
+      
+      <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out print:hidden ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
         <div className="mb-10 flex justify-center pt-4"><Link href="/"><Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" /></Link></div>
         <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
           {menuItems.map((item, index) => item.show && (
@@ -284,45 +305,120 @@ export default function FinancePage() {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen pt-24 md:pt-10">
+      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen pt-24 md:pt-10 print:pt-0 print:overflow-visible">
         
-        <header className="flex justify-between items-center mb-10">
-           <div>
+        <header className="flex justify-between items-center mb-10 print:hidden">
+            <div>
               <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
                  <DollarSign className="text-[#C89B3C]" /> المالية والأرباح
               </h1>
-              <p className="text-white/60">التحكم في العمولات، الخصومات العامة، والكوبونات.</p>
-           </div>
+              <p className="text-white/60">التحكم في العمولات، الخصومات، ومتابعة تقارير الحجوزات.</p>
+            </div>
         </header>
+
+        {/* Print Header */}
+        <div className="hidden print:block mb-8 text-center border-b border-black pb-4">
+            <h1 className="text-2xl font-bold">تقرير الحجوزات والمالية - منصة سيّر</h1>
+            <p className="text-sm">تاريخ التقرير: {new Date().toLocaleDateString('ar-SA')}</p>
+        </div>
 
         {loading ? (
            <div className="h-[50vh] flex items-center justify-center text-[#C89B3C]"><Loader2 className="animate-spin w-10 h-10" /></div>
         ) : (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
             
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 p-6 rounded-2xl">
-                  <p className="text-emerald-400 text-sm font-bold mb-1">إجمالي الإيرادات</p>
-                  <h2 className="text-3xl font-bold text-white">{stats.totalRevenue.toLocaleString()} ﷼</h2>
+            {/* 1. Stats Cards (Hidden in Print) */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 print:hidden">
+              <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex flex-col justify-between">
+                  <p className="text-white/50 text-xs font-bold mb-1">إجمالي الإيرادات</p>
+                  <h2 className="text-2xl font-bold text-[#C89B3C]">{stats.totalRevenue.toLocaleString()} ﷼</h2>
               </div>
-              <div className="bg-gradient-to-br from-[#C89B3C]/10 to-orange-600/5 border border-[#C89B3C]/20 p-6 rounded-2xl">
-                  <p className="text-[#C89B3C] text-sm font-bold mb-1">صافي أرباح المنصة</p>
-                  <h2 className="text-3xl font-bold text-white">{stats.netProfit.toLocaleString()} ﷼</h2>
+              <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex flex-col justify-between">
+                  <p className="text-white/50 text-xs font-bold mb-1">صافي الأرباح</p>
+                  <h2 className="text-2xl font-bold text-emerald-400">{stats.netProfit.toLocaleString()} ﷼</h2>
               </div>
-              <div className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/20 p-6 rounded-2xl">
-                  <p className="text-blue-400 text-sm font-bold mb-1">مستحقات معلقة للمزودين</p>
-                  <h2 className="text-3xl font-bold text-white">{stats.pendingPayouts.toLocaleString()} ﷼</h2>
+              <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex flex-col justify-between">
+                  <p className="text-white/50 text-xs font-bold mb-1">حجوزات مكتملة</p>
+                  <h2 className="text-2xl font-bold text-white">{stats.completedBookings}</h2>
+              </div>
+              <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex flex-col justify-between">
+                  <p className="text-white/50 text-xs font-bold mb-1">بانتظار الموافقة</p>
+                  <h2 className="text-2xl font-bold text-amber-400">{stats.pendingApproval}</h2>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Right Column: Settings */}
+            {/* 2. Bookings Report Section (New) */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 print:border-black print:bg-white print:text-black print:p-0">
+                <div className="flex flex-wrap justify-between items-center mb-6 print:hidden">
+                    <h3 className="font-bold text-lg flex items-center gap-2"><FileText size={20} className="text-[#C89B3C]"/> تقرير الحجوزات المفصل</h3>
+                    <div className="flex gap-2">
+                        <button onClick={exportToCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold transition"><Download size={16}/> اكسل (CSV)</button>
+                        <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition"><Printer size={16}/> طباعة / PDF</button>
+                    </div>
+                </div>
+
+                {/* Booking Status Tabs */}
+                <div className="flex gap-2 mb-6 overflow-x-auto pb-2 print:hidden">
+                    <button onClick={() => setReportTab('all')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${reportTab === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>الكل ({bookings.length})</button>
+                    <button onClick={() => setReportTab('pending_approval')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'pending_approval' ? "bg-amber-500 text-black font-bold" : "bg-black/20 text-white/60"}`}><Clock size={14}/> انتظار الموافقة ({stats.pendingApproval})</button>
+                    <button onClick={() => setReportTab('pending_payment')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'pending_payment' ? "bg-blue-500 text-white font-bold" : "bg-black/20 text-white/60"}`}><CreditCard size={14}/> انتظار الدفع ({stats.pendingPayment})</button>
+                    <button onClick={() => setReportTab('completed')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'completed' ? "bg-emerald-500 text-white font-bold" : "bg-black/20 text-white/60"}`}><CheckCircle size={14}/> مكتملة ({stats.completedBookings})</button>
+                    <button onClick={() => setReportTab('rejected')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'rejected' ? "bg-red-500 text-white font-bold" : "bg-black/20 text-white/60"}`}><XCircle size={14}/> مرفوضة ({stats.rejectedBookings})</button>
+                </div>
+
+                {/* Bookings Table */}
+                <div className="overflow-x-auto">
+                    <table className="w-full text-right min-w-[900px] border-collapse print:min-w-full">
+                        <thead className="bg-black/20 text-white/50 text-xs uppercase print:bg-gray-200 print:text-black">
+                            <tr>
+                                <th className="px-4 py-3">رقم الحجز</th>
+                                <th className="px-4 py-3">الخدمة</th>
+                                <th className="px-4 py-3">المزود</th>
+                                <th className="px-4 py-3">العميل</th>
+                                <th className="px-4 py-3">السعر</th>
+                                <th className="px-4 py-3">الحالة</th>
+                                <th className="px-4 py-3">التاريخ</th>
+                                <th className="px-4 py-3">ملاحظات / سبب الرفض</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-sm print:divide-gray-300">
+                            {filteredBookings.map((booking) => (
+                                <tr key={booking.id} className="hover:bg-white/5 transition print:hover:bg-transparent">
+                                    <td className="px-4 py-3 font-mono text-xs">{booking.id.slice(0,8)}</td>
+                                    <td className="px-4 py-3 font-bold">{booking.service_title}</td>
+                                    <td className="px-4 py-3">{booking.provider_name}</td>
+                                    <td className="px-4 py-3">{booking.client_name}</td>
+                                    <td className="px-4 py-3 font-bold text-[#C89B3C] print:text-black">{booking.total_price} ﷼</td>
+                                    <td className="px-4 py-3">
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                            booking.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-400 print:bg-transparent print:text-black' :
+                                            booking.status === 'pending' ? 'bg-amber-500/10 text-amber-400 print:bg-transparent print:text-black' :
+                                            booking.status === 'approved_unpaid' ? 'bg-blue-500/10 text-blue-400 print:bg-transparent print:text-black' :
+                                            'bg-red-500/10 text-red-400 print:bg-transparent print:text-black'
+                                        }`}>
+                                            {booking.status === 'confirmed' ? 'مكتمل' : 
+                                             booking.status === 'pending' ? 'انتظار الموافقة' : 
+                                             booking.status === 'approved_unpaid' ? 'انتظار الدفع' : 
+                                             'مرفوض/ملغي'}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-xs text-white/50 print:text-black">{new Date(booking.created_at).toLocaleDateString('ar-SA')}</td>
+                                    <td className="px-4 py-3 text-xs text-red-400 print:text-black max-w-[200px] truncate" title={booking.rejection_reason}>
+                                        {booking.rejection_reason || '-'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {filteredBookings.length === 0 && <p className="text-center p-8 text-white/30 print:text-black">لا توجد بيانات.</p>}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
+              {/* 3. Settings Column (Old Feature) */}
               <div className="lg:col-span-1 space-y-6">
-                  
-                  {/* 1. General Discount (New Feature) */}
-                  <div className={`border rounded-2xl p-6 transition-all duration-300 ${settings.is_general_discount_active ? 'bg-indigo-900/20 border-indigo-500/50 shadow-[0_0_30px_-5px_rgba(99,102,241,0.2)]' : 'bg-white/5 border-white/10'}`}>
+                  {/* General Discount */}
+                  <div className={`border rounded-2xl p-6 transition-all duration-300 ${settings.is_general_discount_active ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-white/5 border-white/10'}`}>
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-bold text-lg flex items-center gap-2"><Percent size={20} className={settings.is_general_discount_active ? "text-indigo-400" : "text-gray-400"}/> الخصم العام</h3>
                         <button 
@@ -332,27 +428,18 @@ export default function FinancePage() {
                             <span className={`absolute top-1 right-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 ${settings.is_general_discount_active ? '-translate-x-6' : 'translate-x-0'}`}></span>
                         </button>
                     </div>
-                    
-                    <p className="text-xs text-white/50 mb-4">عند التفعيل، سيتم تطبيق هذا الخصم تلقائياً على جميع الخدمات في المنصة.</p>
-                    
+                    <p className="text-xs text-white/50 mb-4">تفعيل خصم تلقائي على جميع الخدمات.</p>
                     <div className="relative">
-                        <input 
-                            type="number" 
-                            disabled={!settings.is_general_discount_active}
-                            value={settings.general_discount_percent} 
-                            onChange={e => setSettings({...settings, general_discount_percent: e.target.value})} 
-                            className={`w-full bg-black/30 border rounded-xl py-3 px-4 text-white outline-none transition ${settings.is_general_discount_active ? 'border-indigo-500/50 focus:border-indigo-500' : 'border-white/10 opacity-50'}`} 
-                        />
+                        <input type="number" disabled={!settings.is_general_discount_active} value={settings.general_discount_percent} onChange={e => setSettings({...settings, general_discount_percent: e.target.value})} className={`w-full bg-black/30 border rounded-xl py-3 px-4 text-white outline-none transition ${settings.is_general_discount_active ? 'border-indigo-500/50' : 'border-white/10 opacity-50'}`} />
                         <span className="absolute left-4 top-3.5 text-white/30 font-bold">%</span>
                     </div>
                   </div>
 
-                  {/* 2. Commissions Settings */}
+                  {/* Commissions Settings */}
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
-                      <h3 className="font-bold text-lg flex items-center gap-2"><Settings size={20} className="text-[#C89B3C]"/> ضبط العمولات</h3>
+                      <h3 className="font-bold text-lg flex items-center gap-2"><Settings size={20} className="text-[#C89B3C]"/> نسب العمولة</h3>
                     </div>
-                    
                     <div className="space-y-4">
                       {['commission_tourist', 'commission_housing', 'commission_food'].map((key) => (
                           <div key={key}>
@@ -365,61 +452,46 @@ export default function FinancePage() {
                             </div>
                           </div>
                       ))}
-
                       <button onClick={handleSaveSettings} disabled={saving} className="w-full py-3 bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold rounded-xl transition flex justify-center gap-2 mt-4">
-                        {saving ? <Loader2 className="animate-spin"/> : <><Save size={18}/> حفظ كل التعديلات</>}
+                        {saving ? <Loader2 className="animate-spin"/> : <><Save size={18}/> حفظ التعديلات</>}
                       </button>
                     </div>
                   </div>
               </div>
 
-              {/* Left Column: Coupons & Payouts */}
+              {/* 4. Operations (Coupons & Payouts) (Old Features) */}
               <div className="lg:col-span-2 space-y-6">
                 
-                {/* 1. Coupons Management */}
+                {/* Coupons */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
-                       <h3 className="font-bold text-lg flex items-center gap-2"><Ticket size={20} className="text-[#C89B3C]"/> إدارة الكوبونات</h3>
+                        <h3 className="font-bold text-lg flex items-center gap-2"><Ticket size={20} className="text-[#C89B3C]"/> الكوبونات</h3>
                     </div>
-
-                    {/* Add Coupon Form */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6 bg-black/20 p-4 rounded-xl border border-white/5">
-                        <input type="text" placeholder="الكود (SAVE20)" value={newCoupon.code} onChange={e => setNewCoupon({...newCoupon, code: e.target.value})} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white" />
+                        <input type="text" placeholder="الكود" value={newCoupon.code} onChange={e => setNewCoupon({...newCoupon, code: e.target.value})} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white" />
                         <input type="number" placeholder="الخصم %" value={newCoupon.discount_percent} onChange={e => setNewCoupon({...newCoupon, discount_percent: e.target.value})} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white" />
-                        <input type="text" placeholder="اسم المسوق (اختياري)" value={newCoupon.marketer_name} onChange={e => setNewCoupon({...newCoupon, marketer_name: e.target.value})} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white" />
-                        <button onClick={handleAddCoupon} disabled={addingCoupon} className="bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-bold transition">
-                            {addingCoupon ? "..." : "إضافة +"}
-                        </button>
+                        <input type="text" placeholder="المسوق" value={newCoupon.marketer_name} onChange={e => setNewCoupon({...newCoupon, marketer_name: e.target.value})} className="bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white" />
+                        <button onClick={handleAddCoupon} disabled={addingCoupon} className="bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-bold transition">{addingCoupon ? "..." : "إضافة +"}</button>
                     </div>
-
-                    {/* Coupons List */}
-                    <div className="space-y-3 max-h-[250px] overflow-y-auto custom-scrollbar">
+                    <div className="space-y-3 max-h-[200px] overflow-y-auto custom-scrollbar">
                         {coupons.map((coupon) => (
                             <div key={coupon.id} className="bg-black/20 border border-white/5 p-3 rounded-xl flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <span className="font-mono font-bold text-[#C89B3C] bg-[#C89B3C]/10 px-2 py-1 rounded">{coupon.code}</span>
-                                    <div className="flex flex-col">
-                                        <span className="text-sm font-bold text-white">{coupon.discount_percent}% خصم</span>
-                                        <span className="text-xs text-white/50">{coupon.marketer_name || 'بدون مسوق'}</span>
-                                    </div>
+                                    <span className="text-sm font-bold text-white">{coupon.discount_percent}% خصم</span>
                                 </div>
                                 <button onClick={() => handleDeleteCoupon(coupon.id)} className="text-red-400 hover:text-red-300 p-2"><Trash2 size={16}/></button>
                             </div>
                         ))}
-                        {coupons.length === 0 && <p className="text-center text-white/30 text-sm">لا توجد كوبونات.</p>}
                     </div>
                 </div>
 
-                {/* 2. Payouts Table */}
+                {/* Payouts */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                  <div className="flex items-center gap-2 mb-6">
-                      <h3 className="font-bold text-lg flex items-center gap-2"><Banknote size={20} className="text-[#C89B3C]"/> طلبات سحب الرصيد</h3>
-                  </div>
-
-                  {payouts.length === 0 ? (
-                    <div className="text-center py-8 text-white/40">لا توجد طلبات معلقة.</div>
-                  ) : (
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                    <div className="flex items-center gap-2 mb-6">
+                        <h3 className="font-bold text-lg flex items-center gap-2"><Banknote size={20} className="text-[#C89B3C]"/> طلبات سحب الرصيد</h3>
+                    </div>
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                       {payouts.map((req) => (
                         <div key={req.id} className="bg-black/20 border border-white/5 p-4 rounded-xl flex flex-col gap-3">
                           <div className="flex justify-between items-start">
@@ -429,7 +501,6 @@ export default function FinancePage() {
                               </div>
                               <span className="text-xl font-bold text-[#C89B3C]">{req.amount} ﷼</span>
                           </div>
-                          
                           {req.status === 'pending' ? (
                             <div className="flex gap-2 mt-2">
                                 <button onClick={() => handlePayoutAction(req.id, 'paid')} className="flex-1 bg-emerald-500/20 text-emerald-400 py-1.5 rounded-lg text-sm hover:bg-emerald-500/30 transition">تأكيد التحويل</button>
@@ -442,10 +513,9 @@ export default function FinancePage() {
                           )}
                         </div>
                       ))}
+                      {payouts.length === 0 && <div className="text-center py-4 text-white/40">لا توجد طلبات معلقة.</div>}
                     </div>
-                  )}
                 </div>
-
               </div>
             </div>
           </div>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
-import { ArrowRight, Loader2, Compass, Clock, Activity, MapPin } from "lucide-react";
+import { ArrowRight, Loader2, Compass, Clock, Activity, MapPin, PlayCircle } from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
@@ -20,61 +20,56 @@ export default function ExperiencesPage() {
     try {
       setLoading(true);
 
-      // 1. جلب تجارب المزودين (من جدول services)
+      // 1. جلب تجارب المزودين
       const providerQuery = supabase
         .from('services')
         .select('*')
         .eq('service_category', 'experience')
         .eq('status', 'approved');
 
-      // 2. جلب تجارب الأدمن (من جدول places)
+      // 2. جلب تجارب الأدمن
       const adminQuery = supabase
         .from('places')
         .select('*')
         .eq('type', 'experience')
         .eq('is_active', true);
 
-      // تنفيذ الطلبين معاً
       const [providerRes, adminRes] = await Promise.all([providerQuery, adminQuery]);
 
       if (providerRes.error) console.error("Error fetching provider experiences:", providerRes.error);
       if (adminRes.error) console.error("Error fetching admin experiences:", adminRes.error);
 
-      // 3. توحيد البيانات (Normalization)
-
-      // أ) بيانات المزودين
+      // 3. توحيد البيانات
       const providerItems = (providerRes.data || []).map((item: any) => ({
         id: item.id,
         title: item.title,
         description: item.description,
         price: item.price,
-        // صورة المزود (غالباً في menu_items)
-        image: item.menu_items && item.menu_items.length > 0 && item.menu_items[0].image 
-               ? item.menu_items[0].image 
-               : "/placeholder-experience.jpg",
+        // ✅ جلب الصورة أو الفيديو (الأولوية للرابط في image_url ثم menu_items)
+        image: item.image_url 
+               ? item.image_url 
+               : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder-experience.jpg"),
         activity_type: item.activity_type || 'تجربة مميزة',
         duration: item.duration,
         difficulty_level: item.difficulty_level,
         meeting_point: item.meeting_point,
-        source: 'service' // المصدر: خدمة
+        source: 'service'
       }));
 
-      // ب) بيانات الأدمن
       const adminItems = (adminRes.data || []).map((item: any) => ({
         id: item.id,
-        title: item.name, // في places الاسم name
+        title: item.name,
         description: item.description,
         price: item.price || 0,
-        // صورة الأدمن (في media_urls)
+        // ✅ جلب الصورة أو الفيديو للأدمن
         image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "/placeholder-experience.jpg",
-        activity_type: item.category || 'تجربة سياحية', // الأدمن يحدد التصنيف
-        duration: item.duration, // تأكد أنك أضفت هذا العمود في places للتجارب
-        difficulty_level: item.difficulty, // تأكد أنك أضفت هذا العمود في places للتجارب
+        activity_type: item.category || 'تجربة سياحية',
+        duration: item.duration,
+        difficulty_level: item.difficulty,
         meeting_point: item.city || 'عسير',
-        source: 'place' // المصدر: مكان
+        source: 'place'
       }));
 
-      // دمج الكل
       setExperiences([...providerItems, ...adminItems]);
 
     } catch (err) {
@@ -89,7 +84,8 @@ export default function ExperiencesPage() {
       
       {/* HEADER */}
       <div className="relative h-[40vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
-        <div className="absolute inset-0 bg-[url('/experiences-bg.jpg')] bg-cover bg-center opacity-40 mix-blend-overlay"></div>
+        {/* خلفية ثابتة للتجارب */}
+        <div className="absolute inset-0 bg-black/40" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/60 to-[#0a0a0a]" />
         
         <div className="relative z-10 text-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -128,28 +124,55 @@ export default function ExperiencesPage() {
   );
 }
 
+// ✅ دالة محسنة للتحقق من الفيديو (تشمل جميع الاحتمالات)
+const isVideo = (url: string | null) => {
+    if (!url) return false;
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes('.mp4') || 
+           lowerUrl.includes('.webm') || 
+           lowerUrl.includes('.ogg') || 
+           lowerUrl.includes('video'); 
+};
+
 function ExperienceCard({ data }: { data: any }) {
-  // الرابط الصحيح بناءً على المصدر
-// نوحد التوجيه لصفحة الخدمات لجميع العناصر (المزودين والأدمن)
-const linkHref = `/service/${data.id}`;
+  const linkHref = `/service/${data.id}`; // توحيد الرابط لصفحة التفاصيل
   const buttonText = data.source === 'service' ? 'احجز تجربتك' : 'استكشف التجربة';
+
+  // التحقق هل الملف فيديو
+  const mediaIsVideo = isVideo(data.image);
 
   return (
     <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
-      <div className="relative h-64 w-full overflow-hidden shrink-0">
-        <img 
-          src={data.image} 
-          alt={data.title} 
-          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-          onError={(e) => {
-            e.currentTarget.src = "/logo.png"; 
-            e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; 
-          }}
-        />
+      <div className="relative h-64 w-full overflow-hidden shrink-0 bg-black">
         
+        {/* ✅ عرض الفيديو أو الصورة */}
+        {mediaIsVideo ? (
+            <video 
+                src={data.image} 
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                autoPlay 
+                muted // مهم جداً للتشغيل التلقائي
+                loop 
+                playsInline // مهم للجوال
+            />
+        ) : (
+            <img 
+              src={data.image} 
+              alt={data.title} 
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+              onError={(e) => {
+                e.currentTarget.src = "/logo.png"; 
+                e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; 
+              }}
+            />
+        )}
+        
+        {/* طبقة شفافة لضمان وضوح النصوص */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+
         {/* السعر */}
         {data.price > 0 && (
-            <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl">
+            <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl z-10">
             <span className="text-[#C89B3C] font-bold text-lg">
                 {data.price} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span>
             </span>
@@ -157,8 +180,9 @@ const linkHref = `/service/${data.id}`;
         )}
         
         {/* نوع النشاط */}
-        <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10">
-            <Compass size={12} /> {data.activity_type}
+        <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10 z-10">
+            {mediaIsVideo ? <PlayCircle size={12} className="text-[#C89B3C]"/> : <Compass size={12} />} 
+            {data.activity_type}
         </div>
       </div>
       

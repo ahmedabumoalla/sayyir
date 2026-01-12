@@ -1,417 +1,540 @@
 "use client";
-export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-// حذفنا import Image من next/image لتجنب المشاكل
-import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  LayoutDashboard, Users, CheckCircle, XCircle, Search, Loader2, Eye, LogOut, 
-  MapPin, Phone, Mail, Briefcase, X, ShieldAlert, Map as MapIcon, DollarSign, Settings, UserPlus,
-  Download, FileText, LayoutList, Menu, User, Home, Edit3 
+  CheckCircle, XCircle, Eye, Edit, Trash2, 
+  MapPin, Clock, FileText, ChevronLeft, Save, Loader2, Filter, User, 
+  Sparkles, Box, Utensils, Mountain, Compass, Info, PauseCircle, AlertTriangle, CheckSquare, Image as ImageIcon, Video,
+  Calendar, Map as MapIcon, ShieldAlert, Home, Send
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
-import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
+const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "700"] });
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-interface ProviderRequest {
-  id: string; 
-  name: string; 
-  email: string; 
-  phone: string; 
+// بيانات التواصل الرسمية للادمن
+const ADMIN_CONTACT_INFO = `
+للاستفسار يرجى التواصل مع الإدارة:
+Email: admin@sayyir.com
+Phone: +966 50 000 0000
+`;
+
+interface Service {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  status: string;
   service_type: string;
-  status: 'pending' | 'approved' | 'rejected';
-  created_at: string; 
-  dynamic_data: any; 
+  service_category?: string;
+  sub_category?: string;
+  stock_quantity?: number;
+  room_count?: number;
+  max_capacity?: number;
+  amenities?: string[];
+  activity_type?: string;
+  difficulty_level?: string;
+  duration?: string;
+  meeting_point?: string;
+  included_items?: string;
+  requirements?: string;
+  location_lat?: number;
+  location_lng?: number;
+  created_at: string;
+  rejection_reason?: string; // هذا الحقل يحمل سبب الرفض/الإيقاف/الحذف
+  work_hours?: any[];
+  menu_items?: any[]; 
+  details?: Record<string, any>; 
+  commercial_license?: string;
+  profiles?: {
+    full_name: string;
+    email: string;
+  };
 }
 
-export default function RequestsPage() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [requests, setRequests] = useState<ProviderRequest[]>([]);
-  const [fieldDefinitions, setFieldDefinitions] = useState<any[]>([]);
-  const [pendingCount, setPendingCount] = useState(0);
+export default function ReviewServicesPage() {
+  const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [selectedRequest, setSelectedRequest] = useState<ProviderRequest | null>(null);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [processing, setProcessing] = useState(false); 
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
-  const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [filter, setFilter] = useState("pending");
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  
+  const [actionLoading, setActionLoading] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+  
+  const [actionToConfirm, setActionToConfirm] = useState<'reject' | 'force_stop' | 'soft_delete' | null>(null);
 
-  useEffect(() => { fetchData(); checkRole(); }, []);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState<any>({});
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
-  const checkRole = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if(session) {
-       const { data } = await supabase.from('profiles').select('is_super_admin').eq('id', session.user.id).single();
-       if(data?.is_super_admin) setIsSuperAdmin(true);
-    }
-  }
+  useEffect(() => {
+    fetchServices();
+  }, [filter]);
 
-  const fetchData = async () => {
+  const fetchServices = async () => {
     setLoading(true);
-    const { data: reqData } = await supabase.from('provider_requests').select('*').order('created_at', { ascending: false });
-    if (reqData) {
-        setRequests(reqData as any);
-        setPendingCount(reqData.filter((r: any) => r.status === 'pending').length);
+    
+    let query = supabase
+      .from('services')
+      .select(`
+        *,
+        profiles:provider_id (
+          full_name,
+          email
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (filter !== 'all') {
+      query = query.eq('status', filter);
+    } else {
+      // عند "الكل"، نستثني المحذوفة لتظهر في تبويبها الخاص فقط
+      query = query.neq('status', 'deleted');
     }
-    const { data: fieldsData } = await supabase.from('registration_fields').select('*').order('sort_order', { ascending: true });
-    if (fieldsData) setFieldDefinitions(fieldsData);
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Supabase Error:", error);
+      alert("خطأ في جلب البيانات: " + error.message);
+    } else {
+      setServices(data as unknown as Service[]);
+    }
     setLoading(false);
   };
 
-  // ✅ دالة استخراج الصور (الجوكر)
-  const extractImages = (value: any): string[] => {
-    if (!value) return [];
-    
-    let rawList: any[] = [];
+  const openModal = (service: Service) => {
+    setSelectedService(service);
+    setEditData({
+      title: service.title,
+      description: service.description,
+      price: service.price,
+      status: service.status,
+    });
+    setIsEditing(false);
+    setRejectionReason("");
+    setActionToConfirm(null);
+  };
 
-    if (Array.isArray(value)) {
-        rawList = value;
-    } else if (typeof value === 'string') {
-        if (value.trim().startsWith('[') || value.trim().startsWith('{')) {
-            try {
-                const parsed = JSON.parse(value);
-                rawList = Array.isArray(parsed) ? parsed : [parsed];
-            } catch (e) {
-                rawList = [value];
-            }
-        } else {
-            rawList = [value];
-        }
+  const isVideo = (url: string) => {
+      return url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes('video');
+  };
+
+  const handleAction = async (action: 'approve' | 'reject' | 'soft_delete' | 'update' | 'approve_stop' | 'reject_stop' | 'force_stop') => {
+    if (!selectedService) return;
+
+    // التحقق من كتابة السبب
+    if (['reject', 'force_stop', 'soft_delete'].includes(action) && !rejectionReason.trim()) {
+        return alert("الرجاء كتابة السبب والتعليمات للمزود.");
     }
 
-    // تصفية الروابط الصالحة فقط
-    return rawList
-        .map(item => typeof item === 'string' ? item : '')
-        .filter(item => {
-            const lower = item.toLowerCase();
-            return (
-                lower.includes('http') && 
-                (
-                    lower.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp|heic|mp4|mov)$/) || 
-                    lower.includes('supabase.co') || 
-                    lower.includes('/storage/v1/object')
-                )
-            );
-        })
-        .map(url => url.replace(/["'[\]]/g, '')); 
-  };
-
-  const isLocation = (value: any) => {
-      if (typeof value === 'object' && value !== null && 'lat' in value && 'lng' in value) return true;
-      if (typeof value === 'string' && value.includes('"lat"') && value.includes('"lng"')) return true;
-      return false;
-  };
-
-  const getParseLocation = (value: any) => {
-      if (typeof value === 'object') return value;
-      try { return JSON.parse(value); } catch { return null; }
-  };
-
-  const getFieldLabel = (key: string) => {
-    const field = fieldDefinitions.find(f => f.id === key);
-    return field ? field.label : key.replace(/_/g, ' ');
-  };
-
-  // ✅ هنا التعديل المهم: إضافة requesterId للطلب
-  const handleAction = async (id: string, action: 'approve' | 'reject') => {
-    let reason = "";
+    setActionLoading(true);
     
-    if (action === 'approve') {
-        if (!confirm("تأكيد قبول الطلب؟ سيتم إنشاء حساب وإرسال كلمة المرور.")) return;
-    } else {
-        const input = prompt("الرجاء كتابة سبب الرفض (سيتم إرساله للمستخدم):");
-        if (input === null) return; 
-        if (!input.trim()) { alert("يجب كتابة سبب للرفض."); return; }
-        reason = input;
-    }
-
-    setProcessing(true);
     try {
-      // 1. الحصول على جلسة المستخدم الحالي (الأدمن الذي ينفذ العملية)
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("غير مصرح");
+
+      const updates: any = {};
+      let emailType = ''; 
+      const finalReason = `${rejectionReason}\n\n--\n${ADMIN_CONTACT_INFO}`;
+
+      if (action === 'approve') { 
+          updates.status = 'approved'; 
+          updates.rejection_reason = null; 
+          emailType = 'service_approved'; 
+      }
       
-      if (!session) {
-          throw new Error("يجب تسجيل الدخول أولاً");
+      if (action === 'reject') { 
+          updates.status = 'rejected'; 
+          updates.rejection_reason = finalReason; 
+          emailType = 'service_rejected'; 
       }
 
-      // 2. إرسال الطلب مع requesterId
-      const response = await fetch(`/api/admin/${action}`, { 
-        method: 'POST', 
-        headers: {'Content-Type': 'application/json'}, 
-        body: JSON.stringify({ 
-            requestId: id, 
-            reason: reason,
-            requesterId: session.user.id // ⚠️ هذا السطر ضروري جداً للحارس
-        }) 
-      });
-
-      const result = await response.json();
-      if(!response.ok) throw new Error(result.error);
+      if (action === 'approve_stop') { 
+          updates.status = 'stopped'; 
+          emailType = 'service_rejected'; 
+      } 
       
-      alert(result.message);
-      fetchData();
-      setSelectedRequest(null);
-    } catch(e: any) { 
-        alert("خطأ: " + e.message); 
-    } finally { 
-        setProcessing(false); 
+      if (action === 'reject_stop') { 
+          updates.status = 'approved'; 
+          emailType = 'service_approved'; 
+      } 
+
+      if (action === 'force_stop') {
+          updates.status = 'stopped';
+          updates.rejection_reason = finalReason; // حفظ السبب
+          emailType = 'service_rejected';
+      }
+
+      if (action === 'soft_delete') {
+          updates.status = 'deleted'; 
+          updates.rejection_reason = finalReason; // حفظ السبب
+          emailType = 'service_rejected';
+      }
+
+      if (action === 'update') {
+          updates.title = editData.title;
+          updates.description = editData.description;
+          updates.price = Number(editData.price);
+      }
+
+      // 1. تحديث قاعدة البيانات
+      const { error } = await supabase.from('services').update(updates).eq('id', selectedService.id);
+      if (error) throw error;
+
+      // 2. إرسال الإيميل (تأكد أن لديك Backend Route في /api/emails/send)
+      if (['approve', 'reject', 'approve_stop', 'reject_stop', 'force_stop', 'soft_delete'].includes(action)) {
+          const profileData: any = selectedService.profiles;
+          const providerEmail = Array.isArray(profileData) ? profileData[0]?.email : profileData?.email;
+          const providerName = Array.isArray(profileData) ? profileData[0]?.full_name : profileData?.full_name;
+          
+          let emailBodyReason = finalReason;
+          if (action === 'approve_stop') emailBodyReason = "تمت الموافقة على طلبكم بإيقاف الخدمة.";
+          if (action === 'reject_stop') emailBodyReason = "تم رفض طلب إيقاف الخدمة، الخدمة ما زالت نشطة.";
+
+          if (providerEmail) {
+              console.log("Attempting to send email to:", providerEmail); // Debug Log
+              await fetch('/api/emails/send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      type: emailType,
+                      email: providerEmail,
+                      name: providerName,
+                      serviceTitle: selectedService.title,
+                      reason: emailBodyReason
+                  })
+              }).catch(err => console.error("Email Error:", err));
+          }
+      }
+
+      alert("تمت العملية بنجاح ✅");
+      setSelectedService(null);
+      fetchServices(); 
+
+    } catch (error: any) {
+      console.error(error);
+      alert("حدث خطأ: " + error.message);
+    } finally {
+      setActionLoading(false);
+      setActionToConfirm(null);
     }
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
-  const filteredRequests = requests.filter(req => filter === 'all' || req.status === filter);
-  const getTypeLabel = (type: string) => type === 'housing' ? '🏡 سكن' : type === 'food' ? '🍽️ مطاعم' : '🧗 تجربة';
-
-  const menuItems = [
-    { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
-    { label: "طلبات الانضمام", icon: UserPlus, href: "/admin/requests", show: true, badge: pendingCount },
-    { label: "إدارة المعالم", icon: MapIcon, href: "/admin/landmarks", show: true },
-    { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
-    { label: "المالية والأرباح", icon: DollarSign, href: "/admin/finance", show: true },
-    { label: "فريق الإدارة", icon: ShieldAlert, href: "/admin/users", show: isSuperAdmin },
-    { label: "الإعدادات", icon: Settings, href: "/admin/settings", show: true },
-  ];
-
   return (
-    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
+    <div className={`min-h-screen bg-[#1a1a1a] text-white p-6 lg:p-10 ${tajawal.className}`} dir="rtl">
       
-      {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
-        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
-          <Menu size={24} />
-        </button>
-        <Link href="/" className="absolute left-1/2 -translate-x-1/2">
-           <img src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">مراجعة الخدمات</h1>
+          <p className="text-white/50">إدارة الخدمات والتجارب المقدمة من الشركاء.</p>
+        </div>
+        <Link href="/admin/dashboard" className="bg-white/5 hover:bg-white/10 p-3 rounded-xl transition">
+          <ChevronLeft />
         </Link>
-        <div className="relative">
-          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
-            <User size={20} />
+      </div>
+
+      <div className="flex gap-3 mb-6 overflow-x-auto pb-2">
+        {[
+            { key: 'pending', label: 'بانتظار المراجعة', icon: Clock }, 
+            { key: 'stop_requested', label: 'طلبات الإيقاف', icon: PauseCircle }, 
+            { key: 'approved', label: 'الخدمات المفعلة', icon: CheckCircle }, 
+            { key: 'stopped', label: 'المتوقفة', icon: PauseCircle }, 
+            { key: 'rejected', label: 'المرفوضة', icon: XCircle }, 
+            { key: 'deleted', label: 'المحذوفة', icon: Trash2 }, 
+            { key: 'all', label: 'الكل', icon: Filter }
+        ].map((f) => (
+          <button key={f.key} onClick={() => setFilter(f.key)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border transition whitespace-nowrap ${filter === f.key ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'bg-black/20 text-white/60 border-white/10 hover:bg-white/5'}`}>
+            <f.icon size={16} /> {f.label}
           </button>
-          {isProfileMenuOpen && (
-            <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
-              <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
-              <button onClick={handleLogout} className="w-full text-right px-4 py-3 hover:bg-red-500/10 text-red-400 text-sm transition">تسجيل الخروج</button>
-            </div>
-          )}
-        </div>
+        ))}
       </div>
 
-      {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />}
-      
-      {/* Sidebar */}
-      <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
-        <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white"><X size={24} /></button>
-        <div className="mb-10 flex justify-center pt-4"><Link href="/"><img src="/logo.png" alt="Admin" width={120} height={50} className="opacity-90 hover:opacity-100 transition" /></Link></div>
-        <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
-          {menuItems.map((item, i) => item.show && (
-            <Link key={i} href={item.href} onClick={() => setSidebarOpen(false)} className={`relative flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
-              <item.icon size={20} /><span>{item.label}</span>
-              {item.badge && item.badge > 0 ? <span className="absolute left-3 top-1/2 -translate-y-1/2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">{item.badge}</span> : null}
-            </Link>
-          ))}
-        </nav>
-        <div className="pt-6 border-t border-white/10 mt-auto"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full px-4 py-2 hover:bg-white/5 rounded-xl transition items-center"><LogOut size={20} /> خروج</button></div>
-      </aside>
-
-      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen pt-24 md:pt-10">
-        <header className="hidden md:flex justify-between items-center mb-10">
-            <div>
-                <h1 className="text-3xl font-bold mb-2 flex items-center gap-2"><Briefcase className="text-[#C89B3C]" /> طلبات الانضمام</h1>
-                <p className="text-white/60">مراجعة واعتماد شركاء النجاح الجدد.</p>
-            </div>
-            
-            <div className="flex gap-3">
-                 <Link href="/register/provider" className="flex items-center gap-2 px-4 py-2 bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 rounded-xl hover:bg-[#C89B3C]/20 transition font-bold text-sm" target="_blank">
-                    <Eye size={18} /> معاينة النموذج
-                 </Link>
-                 <Link href="/admin/settings" className="flex items-center gap-2 px-4 py-2 bg-white/5 text-white border border-white/10 rounded-xl hover:bg-white/10 transition font-bold text-sm">
-                    <Edit3 size={18} /> تعديل الحقول
-                 </Link>
-            </div>
-        </header>
-
-        {/* Mobile Header */}
-        <div className="md:hidden mb-6 flex justify-between items-end">
-              <div>
-                 <h1 className="text-2xl font-bold mb-1 flex items-center gap-2"><Briefcase className="text-[#C89B3C]" size={24} /> طلبات الانضمام</h1>
-                 <p className="text-white/60 text-sm">مراجعة طلبات الشركاء.</p>
-              </div>
-              <Link href="/register/provider" className="p-2 bg-[#C89B3C]/10 text-[#C89B3C] rounded-lg border border-[#C89B3C]/20"><Eye size={20} /></Link>
-        </div>
-        
-        <div className="flex flex-col md:flex-row gap-4 mb-6 bg-white/5 p-4 rounded-2xl border border-white/10">
-          <div className="relative flex-1"><Search className="absolute right-3 top-3 text-white/40" size={20} /><input type="text" placeholder="بحث بالاسم أو البريد..." className="w-full bg-black/20 border border-white/10 rounded-xl py-2.5 pr-10 pl-4 text-white focus:border-[#C89B3C] outline-none" /></div>
-          <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
-            {['all', 'pending', 'approved', 'rejected'].map(f => (
-              <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-xl text-sm whitespace-nowrap ${filter === f ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>
-                {f === 'all' ? 'الكل' : f === 'pending' ? 'انتظار' : f === 'approved' ? 'مقبول' : 'مرفوض'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-          {loading ? <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C]" /></div> :
-           filteredRequests.length === 0 ? <div className="p-20 text-center text-white/40">لا توجد طلبات.</div> : (
-            <div className="overflow-x-auto custom-scrollbar">
-                <table className="w-full text-right min-w-[900px]">
-                <thead className="bg-black/20 text-white/50 text-xs uppercase"><tr><th className="px-6 py-4">الاسم</th><th className="px-6 py-4">الخدمة</th><th className="px-6 py-4">تاريخ الطلب</th><th className="px-6 py-4">الحالة</th><th className="px-6 py-4 text-center">إجراءات</th></tr></thead>
-                <tbody className="divide-y divide-white/5 text-sm">{filteredRequests.map(req => (
-                    <tr key={req.id} className="hover:bg-white/5 transition">
-                    <td className="px-6 py-4 font-bold">{req.name}<div className="text-xs text-[#C89B3C] font-normal">{req.email}</div></td>
-                    <td className="px-6 py-4">{getTypeLabel(req.service_type)}</td>
-                    <td className="px-6 py-4 text-white/60 text-xs" dir="ltr">{new Date(req.created_at).toLocaleDateString()}</td>
-                    <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs border ${req.status==='approved'?'text-emerald-400 border-emerald-400/20 bg-emerald-400/10':req.status==='rejected'?'text-red-400 border-red-400/20 bg-red-400/10':'text-amber-400 border-amber-400/20 bg-amber-400/10'}`}>{req.status === 'approved' ? 'مقبول' : req.status === 'rejected' ? 'مرفوض' : 'بانتظار المراجعة'}</span></td>
-                    <td className="px-6 py-4 flex justify-center gap-2">
-                        <button onClick={() => setSelectedRequest(req)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white transition"><Eye size={18}/></button>
-                    </td>
-                    </tr>
-                ))}</tbody>
-                </table>
-            </div>
-          )}
-        </div>
-        
-        {/* Modal التفاصيل */}
-        {selectedRequest && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-[#1a1a1a] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-              
-              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#222]">
-                <div>
-                    <h3 className="font-bold text-xl flex items-center gap-2 text-white"><Briefcase size={22} className="text-[#C89B3C]" /> تفاصيل طلب الانضمام</h3>
-                    <p className="text-xs text-white/50 mt-1">تاريخ التقديم: {new Date(selectedRequest.created_at).toLocaleDateString('ar-SA')}</p>
-                </div>
-                <button onClick={() => setSelectedRequest(null)} className="p-2 rounded-full hover:bg-white/10 transition"><X className="text-white/50 hover:text-white" /></button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 h-fit">
-                        <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2 border-b border-white/5 pb-3"><Briefcase size={18}/> البيانات الأساسية</h4>
-                        <div className="space-y-4">
-                            <InfoRow label="الاسم" value={selectedRequest.name} icon={<Briefcase size={16}/>} />
-                            <InfoRow label="البريد الإلكتروني" value={selectedRequest.email} icon={<Mail size={16}/>} />
-                            <InfoRow label="رقم الجوال" value={selectedRequest.phone} icon={<Phone size={16}/>} />
-                            <InfoRow label="نوع الخدمة" value={getTypeLabel(selectedRequest.service_type)} icon={<LayoutList size={16}/>} />
-                        </div>
-                    </div>
-
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 h-fit">
-                        <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2 border-b border-white/5 pb-3"><FileText size={18}/> تفاصيل إضافية</h4>
-                        <div className="space-y-4">
-                            {Object.entries(selectedRequest.dynamic_data || {}).map(([key, value]: any) => {
-                                const images = extractImages(value);
-                                const loc = getParseLocation(value);
-                                const isLoc = isLocation(loc);
-                                
-                                if (!isLoc && images.length === 0 && typeof value !== 'boolean' && typeof value !== 'object') 
-                                    return (
-                                        <div key={key}>
-                                            <p className="text-white/40 text-xs mb-1">{getFieldLabel(key)}</p>
-                                            <p className="text-white bg-black/20 p-2 rounded border border-white/5 text-sm">{String(value)}</p>
-                                        </div>
-                                    ); 
-                                return null; 
-                            })}
-                        </div>
-                    </div>
-                </div>
-
-                {/* عرض الخرائط */}
-                {Object.entries(selectedRequest.dynamic_data || {}).map(([key, value]: any) => {
-                    const loc = getParseLocation(value);
-                    if (isLocation(loc)) return (
-                        <div key={key} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-lg">
-                            <div className="p-4 bg-white/5 flex justify-between items-center">
-                                <h4 className="font-bold text-white flex items-center gap-2"><MapPin className="text-[#C89B3C]" size={18}/> {getFieldLabel(key)}</h4>
-                                <a href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`} target="_blank" className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-3 py-1 rounded hover:bg-[#C89B3C]/20 transition">Google Maps ↗</a>
-                            </div>
-                            <div className="h-64 w-full relative">
-                                <Map initialViewState={{ latitude: loc.lat, longitude: loc.lng, zoom: 14 }} mapStyle="mapbox://styles/mapbox/streets-v12" mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}>
-                                    <Marker latitude={loc.lat} longitude={loc.lng} color="#C89B3C" />
-                                    <NavigationControl position="top-left" />
-                                </Map>
-                            </div>
-                        </div>
-                    );
-                    return null;
-                })}
-
-                {/* الصور والمرفقات */}
-                {Object.entries(selectedRequest.dynamic_data || {}).map(([key, value]: any) => {
-                    const images = extractImages(value); 
-                    
-                    if (images.length > 0) return (
-                        <div key={key} className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                            <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2 border-b border-white/5 pb-3"><Download size={18}/> {getFieldLabel(key)}</h4>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {images.map((url: string, idx: number) => (
-                                    <a key={idx} href={url} target="_blank" rel="noreferrer" className="group relative aspect-square rounded-xl overflow-hidden border border-white/10 hover:border-[#C89B3C] transition bg-black/20 block">
-                                        <img 
-                                            src={url} 
-                                            className="w-full h-full object-cover group-hover:scale-105 transition duration-500" 
-                                            alt={`attachment-${idx}`} 
-                                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} 
-                                        />
-                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition backdrop-blur-sm"><span className="text-white font-bold text-sm">عرض</span></div>
-                                    </a>
-                                ))}
-                            </div>
-                        </div>
-                    );
-                    return null;
-                })}
-
-                {/* الإقرارات */}
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                    <h4 className="text-[#C89B3C] font-bold mb-4 border-b border-white/5 pb-3">الإقرارات</h4>
-                    <div className="space-y-3">
-                        {Object.entries(selectedRequest.dynamic_data || {}).map(([key, value]: any) => {
-                            if (typeof value === 'boolean') {
-                                return (
-                                    <div key={key} className={`flex items-center gap-3 p-3 rounded-xl border ${value ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
-                                        {value ? <CheckCircle className="text-emerald-500" size={18}/> : <XCircle className="text-red-500" size={18}/>}
-                                        <p className="text-sm font-bold text-white">{getFieldLabel(key)}</p>
-                                    </div>
-                                )
-                            }
-                            return null;
-                        })}
-                    </div>
-                </div>
-
-              </div>
-              
-              {selectedRequest.status === 'pending' && (
-                  <div className="p-6 border-t border-white/10 bg-[#222] flex gap-4">
-                    <button onClick={() => handleAction(selectedRequest.id, 'approve')} disabled={processing} className="flex-1 bg-emerald-500 text-black font-bold py-3 rounded-xl hover:bg-emerald-400 transition flex justify-center gap-2 items-center">{processing ? <Loader2 className="animate-spin"/> : <><CheckCircle size={18}/> قبول</>}</button>
-                    <button onClick={() => handleAction(selectedRequest.id, 'reject')} disabled={processing} className="flex-1 bg-red-500/10 text-red-400 font-bold py-3 rounded-xl hover:bg-red-500 hover:text-white transition flex justify-center gap-2 items-center border border-red-500/20">{processing ? <Loader2 className="animate-spin"/> : <><XCircle size={18}/> رفض</>}</button>
+      {loading ? <div className="flex justify-center p-20"><Loader2 className="animate-spin text-[#C89B3C]" size={40}/></div> : services.length === 0 ? <div className="text-center p-20 bg-white/5 rounded-2xl border border-white/5 text-white/40">لا توجد خدمات.</div> : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {services.map((service) => (
+            <div key={service.id} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg flex flex-col hover:border-[#C89B3C]/30 transition group">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C] font-bold text-lg">{service.title.charAt(0)}</div>
+                      <div>
+                         <h3 className="font-bold text-white line-clamp-1 text-lg">{service.title}</h3>
+                         <p className="text-xs text-white/50 flex items-center gap-1"><User size={10}/> {service.profiles?.full_name}</p>
+                      </div>
                   </div>
-              )}
+                </div>
+                <div className="bg-black/20 p-3 rounded-xl mb-4 space-y-2 text-sm border border-white/5">
+                   <div className="flex justify-between"><span className="text-white/50">السعر:</span><span className="text-[#C89B3C] font-bold">{service.price === 0 ? 'مجاني' : service.price}</span></div>
+                   <div className="flex justify-between">
+                       <span className="text-white/50">الحالة:</span>
+                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                           service.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : 
+                           service.status === 'stop_requested' ? 'bg-orange-500/20 text-orange-400' : 
+                           service.status === 'stopped' ? 'bg-gray-500/20 text-gray-400' :
+                           service.status === 'deleted' ? 'bg-red-900/20 text-red-500' :
+                           'bg-red-500/20 text-red-400'
+                       }`}>
+                           {service.status === 'approved' ? 'نشط' : 
+                            service.status === 'stop_requested' ? 'طلب إيقاف' : 
+                            service.status === 'stopped' ? 'متوقفة' : 
+                            service.status === 'deleted' ? 'محذوفة' :
+                            'مرفوضة'}
+                       </span>
+                   </div>
+                   
+                   {/* ✅ إضافة: عرض السبب في الكرت للمحذوفة والمتوقفة */}
+                   {(service.status === 'deleted' || service.status === 'stopped' || service.status === 'rejected') && service.rejection_reason && (
+                       <div className="mt-2 pt-2 border-t border-white/5">
+                           <p className="text-[10px] text-red-400 font-bold mb-1">
+                               {service.status === 'deleted' ? 'سبب الحذف:' : service.status === 'stopped' ? 'سبب الإيقاف:' : 'سبب الرفض:'}
+                           </p>
+                           <p className="text-[10px] text-white/60 line-clamp-2 leading-relaxed">
+                               {service.rejection_reason.split('\n')[0]} 
+                           </p>
+                       </div>
+                   )}
+                </div>
+                <button onClick={() => openModal(service)} className="mt-auto w-full py-2.5 bg-white/5 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C]"><Eye size={18}/> معاينة واتخاذ إجراء</button>
             </div>
-          </div>
-        )}
-      </div>
-    </main>
-  );
-}
+          ))}
+        </div>
+      )}
 
-function InfoRow({ label, value, icon }: any) {
-    return (
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-white/5">
-            <div className="text-[#C89B3C] opacity-80 bg-[#C89B3C]/10 p-2 rounded-lg">{icon}</div>
-            <div>
-                <p className="text-white/40 text-[10px]">{label}</p>
-                <p className="text-white font-bold text-sm">{value || '-'}</p>
+      {/* --- MODAL التفاصيل الكاملة --- */}
+      {selectedService && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl">
+              <div>
+                  <h2 className="text-2xl font-bold flex items-center gap-2 text-white"><FileText className="text-[#C89B3C]" /> تفاصيل الخدمة الكاملة</h2>
+                  <p className="text-xs text-white/50 mt-1">المعرف: {selectedService.id}</p>
+              </div>
+              <div className="flex gap-2">
+                  <button onClick={() => setIsEditing(!isEditing)} className={`p-2 rounded-lg transition ${isEditing ? 'bg-[#C89B3C] text-black' : 'bg-white/10 text-white hover:bg-white/20'}`} title="تعديل"><Edit size={20}/></button>
+                  <button onClick={() => setSelectedService(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition"><XCircle size={20}/></button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+                
+                {/* ✅ إضافة: عرض السبب الكامل في الـ Modal */}
+                {(selectedService.status === 'deleted' || selectedService.status === 'stopped' || selectedService.status === 'rejected') && selectedService.rejection_reason && (
+                    <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl mb-6">
+                        <h3 className="text-red-400 font-bold mb-2 flex items-center gap-2">
+                            <Info size={20}/> 
+                            {selectedService.status === 'deleted' ? 'سبب الحذف (الأرشفة)' : selectedService.status === 'stopped' ? 'سبب الإيقاف القسري' : 'سبب الرفض'}
+                        </h3>
+                        <p className="text-white text-sm whitespace-pre-line bg-black/20 p-3 rounded-lg leading-relaxed">
+                            {selectedService.rejection_reason}
+                        </p>
+                    </div>
+                )}
+
+                {/* ⚠️ تنبيه: طلب إيقاف الخدمة */}
+                {selectedService.status === 'stop_requested' && selectedService.details?.stop_reason && (
+                    <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl mb-6 animate-pulse">
+                        <h3 className="text-orange-400 font-bold mb-2 flex items-center gap-2"><AlertTriangle size={20}/> طلب إيقاف خدمة</h3>
+                        <p className="text-white text-sm">سبب المزود: <span className="font-bold bg-orange-500/20 px-2 py-1 rounded">{selectedService.details.stop_reason}</span></p>
+                    </div>
+                )}
+
+                {/* ✅ معرض الصور والفيديو (للمكان) */}
+                {selectedService.details?.images && selectedService.details.images.length > 0 && (
+                    <div className="mb-8">
+                        <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو المكان</h3>
+                        <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                            {selectedService.details.images.map((url: string, i: number) => (
+                                <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition">
+                                    {isVideo(url) ? (
+                                        <div className="w-full h-full relative">
+                                            <video src={url} className="w-full h-full object-cover" muted />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/40"><Video className="text-white/80" size={24}/></div>
+                                        </div>
+                                    ) : (
+                                        <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Place Image ${i}`}/>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* باقي التفاصيل (الشبكة) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* عمود 1 */}
+                    <div className="space-y-6">
+                        {/* بيانات المزود */}
+                        <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                            <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><User size={16}/> بيانات المزود</h3>
+                            <div className="space-y-2 text-sm">
+                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">الاسم:</span> <span>{selectedService.profiles?.full_name}</span></p>
+                                <p className="flex justify-between"><span className="text-white/50">البريد:</span> <span>{selectedService.profiles?.email}</span></p>
+                            </div>
+                        </div>
+
+                        {/* البيانات الأساسية */}
+                        <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
+                            <h3 className="text-[#C89B3C] font-bold text-sm mb-2">البيانات الأساسية</h3>
+                            {isEditing ? (
+                                <div className="space-y-2">
+                                    <input value={editData.title} onChange={e => setEditData({...editData, title: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
+                                    <input type="number" value={editData.price} onChange={e => setEditData({...editData, price: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
+                                    <textarea rows={4} value={editData.description} onChange={e => setEditData({...editData, description: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
+                                </div>
+                            ) : (
+                                <>
+                                    <div><p className="text-xs text-white/50">العنوان</p><p className="font-bold text-lg">{selectedService.title}</p></div>
+                                    <div><p className="text-xs text-white/50">السعر</p><p className="font-bold text-[#C89B3C] text-xl font-mono">{selectedService.price === 0 ? 'دخول مجاني' : `${selectedService.price} ﷼`}</p></div>
+                                    <div><p className="text-xs text-white/50">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{selectedService.description}</p></div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* تفاصيل السكن */}
+                        {selectedService.sub_category === 'lodging' && (
+                             <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
+                                <h3 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2"><Home size={16}/> تفاصيل السكن</h3>
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div><p className="text-xs text-white/50">عدد الوحدات</p><p>{selectedService.room_count}</p></div>
+                                    <div><p className="text-xs text-white/50">السعة</p><p>{selectedService.max_capacity} شخص</p></div>
+                                </div>
+                             </div>
+                        )}
+                    </div>
+
+                    {/* عمود 2 */}
+                    <div className="space-y-6">
+                        {/* الخريطة */}
+                        {selectedService.location_lat && selectedService.location_lng && (
+                            <div className="h-64 rounded-xl overflow-hidden border border-white/10 relative shadow-lg">
+                                <Map initialViewState={{ latitude: selectedService.location_lat, longitude: selectedService.location_lng, zoom: 12 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN}>
+                                    <NavigationControl/>
+                                    <Marker latitude={selectedService.location_lat} longitude={selectedService.location_lng} color="#C89B3C"/>
+                                </Map>
+                                <a href={`https://www.google.com/maps/search/?api=1&query=${selectedService.location_lat},${selectedService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-[#C89B3C] hover:text-black transition"><MapPin size={14}/> فتح في Google Maps</a>
+                            </div>
+                        )}
+
+                        {/* المنيو / المنتجات */}
+                        {selectedService.menu_items && selectedService.menu_items.length > 0 && (
+                            <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                                <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2">المنتجات / المنيو</h3>
+                                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                                    {selectedService.menu_items.map((item: any, i: number) => (
+                                        <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded-lg text-sm">
+                                            <div className="flex items-center gap-3">
+                                                {item.image && (
+                                                    <div className="relative w-10 h-10 rounded overflow-hidden cursor-pointer hover:scale-110 transition border border-white/10" onClick={() => setZoomedImage(item.image)}>
+                                                        {isVideo(item.image) ? (
+                                                            <video src={item.image} className="w-full h-full object-cover" muted />
+                                                        ) : (
+                                                            <Image src={item.image} fill className="object-cover" alt={item.name}/>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <span>{item.name}</span>
+                                            </div>
+                                            <span className="block font-bold text-[#C89B3C]">{item.price} ﷼</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="p-6 border-t border-white/10 bg-[#151515] rounded-b-3xl">
+               {isEditing ? (
+                  <button disabled={actionLoading} onClick={() => handleAction('update')} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 transition shadow-lg shadow-blue-600/20">
+                      {actionLoading ? <Loader2 className="animate-spin"/> : <><Save size={20}/> حفظ التعديلات</>}
+                  </button>
+               ) : (
+                  <div className="flex flex-col gap-4">
+                      {/* الأزرار الأساسية */}
+                      {!actionToConfirm && (
+                          <div className="flex gap-4">
+                              {selectedService.status === 'pending' && (
+                                  <>
+                                    <button disabled={actionLoading} onClick={() => handleAction('approve')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><CheckCircle size={20}/> قبول</button>
+                                    <button onClick={() => setActionToConfirm('reject')} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">رفض</button>
+                                  </>
+                              )}
+                              {selectedService.status === 'stop_requested' && (
+                                  <>
+                                    <button disabled={actionLoading} onClick={() => handleAction('approve_stop')} className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition">قبول الإيقاف</button>
+                                    <button disabled={actionLoading} onClick={() => handleAction('reject_stop')} className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-xl transition">رفض (إبقاء النشاط)</button>
+                                  </>
+                              )}
+                              {selectedService.status === 'approved' && (
+                                  <>
+                                    <button onClick={() => setActionToConfirm('force_stop')} className="flex-1 bg-orange-600/20 text-orange-500 hover:bg-orange-600 hover:text-white font-bold py-3 rounded-xl transition border border-orange-600/30">إيقاف الخدمة (قسري)</button>
+                                    <button onClick={() => setActionToConfirm('soft_delete')} className="flex-1 bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white font-bold py-3 rounded-xl transition border border-red-600/30">حذف الخدمة (أرشفة)</button>
+                                  </>
+                              )}
+                              {(selectedService.status === 'rejected' || selectedService.status === 'stopped' || selectedService.status === 'deleted') && (
+                                  // زر الحذف النهائي (اختياري) أو فقط الإبقاء في الأرشيف
+                                  <div className="w-full text-center text-white/40 text-xs">هذه الخدمة {selectedService.status === 'deleted' ? 'محذوفة ومؤرشفة' : 'متوقفة'}</div>
+                              )}
+                          </div>
+                      )}
+
+                      {/* منطقة تأكيد السبب */}
+                      {actionToConfirm && (
+                          <div className="animate-in slide-in-from-bottom-2 fade-in space-y-3 bg-red-500/5 p-4 rounded-xl border border-red-500/10">
+                              <h4 className="text-white text-sm font-bold">
+                                  {actionToConfirm === 'reject' ? 'سبب الرفض' : actionToConfirm === 'force_stop' ? 'سبب الإيقاف القسري' : 'سبب الحذف'}
+                                  <span className="text-red-400 text-xs font-normal mr-2">(سيتم إرساله للمزود عبر الإيميل)</span>
+                              </h4>
+                              <textarea 
+                                  rows={3} 
+                                  placeholder="اكتب السبب بوضوح..." 
+                                  value={rejectionReason} 
+                                  onChange={e => setRejectionReason(e.target.value)} 
+                                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-[#C89B3C] outline-none"
+                              />
+                              <div className="flex gap-2">
+                                  <button 
+                                      disabled={actionLoading} 
+                                      onClick={() => handleAction(actionToConfirm)} 
+                                      className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2 rounded-lg transition flex justify-center items-center gap-2"
+                                  >
+                                      {actionLoading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={18}/> تأكيد وإرسال</>}
+                                  </button>
+                                  <button onClick={() => {setActionToConfirm(null); setRejectionReason("");}} className="px-6 bg-white/10 text-white font-bold py-2 rounded-lg hover:bg-white/20 transition">إلغاء</button>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+               )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Lightbox */}
+      {zoomedImage && (
+        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
+            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition"><XCircle size={32} /></button>
+            <div className="relative w-full max-w-5xl h-[85vh] flex items-center justify-center">
+                {isVideo(zoomedImage) ? (
+                    <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
+                ) : (
+                    <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/>
+                )}
             </div>
         </div>
-    )
+      )}
+
+    </div>
+  );
 }

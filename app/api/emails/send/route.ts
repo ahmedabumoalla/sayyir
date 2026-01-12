@@ -4,33 +4,27 @@ import nodemailer from 'nodemailer';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { type, email, name, serviceTitle, reason, providerName, paymentLink } = body;
+    const { 
+        type, 
+        email, 
+        name, 
+        serviceTitle, 
+        reason, 
+        providerName, 
+        amount, 
+        expiryTime, 
+        clientEmail, 
+        clientName, 
+        bookingId 
+    } = body;
 
-    // 🔍 طباعة للتحقق (ستظهر في تيرمينال VS Code)
-    console.log("📨 جاري محاولة إرسال إيميل...");
-    console.log("🔹 النوع (Type):", type);
-    console.log("🔹 المستلم (Email):", email);
+    console.log("📨 جاري إرسال إيميل...", { type, email: email || clientEmail });
 
-    // 1. التحقق من إعدادات الجيميل
     if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
       console.error("❌ خطأ: بيانات Gmail غير موجودة في .env");
       return NextResponse.json({ error: "Gmail config missing" }, { status: 500 });
     }
 
-    // 2. التحقق من وجود المستلم
-    let recipient = email;
-    
-    // حالة خاصة: إشعارات الأدمن تذهب لإيميل الإدارة
-    if (type === 'new_service_notification') {
-        recipient = process.env.ADMIN_EMAIL || process.env.GMAIL_USER;
-    }
-
-    if (!recipient) {
-        console.error("❌ خطأ: لا يوجد بريد إلكتروني للمستلم!");
-        return NextResponse.json({ error: "Recipient email is missing" }, { status: 400 });
-    }
-
-    // 3. إعداد الناقل
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -39,55 +33,73 @@ export async function POST(request: Request) {
       },
     });
 
-    // 4. تحديد المحتوى والموضوع
+    let recipient = email || clientEmail;
     let subject = '';
     let html = '';
 
+    // إشعارات الإدارة
+    if (type === 'new_service_notification') {
+       recipient = process.env.ADMIN_EMAIL || process.env.GMAIL_USER;
+    }
+
+    // الرابط الأساسي للموقع
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
     switch (type) {
-        // --- للمزود: حجز جديد ---
+        
+        // ✅ 1. فاتورة الموافقة (للعميل) - هنا التعديل المهم للرابط
+        case 'booking_approved_invoice':
+            subject = `✅ تمت الموافقة على حجزك #${bookingId?.slice(0,6)}`;
+            html = `
+                <div dir="rtl" style="font-family: sans-serif; color: #333; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+                    <h2 style="color: #10b981;">مرحباً ${clientName || 'عميلنا العزيز'}</h2>
+                    <p>يسعدنا إخبارك بأن المزود قد وافق على طلب حجزك لخدمة: <strong>${serviceTitle}</strong>.</p>
+                    
+                    <div style="background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p style="margin: 5px 0;"><strong>رقم الحجز:</strong> #${bookingId?.slice(0,6)}</p>
+                        <p style="margin: 5px 0;"><strong>المبلغ المستحق:</strong> <span style="color: #C89B3C; font-weight: bold; font-size: 18px;">${amount} ريال</span></p>
+                        <p style="margin: 5px 0; color: #ef4444;"><strong>تنتهي صلاحية الدفع في:</strong> ${expiryTime}</p>
+                    </div>
+
+                    <p>لإتمام الحجز وتأكيده، يرجى الدفع عبر الرابط أدناه قبل انتهاء المهلة:</p>
+                    
+                    <a href="${baseUrl}/checkout?booking_id=${bookingId}" style="background-color: #C89B3C; color: black; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-top: 10px;">دفع الفاتورة الآن</a>
+                    
+                    <p style="font-size: 12px; color: #777; margin-top: 30px;">* في حال عدم الدفع خلال المهلة، سيتم إلغاء الحجز تلقائياً.</p>
+                </div>`;
+            break;
+
+        // ✅ 2. إشعار رفض الحجز (للعميل)
+        case 'booking_rejected_notification':
+            subject = `❌ تحديث بخصوص حجزك لخدمة ${serviceTitle}`;
+            html = `
+                <div dir="rtl" style="font-family: sans-serif; padding: 20px;">
+                    <h2>عذراً، تم رفض طلب الحجز</h2>
+                    <p>نأسف لإبلاغك بأن المزود لم يتمكن من قبول طلبك لخدمة <strong>${serviceTitle}</strong>.</p>
+                    <div style="background: #fee2e2; color: #b91c1c; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                        <strong>سبب الرفض:</strong> ${reason}
+                    </div>
+                    <p>يمكنك تصفح خدمات أخرى أو تجربة وقت مختلف.</p>
+                    <a href="${baseUrl}" style="color: #C89B3C;">العودة للمنصة</a>
+                </div>`;
+            break;
+
+        // --- باقي الأنواع ---
         case 'new_booking_for_provider':
             subject = '🔔 طلب حجز جديد بانتظار موافقتك';
-            html = `
-                <div dir="rtl" style="font-family: sans-serif; color: #333;">
-                    <h2>مرحباً ${providerName}</h2>
-                    <p>لديك طلب حجز جديد لخدمة: <strong>${serviceTitle}</strong></p>
-                    <p><strong>العميل:</strong> ${name}</p>
-                    <p><strong>إيميل العميل:</strong> ${reason}</p>
-                    <hr/>
-                    <p>يرجى مراجعة لوحة التحكم لقبول الطلب.</p>
-                </div>`;
+            html = `<div dir="rtl"><h2>مرحباً ${providerName}</h2><p>لديك طلب حجز جديد لخدمة: <strong>${serviceTitle}</strong></p><p><strong>العميل:</strong> ${name}</p><hr/><p>يرجى مراجعة لوحة التحكم.</p></div>`;
             break;
 
-        // --- للعميل: تمت الموافقة والدفع ---
-        case 'booking_approved_pay_now':
-            subject = '✅ تمت الموافقة! يرجى الدفع';
-            html = `
-                <div dir="rtl" style="font-family: sans-serif;">
-                    <h2>مرحباً ${name}</h2>
-                    <p>وافق المزود على حجزك لخدمة: <strong>${serviceTitle}</strong></p>
-                    <p><a href="${paymentLink}">اضغط هنا للدفع وتأكيد الحجز</a></p>
-                </div>`;
-            break;
-
-        // --- للعميل: تم الرفض ---
-        case 'booking_rejected':
-            subject = '❌ تم رفض طلب الحجز';
-            html = `<div dir="rtl"><h2>مرحباً ${name}</h2><p>نعتذر، تم رفض طلبك لخدمة ${serviceTitle}.</p><p>السبب: ${reason}</p></div>`;
-            break;
-
-        // --- للمزود: الموافقة على الخدمة ---
         case 'service_approved':
             subject = '✅ تمت الموافقة على خدمتك';
             html = `<div dir="rtl"><h2>مبروك ${name}</h2><p>تم نشر خدمتك: ${serviceTitle}</p></div>`;
             break;
 
-        // --- للمزود: رفض الخدمة ---
         case 'service_rejected':
             subject = '⚠️ تم رفض الخدمة';
             html = `<div dir="rtl"><h2>مرحباً ${name}</h2><p>تم رفض خدمتك ${serviceTitle}.</p><p>السبب: ${reason}</p></div>`;
             break;
 
-        // --- للأدمن: خدمة جديدة ---
         case 'new_service_notification':
             subject = '🔔 خدمة جديدة للمراجعة';
             html = `<div dir="rtl"><h2>خدمة جديدة: ${serviceTitle}</h2><p>بواسطة: ${providerName}</p></div>`;
@@ -98,19 +110,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unknown email type" }, { status: 400 });
     }
 
-    // 5. الإرسال الفعلي
-    const info = await transporter.sendMail({
+    if (!recipient) {
+        console.error("❌ خطأ: لا يوجد مستلم للإيميل!");
+        return NextResponse.json({ error: "Recipient missing" }, { status: 400 });
+    }
+
+    await transporter.sendMail({
       from: `"منصة سَير" <${process.env.GMAIL_USER}>`,
       to: recipient,
       subject: subject,
       html: html,
     });
 
-    console.log("✅ تم الإرسال بنجاح:", info.messageId);
+    console.log("✅ تم الإرسال بنجاح إلى:", recipient);
     return NextResponse.json({ success: true });
 
   } catch (error: any) {
-    console.error("🔥 فشل الإرسال (API Error):", error);
+    console.error("🔥 فشل الإرسال:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

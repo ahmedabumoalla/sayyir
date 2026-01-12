@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
   Search, Ban, CheckCircle, Loader2, Mail, Phone, Calendar, LogOut, Briefcase, UserCheck,
-  Menu, X, User, Home, Trash2, KeyRound, Eye, XCircle
+  Menu, X, User, Home, Trash2, KeyRound, Eye, XCircle, Clock, Filter
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -25,37 +25,32 @@ interface Profile {
   is_admin: boolean;
   city?: string;
   gender?: string;
-  is_deleted?: boolean; // أضف هذا
-  deleted_at?: string;  // أضف هذا
+  is_deleted?: boolean;
+  deleted_at?: string;
+  last_sign_in_at?: string; 
 }
 
 export default function CustomersPage() {
   const router = useRouter();
   const pathname = usePathname();
   
-  // البيانات
   const [allUsers, setAllUsers] = useState<Profile[]>([]); 
   const [displayedUsers, setDisplayedUsers] = useState<Profile[]>([]); 
   
-  // الحالات
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all'); 
+  
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned' | 'deleted' | 'inactive'>('all'); 
   const [typeFilter, setTypeFilter] = useState<'clients' | 'providers'>('clients'); 
   
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  
-  // UI States
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
-  
-  // Modal State
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
 
-  // إحصائيات
   const [stats, setStats] = useState({
-    clients: 0,
-    providers: 0
+    activeClients: 0,
+    activeProviders: 0
   });
 
   useEffect(() => {
@@ -79,7 +74,6 @@ export default function CustomersPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    // ✅ التعديل هنا: استبعاد أي مستخدم لديه صلاحية أدمن من هذه القائمة
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -89,12 +83,12 @@ export default function CustomersPage() {
     if (!error && data) {
       setAllUsers(data as any);
       
-      const clientsCount = data.filter((u: any) => !u.is_provider).length;
-      const providersCount = data.filter((u: any) => u.is_provider).length;
+      const activeClients = data.filter((u: any) => !u.is_provider && !u.is_deleted && !u.is_banned).length;
+      const activeProviders = data.filter((u: any) => u.is_provider && !u.is_deleted && !u.is_banned).length;
 
       setStats({
-        clients: clientsCount,
-        providers: providersCount
+        activeClients,
+        activeProviders
       });
     }
     setLoading(false);
@@ -110,9 +104,18 @@ export default function CustomersPage() {
     }
 
     if (statusFilter === 'active') {
-      result = result.filter(u => !u.is_banned);
+      result = result.filter(u => !u.is_banned && !u.is_deleted);
     } else if (statusFilter === 'banned') {
-      result = result.filter(u => u.is_banned);
+      result = result.filter(u => u.is_banned && !u.is_deleted);
+    } else if (statusFilter === 'deleted') {
+      result = result.filter(u => u.is_deleted);
+    } else if (statusFilter === 'inactive') {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      result = result.filter(u => {
+          const lastSeen = u.last_sign_in_at ? new Date(u.last_sign_in_at) : new Date(u.created_at); 
+          return lastSeen < thirtyDaysAgo && !u.is_deleted;
+      });
     }
 
     if (searchTerm) {
@@ -127,8 +130,7 @@ export default function CustomersPage() {
     setDisplayedUsers(result);
   };
 
-  // --- الإجراءات (نفس المنطق السابق) ---
-
+  // ✅ استعادة دوال الإجراءات (كانت فارغة سابقاً)
   const handleToggleBan = async (id: string, currentStatus: boolean, userName: string) => {
     const actionText = currentStatus ? "فك الحظر عن" : "حظر";
     if (!confirm(`هل أنت متأكد من ${actionText} المستخدم "${userName}"؟`)) return;
@@ -138,9 +140,7 @@ export default function CustomersPage() {
       if (!session) throw new Error("جلسة العمل مفقودة");
 
       const newStatus = !currentStatus;
-      const logMsg = newStatus 
-        ? `تم حظر المستخدم: ${userName}` 
-        : `تم فك الحظر عن المستخدم: ${userName}`;
+      const logMsg = newStatus ? `تم حظر المستخدم: ${userName}` : `تم فك الحظر عن المستخدم: ${userName}`;
 
       const response = await fetch('/api/admin/users/action', {
           method: 'POST',
@@ -169,7 +169,7 @@ export default function CustomersPage() {
     }
   };
 
- const handleDeleteUser = async (id: string, userName: string) => {
+  const handleDeleteUser = async (id: string, userName: string) => {
     if (!confirm(`تحذير: سيتم حذف حساب "${userName}" وجميع بياناته نهائياً.\nهل أنت متأكد؟`)) return;
 
     try {
@@ -180,6 +180,7 @@ export default function CustomersPage() {
           method: 'POST',
           headers: { 
               'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({ 
               action: 'delete', 
@@ -230,18 +231,12 @@ export default function CustomersPage() {
   return (
     <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      {/* Mobile Header Bar */}
+      {/* Mobile Header */}
       <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
-        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]">
-          <Menu size={24} />
-        </button>
-        <Link href="/" className="absolute left-1/2 -translate-x-1/2">
-           <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
-        </Link>
+        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><Menu size={24} /></button>
+        <Link href="/" className="absolute left-1/2 -translate-x-1/2"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
         <div className="relative">
-          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
-            <User size={20} />
-          </button>
+          <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10"><User size={20} /></button>
           {isProfileMenuOpen && (
             <div className="absolute top-full left-0 mt-2 w-48 bg-[#252525] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
               <Link href="/admin/profile" className="block px-4 py-3 hover:bg-white/5 text-sm transition">الحساب الشخصي</Link>
@@ -251,8 +246,10 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* Sidebar & Overlay */}
+      {/* Sidebar Overlay */}
       {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />}
+      
+      {/* Sidebar */}
       <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
         <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 left-4 p-2 text-white/50 hover:text-white"><X size={24} /></button>
         <div className="mb-10 flex justify-center pt-4">
@@ -279,11 +276,6 @@ export default function CustomersPage() {
             <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي"><Home size={20} className="text-white/70" /></Link>
         </header>
 
-        {/* Mobile Title */}
-        <div className="md:hidden mb-6">
-             <h1 className="text-2xl font-bold mb-1 flex items-center gap-2"><Users className="text-[#C89B3C]" size={24} /> إدارة العملاء</h1>
-        </div>
-
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div 
@@ -291,8 +283,8 @@ export default function CustomersPage() {
               className={`cursor-pointer border p-6 rounded-2xl flex items-center justify-between transition-all duration-300 ${typeFilter === 'clients' ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500 ring-1 ring-blue-500/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
             >
                 <div>
-                    <p className={`text-sm font-bold mb-1 ${typeFilter === 'clients' ? 'text-blue-400' : 'text-gray-400'}`}>إجمالي العملاء (السياح)</p>
-                    <h2 className="text-4xl font-bold text-white">{stats.clients}</h2>
+                    <p className={`text-sm font-bold mb-1 ${typeFilter === 'clients' ? 'text-blue-400' : 'text-gray-400'}`}>العملاء النشطين (الفعليين)</p>
+                    <h2 className="text-4xl font-bold text-white">{stats.activeClients}</h2>
                 </div>
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${typeFilter === 'clients' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/10 text-white/50'}`}>
                     <Users size={24} />
@@ -304,8 +296,8 @@ export default function CustomersPage() {
               className={`cursor-pointer border p-6 rounded-2xl flex items-center justify-between transition-all duration-300 ${typeFilter === 'providers' ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500 ring-1 ring-purple-500/50' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
             >
                 <div>
-                    <p className={`text-sm font-bold mb-1 ${typeFilter === 'providers' ? 'text-purple-400' : 'text-gray-400'}`}>إجمالي مزودي الخدمة</p>
-                    <h2 className="text-4xl font-bold text-white">{stats.providers}</h2>
+                    <p className={`text-sm font-bold mb-1 ${typeFilter === 'providers' ? 'text-purple-400' : 'text-gray-400'}`}>مزودي الخدمة النشطين</p>
+                    <h2 className="text-4xl font-bold text-white">{stats.activeProviders}</h2>
                 </div>
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${typeFilter === 'providers' ? 'bg-purple-500/20 text-purple-400' : 'bg-white/10 text-white/50'}`}>
                     <Briefcase size={24} />
@@ -324,9 +316,11 @@ export default function CustomersPage() {
             />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0">
-            <button onClick={() => setStatusFilter('all')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${statusFilter === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>الكل</button>
-            <button onClick={() => setStatusFilter('active')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${statusFilter === 'active' ? "bg-emerald-500 text-white" : "bg-black/20 text-white/60"}`}>نشط</button>
-            <button onClick={() => setStatusFilter('banned')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${statusFilter === 'banned' ? "bg-red-500 text-white" : "bg-black/20 text-white/60"}`}>محظور</button>
+            <button onClick={() => setStatusFilter('all')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${statusFilter === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}><Filter size={16}/> الكل</button>
+            <button onClick={() => setStatusFilter('active')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${statusFilter === 'active' ? "bg-emerald-500 text-white" : "bg-black/20 text-white/60"}`}><CheckCircle size={16}/> نشط</button>
+            <button onClick={() => setStatusFilter('inactive')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${statusFilter === 'inactive' ? "bg-orange-500 text-white" : "bg-black/20 text-white/60"}`}><Clock size={16}/> خامل (30+ يوم)</button>
+            <button onClick={() => setStatusFilter('banned')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${statusFilter === 'banned' ? "bg-red-500 text-white" : "bg-black/20 text-white/60"}`}><Ban size={16}/> محظور</button>
+            <button onClick={() => setStatusFilter('deleted')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${statusFilter === 'deleted' ? "bg-gray-600 text-white" : "bg-black/20 text-white/60"}`}><Trash2 size={16}/> محذوف</button>
           </div>
         </div>
 
@@ -347,6 +341,7 @@ export default function CustomersPage() {
                     <th className="px-6 py-4">المستخدم</th>
                     <th className="px-6 py-4">بيانات التواصل</th>
                     <th className="px-6 py-4">تاريخ الانضمام</th>
+                    <th className="px-6 py-4">آخر ظهور</th>
                     <th className="px-6 py-4">الحالة</th>
                     <th className="px-6 py-4 text-center">إجراءات سريعة</th>
                   </tr>
@@ -362,7 +357,7 @@ export default function CustomersPage() {
                           <div>
                             <div className="font-bold text-white flex items-center gap-2">
                                 {user.full_name || "مستخدم بدون اسم"}
-                                {user.is_deleted && <span className="text-[10px] bg-red-900/50 text-red-200 px-2 py-0.5 rounded border border-red-500/50 font-bold">محذوف 🗑️</span>}
+                                {user.is_deleted && <span className="text-[10px] bg-gray-700 text-gray-300 px-2 py-0.5 rounded border border-gray-600 font-bold">محذوف</span>}
                                 {user.is_provider && <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded border border-purple-500/20">مزود</span>}
                             </div>
                             <div className="text-xs text-white/40 font-mono">ID: {user.id.slice(0, 6)}...</div>
@@ -376,21 +371,28 @@ export default function CustomersPage() {
                       <td className="px-6 py-4 text-white/50 text-xs">
                         <div className="flex items-center gap-2"><Calendar size={14} /> {new Date(user.created_at).toLocaleDateString('ar-SA')}</div>
                       </td>
+                      <td className="px-6 py-4 text-white/50 text-xs">
+                        <div className="flex items-center gap-2">
+                            <Clock size={14} className="text-white/30"/> 
+                            {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleDateString('ar-SA') : 'غير معروف'}
+                        </div>
+                      </td>
                       <td className="px-6 py-4">
-  {user.is_deleted ? (
-      <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-700 text-gray-300 text-xs border border-gray-600">
-        <Trash2 size={12}/> مؤرشف
-      </span>
-  ) : user.is_banned ? (
-      <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-500/10 text-red-400 text-xs border border-red-500/20">
-        <Ban size={12}/> محظور
-      </span>
-  ) : (
-      <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20">
-        <CheckCircle size={12}/> نشط
-      </span>
-  )}
-</td>
+                        {user.is_deleted ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-700 text-gray-300 text-xs border border-gray-600">
+                                <Trash2 size={12}/> مؤرشف
+                            </span>
+                        ) : user.is_banned ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-500/10 text-red-400 text-xs border border-red-500/20">
+                                <Ban size={12}/> محظور
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20">
+                                <CheckCircle size={12}/> نشط
+                            </span>
+                        )}
+                      </td>
+                      {/* ✅ إعادة تفعيل الأزرار هنا */}
                       <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
                             <button onClick={() => setSelectedUser(user)} title="عرض التفاصيل" className="p-2 bg-white/5 hover:bg-white/10 text-blue-400 rounded-lg transition"><Eye size={16} /></button>
@@ -447,14 +449,15 @@ export default function CustomersPage() {
                             <div className="text-sm">{new Date(selectedUser.created_at).toLocaleDateString('ar-SA')}</div>
                         </div>
                         <div className="bg-black/30 p-3 rounded-lg border border-white/5">
-                            <label className="text-xs text-white/40 block mb-1">الحالة</label>
-                            <div className={`text-sm ${selectedUser.is_banned ? 'text-red-400' : 'text-emerald-400'}`}>{selectedUser.is_banned ? 'محظور' : 'نشط'}</div>
+                            <label className="text-xs text-white/40 block mb-1">آخر ظهور</label>
+                            <div className="text-sm">{selectedUser.last_sign_in_at ? new Date(selectedUser.last_sign_in_at).toLocaleDateString('ar-SA') : 'غير معروف'}</div>
                         </div>
                     </div>
                 </div>
                 <div className="p-4 bg-white/5 border-t border-white/10 flex justify-end gap-2">
                     <button onClick={() => setSelectedUser(null)} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition">إغلاق</button>
-                    <button onClick={() => {handleDeleteUser(selectedUser.id, selectedUser.full_name); setSelectedUser(null);}} className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg text-sm transition border border-red-500/20">حذف الحساب</button>
+                    {/* أزرار إضافية داخل المودال */}
+                    <button onClick={() => handleDeleteUser(selectedUser.id, selectedUser.full_name)} className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg text-sm transition border border-red-500/20">حذف الحساب</button>
                 </div>
             </div>
         </div>
