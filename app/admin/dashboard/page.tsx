@@ -181,15 +181,15 @@ export default function AdminDashboard() {
       return { icon: Activity, color: 'text-white', bg: 'bg-white/10', label: 'عملية' };
   };
 
-  // ✅ تصحيح توزيع العدادات على القائمة
+  // ✅ تصحيح توزيع العدادات على القائمة وتصحيح رابط مراجعة الخدمات
   const menuItems = [
     { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
     
     // عداد طلبات الانضمام فقط
     { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true, badge: stats.pendingProviders },
     
-    // ✅ تم تعديل الرابط هنا ليوجه إلى الصفحة الصحيحة
-    { label: "مراجعة الخدمات", icon: CheckCircle, href: "/admin/requests", show: true, badge: stats.pendingServices },
+    // ✅ تم تعديل الرابط هنا ليوجه إلى الصفحة الصحيحة /admin/services
+    { label: "مراجعة الخدمات", icon: CheckCircle, href: "/admin/services", show: true, badge: stats.pendingServices },
     
     { label: "إدارة المعالم", icon: Map, href: "/admin/landmarks", show: true },
     { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
@@ -212,7 +212,7 @@ export default function AdminDashboard() {
           <Menu size={24} />
         </button>
         <Link href="/" className="absolute left-1/2 -translate-x-1/2">
-           <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
+            <Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" />
         </Link>
         <div className="relative">
           <button onClick={() => setProfileMenuOpen(!isProfileMenuOpen)} className="p-2 bg-white/5 rounded-full border border-white/10">
@@ -239,7 +239,7 @@ export default function AdminDashboard() {
         </button>
         <div className="mb-10 flex justify-center pt-4">
           <Link href="/" title="العودة للرئيسية">
-             <Image src="/logo.png" alt="Sayyir Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
+              <Image src="/logo.png" alt="Sayyir Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" />
           </Link>
         </div>
         <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
@@ -279,9 +279,9 @@ export default function AdminDashboard() {
             <p className="text-white/60 text-sm">نظرة عامة على أداء المنصة.</p>
           </div>
           <div className="flex gap-4 items-center">
-             <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
+              <Link href="/" className="p-3 bg-white/5 hover:bg-white/10 rounded-full transition" title="الموقع الرئيسي">
                 <Home size={20} className="text-white/70" />
-             </Link>
+              </Link>
           </div>
         </header>
 
@@ -368,16 +368,16 @@ export default function AdminDashboard() {
 
               {/* Quick Actions */}
               <div className="space-y-4">
-                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6 h-full">
-                   <h3 className="font-bold mb-4 text-white/80">إجراءات سريعة</h3>
-                   <div className="grid grid-cols-1 gap-3">
-                       <QuickAction label="إدارة طلبات الانضمام" icon={UserPlus} href="/admin/requests" />
-                       {/* ✅ تم تعديل الرابط هنا أيضاً */}
-                       <QuickAction label="مراجعة الخدمات" icon={CheckCircle} href="/admin/requests" />
-                       <QuickAction label="إدارة المعالم" icon={Map} href="/admin/landmarks" />
-                       <QuickAction label="إعدادات المنصة" icon={Settings} href="/admin/settings" />
-                   </div>
-                 </div>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-6 h-full">
+                    <h3 className="font-bold mb-4 text-white/80">إجراءات سريعة</h3>
+                    <div className="grid grid-cols-1 gap-3">
+                        <QuickAction label="إدارة طلبات الانضمام" icon={UserPlus} href="/admin/requests" />
+                        {/* ✅ تم تعديل الرابط هنا أيضاً */}
+                        <QuickAction label="مراجعة الخدمات" icon={CheckCircle} href="/admin/services" />
+                        <QuickAction label="إدارة المعالم" icon={Map} href="/admin/landmarks" />
+                        <QuickAction label="إعدادات المنصة" icon={Settings} href="/admin/settings" />
+                    </div>
+                  </div>
               </div>
 
             </div>

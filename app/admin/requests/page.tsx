@@ -2,539 +2,342 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  CheckCircle, XCircle, Eye, Edit, Trash2, 
-  MapPin, Clock, FileText, ChevronLeft, Save, Loader2, Filter, User, 
-  Sparkles, Box, Utensils, Mountain, Compass, Info, PauseCircle, AlertTriangle, CheckSquare, Image as ImageIcon, Video,
-  Calendar, Map as MapIcon, ShieldAlert, Home, Send
+  LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
+  Search, CheckCircle, XCircle, Loader2, FileText, Briefcase, 
+  Menu, X, User, LogOut, Eye, MapPin, Phone, Mail, Calendar, ExternalLink
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
-import Link from "next/link";
-import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
-import "mapbox-gl/dist/mapbox-gl.css";
+import { useRouter, usePathname } from "next/navigation";
 
-const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "700"] });
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// بيانات التواصل الرسمية للادمن
-const ADMIN_CONTACT_INFO = `
-للاستفسار يرجى التواصل مع الإدارة:
-Email: admin@sayyir.com
-Phone: +966 50 000 0000
-`;
-
-interface Service {
+// تعريف شكل البيانات القادمة من نموذج التسجيل
+interface RequestData {
   id: string;
-  title: string;
-  description: string;
-  price: number;
-  status: string;
+  name: string;
+  email: string;
+  phone: string;
   service_type: string;
-  service_category?: string;
-  sub_category?: string;
-  stock_quantity?: number;
-  room_count?: number;
-  max_capacity?: number;
-  amenities?: string[];
-  activity_type?: string;
-  difficulty_level?: string;
-  duration?: string;
-  meeting_point?: string;
-  included_items?: string;
-  requirements?: string;
-  location_lat?: number;
-  location_lng?: number;
+  status: 'pending' | 'approved' | 'rejected';
+  dynamic_data: Record<string, any>; // البيانات المتغيرة (صور، خرائط، الخ)
   created_at: string;
-  rejection_reason?: string; // هذا الحقل يحمل سبب الرفض/الإيقاف/الحذف
-  work_hours?: any[];
-  menu_items?: any[]; 
-  details?: Record<string, any>; 
-  commercial_license?: string;
-  profiles?: {
-    full_name: string;
-    email: string;
-  };
 }
 
-export default function ReviewServicesPage() {
-  const [services, setServices] = useState<Service[]>([]);
+export default function JoinRequestsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  
+  // States
+  const [requests, setRequests] = useState<RequestData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("pending");
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  
   const [actionLoading, setActionLoading] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState("");
+  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   
-  const [actionToConfirm, setActionToConfirm] = useState<'reject' | 'force_stop' | 'soft_delete' | null>(null);
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState<any>({});
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  // UI States
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<RequestData | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
-    fetchServices();
+    checkRole();
+    fetchRequests();
   }, [filter]);
 
-  const fetchServices = async () => {
+  const checkRole = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+        const { data } = await supabase.from('profiles').select('is_super_admin').eq('id', session.user.id).single();
+        if (data?.is_super_admin) setIsSuperAdmin(true);
+    } else {
+        router.replace("/login");
+    }
+  };
+
+  const fetchRequests = async () => {
     setLoading(true);
-    
-    let query = supabase
-      .from('services')
-      .select(`
-        *,
-        profiles:provider_id (
-          full_name,
-          email
-        )
-      `)
+    // نفترض أن الجدول اسمه provider_requests أو نفس الجدول الذي يصب فيه النموذج
+    const { data, error } = await supabase
+      .from('provider_requests') // ⚠️ تأكد من اسم الجدول في قاعدتك
+      .select('*')
+      .eq('status', filter)
       .order('created_at', { ascending: false });
 
-    if (filter !== 'all') {
-      query = query.eq('status', filter);
-    } else {
-      // عند "الكل"، نستثني المحذوفة لتظهر في تبويبها الخاص فقط
-      query = query.neq('status', 'deleted');
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Supabase Error:", error);
-      alert("خطأ في جلب البيانات: " + error.message);
-    } else {
-      setServices(data as unknown as Service[]);
+    if (!error && data) {
+      setRequests(data);
     }
     setLoading(false);
   };
 
-  const openModal = (service: Service) => {
-    setSelectedService(service);
-    setEditData({
-      title: service.title,
-      description: service.description,
-      price: service.price,
-      status: service.status,
-    });
-    setIsEditing(false);
-    setRejectionReason("");
-    setActionToConfirm(null);
-  };
+  const handleAction = async (action: 'approve' | 'reject') => {
+    if (!selectedRequest) return;
+    if (action === 'reject' && !rejectionReason) return alert("الرجاء كتابة سبب الرفض");
 
-  const isVideo = (url: string) => {
-      return url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes('video');
-  };
-
-  const handleAction = async (action: 'approve' | 'reject' | 'soft_delete' | 'update' | 'approve_stop' | 'reject_stop' | 'force_stop') => {
-    if (!selectedService) return;
-
-    // التحقق من كتابة السبب
-    if (['reject', 'force_stop', 'soft_delete'].includes(action) && !rejectionReason.trim()) {
-        return alert("الرجاء كتابة السبب والتعليمات للمزود.");
-    }
+    if (!confirm(action === 'approve' ? "هل أنت متأكد من قبول هذا المزود وإنشاء حساب له؟" : "هل أنت متأكد من رفض الطلب؟")) return;
 
     setActionLoading(true);
-    
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("غير مصرح");
+        // إرسال الطلب للـ API لمعالجة التسجيل (إنشاء مستخدم وإرسال إيميل)
+        const response = await fetch('/api/admin/requests/process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                requestId: selectedRequest.id,
+                action: action,
+                reason: rejectionReason,
+                // نرسل البيانات الأساسية لإنشاء الحساب في حال القبول
+                email: selectedRequest.email,
+                name: selectedRequest.name,
+                phone: selectedRequest.phone,
+                role: 'provider'
+            })
+        });
 
-      const updates: any = {};
-      let emailType = ''; 
-      const finalReason = `${rejectionReason}\n\n--\n${ADMIN_CONTACT_INFO}`;
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "فشل المعالجة");
 
-      if (action === 'approve') { 
-          updates.status = 'approved'; 
-          updates.rejection_reason = null; 
-          emailType = 'service_approved'; 
-      }
-      
-      if (action === 'reject') { 
-          updates.status = 'rejected'; 
-          updates.rejection_reason = finalReason; 
-          emailType = 'service_rejected'; 
-      }
-
-      if (action === 'approve_stop') { 
-          updates.status = 'stopped'; 
-          emailType = 'service_rejected'; 
-      } 
-      
-      if (action === 'reject_stop') { 
-          updates.status = 'approved'; 
-          emailType = 'service_approved'; 
-      } 
-
-      if (action === 'force_stop') {
-          updates.status = 'stopped';
-          updates.rejection_reason = finalReason; // حفظ السبب
-          emailType = 'service_rejected';
-      }
-
-      if (action === 'soft_delete') {
-          updates.status = 'deleted'; 
-          updates.rejection_reason = finalReason; // حفظ السبب
-          emailType = 'service_rejected';
-      }
-
-      if (action === 'update') {
-          updates.title = editData.title;
-          updates.description = editData.description;
-          updates.price = Number(editData.price);
-      }
-
-      // 1. تحديث قاعدة البيانات
-      const { error } = await supabase.from('services').update(updates).eq('id', selectedService.id);
-      if (error) throw error;
-
-      // 2. إرسال الإيميل (تأكد أن لديك Backend Route في /api/emails/send)
-      if (['approve', 'reject', 'approve_stop', 'reject_stop', 'force_stop', 'soft_delete'].includes(action)) {
-          const profileData: any = selectedService.profiles;
-          const providerEmail = Array.isArray(profileData) ? profileData[0]?.email : profileData?.email;
-          const providerName = Array.isArray(profileData) ? profileData[0]?.full_name : profileData?.full_name;
-          
-          let emailBodyReason = finalReason;
-          if (action === 'approve_stop') emailBodyReason = "تمت الموافقة على طلبكم بإيقاف الخدمة.";
-          if (action === 'reject_stop') emailBodyReason = "تم رفض طلب إيقاف الخدمة، الخدمة ما زالت نشطة.";
-
-          if (providerEmail) {
-              console.log("Attempting to send email to:", providerEmail); // Debug Log
-              await fetch('/api/emails/send', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                      type: emailType,
-                      email: providerEmail,
-                      name: providerName,
-                      serviceTitle: selectedService.title,
-                      reason: emailBodyReason
-                  })
-              }).catch(err => console.error("Email Error:", err));
-          }
-      }
-
-      alert("تمت العملية بنجاح ✅");
-      setSelectedService(null);
-      fetchServices(); 
+        alert(`✅ تم ${action === 'approve' ? 'قبول' : 'رفض'} الطلب بنجاح`);
+        setSelectedRequest(null);
+        setRejectionReason("");
+        fetchRequests(); // تحديث القائمة
 
     } catch (error: any) {
-      console.error(error);
-      alert("حدث خطأ: " + error.message);
+        console.error(error);
+        alert("حدث خطأ: " + error.message);
     } finally {
-      setActionLoading(false);
-      setActionToConfirm(null);
+        setActionLoading(false);
     }
   };
 
+  const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
+
+  // Helper to render dynamic values smartly
+  const renderDynamicValue = (key: string, value: any) => {
+    // 1. إذا كان إحداثيات خريطة
+    if (value && typeof value === 'object' && 'lat' in value && 'lng' in value) {
+        return (
+            <a 
+                href={`https://www.google.com/maps?q=${value.lat},${value.lng}`} 
+                target="_blank" 
+                rel="noreferrer"
+                className="flex items-center gap-2 text-blue-400 hover:underline bg-blue-500/10 p-2 rounded-lg w-fit"
+            >
+                <MapPin size={16}/> عرض الموقع على Google Maps
+            </a>
+        );
+    }
+    // 2. إذا كان مصفوفة روابط (صور/ملفات)
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string' && value[0].startsWith('http')) {
+        return (
+            <div className="flex gap-2 overflow-x-auto pb-2">
+                {value.map((url, i) => (
+                    <a key={i} href={url} target="_blank" className="block w-24 h-24 relative rounded-lg overflow-hidden border border-white/20 hover:border-[#C89B3C] transition">
+                        <img src={url} alt="file" className="w-full h-full object-cover"/>
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition"><Eye className="text-white"/></div>
+                    </a>
+                ))}
+            </div>
+        );
+    }
+    // 3. إذا كان نص طويل
+    if (typeof value === 'string' && value.length > 50) {
+        return <p className="text-white/80 text-sm whitespace-pre-line bg-black/20 p-3 rounded-lg border border-white/5">{value}</p>;
+    }
+    // 4. القيم العادية
+    return <span className="text-white font-medium">{String(value)}</span>;
+  };
+
+  // القائمة الجانبية (نفس باقي الصفحات لتوحيد التصميم)
+  const menuItems = [
+    { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
+    { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true }, // 👈 نحن هنا
+    { label: "إدارة المعالم", icon: Map, href: "/admin/landmarks", show: true },
+    { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
+    { label: "المالية والأرباح", icon: DollarSign, href: "/admin/finance", show: true },
+    { label: "فريق الإدارة", icon: ShieldAlert, href: "/admin/users", show: isSuperAdmin },
+    { label: "الإعدادات", icon: Settings, href: "/admin/settings", show: true },
+  ];
+
   return (
-    <div className={`min-h-screen bg-[#1a1a1a] text-white p-6 lg:p-10 ${tajawal.className}`} dir="rtl">
+    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">مراجعة الخدمات</h1>
-          <p className="text-white/50">إدارة الخدمات والتجارب المقدمة من الشركاء.</p>
-        </div>
-        <Link href="/admin/dashboard" className="bg-white/5 hover:bg-white/10 p-3 rounded-xl transition">
-          <ChevronLeft />
-        </Link>
+      {/* Mobile Header */}
+      <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
+        <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><Menu size={24} /></button>
+        <Link href="/"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
       </div>
 
-      <div className="flex gap-3 mb-6 overflow-x-auto pb-2">
-        {[
-            { key: 'pending', label: 'بانتظار المراجعة', icon: Clock }, 
-            { key: 'stop_requested', label: 'طلبات الإيقاف', icon: PauseCircle }, 
-            { key: 'approved', label: 'الخدمات المفعلة', icon: CheckCircle }, 
-            { key: 'stopped', label: 'المتوقفة', icon: PauseCircle }, 
-            { key: 'rejected', label: 'المرفوضة', icon: XCircle }, 
-            { key: 'deleted', label: 'المحذوفة', icon: Trash2 }, 
-            { key: 'all', label: 'الكل', icon: Filter }
-        ].map((f) => (
-          <button key={f.key} onClick={() => setFilter(f.key)} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border transition whitespace-nowrap ${filter === f.key ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'bg-black/20 text-white/60 border-white/10 hover:bg-white/5'}`}>
-            <f.icon size={16} /> {f.label}
-          </button>
-        ))}
-      </div>
-
-      {loading ? <div className="flex justify-center p-20"><Loader2 className="animate-spin text-[#C89B3C]" size={40}/></div> : services.length === 0 ? <div className="text-center p-20 bg-white/5 rounded-2xl border border-white/5 text-white/40">لا توجد خدمات.</div> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {services.map((service) => (
-            <div key={service.id} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg flex flex-col hover:border-[#C89B3C]/30 transition group">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C] font-bold text-lg">{service.title.charAt(0)}</div>
-                      <div>
-                         <h3 className="font-bold text-white line-clamp-1 text-lg">{service.title}</h3>
-                         <p className="text-xs text-white/50 flex items-center gap-1"><User size={10}/> {service.profiles?.full_name}</p>
-                      </div>
-                  </div>
-                </div>
-                <div className="bg-black/20 p-3 rounded-xl mb-4 space-y-2 text-sm border border-white/5">
-                   <div className="flex justify-between"><span className="text-white/50">السعر:</span><span className="text-[#C89B3C] font-bold">{service.price === 0 ? 'مجاني' : service.price}</span></div>
-                   <div className="flex justify-between">
-                       <span className="text-white/50">الحالة:</span>
-                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                           service.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : 
-                           service.status === 'stop_requested' ? 'bg-orange-500/20 text-orange-400' : 
-                           service.status === 'stopped' ? 'bg-gray-500/20 text-gray-400' :
-                           service.status === 'deleted' ? 'bg-red-900/20 text-red-500' :
-                           'bg-red-500/20 text-red-400'
-                       }`}>
-                           {service.status === 'approved' ? 'نشط' : 
-                            service.status === 'stop_requested' ? 'طلب إيقاف' : 
-                            service.status === 'stopped' ? 'متوقفة' : 
-                            service.status === 'deleted' ? 'محذوفة' :
-                            'مرفوضة'}
-                       </span>
-                   </div>
-                   
-                   {/* ✅ إضافة: عرض السبب في الكرت للمحذوفة والمتوقفة */}
-                   {(service.status === 'deleted' || service.status === 'stopped' || service.status === 'rejected') && service.rejection_reason && (
-                       <div className="mt-2 pt-2 border-t border-white/5">
-                           <p className="text-[10px] text-red-400 font-bold mb-1">
-                               {service.status === 'deleted' ? 'سبب الحذف:' : service.status === 'stopped' ? 'سبب الإيقاف:' : 'سبب الرفض:'}
-                           </p>
-                           <p className="text-[10px] text-white/60 line-clamp-2 leading-relaxed">
-                               {service.rejection_reason.split('\n')[0]} 
-                           </p>
-                       </div>
-                   )}
-                </div>
-                <button onClick={() => openModal(service)} className="mt-auto w-full py-2.5 bg-white/5 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C]"><Eye size={18}/> معاينة واتخاذ إجراء</button>
-            </div>
+      {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm" />}
+      
+      <aside className={`fixed md:sticky top-0 right-0 h-screen w-64 bg-[#151515] md:bg-black/40 border-l border-white/10 p-6 backdrop-blur-md z-50 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+        <div className="mb-10 flex justify-center pt-4"><Link href="/"><Image src="/logo.png" alt="Admin" width={120} height={50} priority className="opacity-90 hover:opacity-100 transition" /></Link></div>
+        <nav className="space-y-2 flex-1 h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
+          {menuItems.map((item, index) => item.show && (
+            <Link key={index} href={item.href} onClick={() => setSidebarOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
+              <item.icon size={20} /><span>{item.label}</span>
+            </Link>
           ))}
-        </div>
-      )}
+        </nav>
+        <div className="pt-6 border-t border-white/10 mt-auto"><button onClick={handleLogout} className="flex gap-3 text-red-400 hover:text-red-300 w-full px-4 py-2 hover:bg-white/5 rounded-xl transition items-center"><LogOut size={20} /> خروج</button></div>
+      </aside>
 
-      {/* --- MODAL التفاصيل الكاملة --- */}
-      {selectedService && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
-            
-            {/* Header */}
-            <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl">
-              <div>
-                  <h2 className="text-2xl font-bold flex items-center gap-2 text-white"><FileText className="text-[#C89B3C]" /> تفاصيل الخدمة الكاملة</h2>
-                  <p className="text-xs text-white/50 mt-1">المعرف: {selectedService.id}</p>
-              </div>
-              <div className="flex gap-2">
-                  <button onClick={() => setIsEditing(!isEditing)} className={`p-2 rounded-lg transition ${isEditing ? 'bg-[#C89B3C] text-black' : 'bg-white/10 text-white hover:bg-white/20'}`} title="تعديل"><Edit size={20}/></button>
-                  <button onClick={() => setSelectedService(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition"><XCircle size={20}/></button>
-              </div>
+      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen pt-24 md:pt-10">
+        
+        <header className="flex justify-between items-center mb-10">
+            <div>
+              <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
+                 <Briefcase className="text-[#C89B3C]" /> طلبات الانضمام
+              </h1>
+              <p className="text-white/60">مراجعة طلبات مزودي الخدمة الجدد والموافقة عليها.</p>
             </div>
+        </header>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+        {/* Filters */}
+        <div className="flex gap-4 mb-8 border-b border-white/10 pb-4">
+            <button onClick={() => setFilter('pending')} className={`pb-2 px-4 transition ${filter === 'pending' ? 'text-[#C89B3C] border-b-2 border-[#C89B3C] font-bold' : 'text-white/50 hover:text-white'}`}>قيد الانتظار</button>
+            <button onClick={() => setFilter('approved')} className={`pb-2 px-4 transition ${filter === 'approved' ? 'text-emerald-400 border-b-2 border-emerald-400 font-bold' : 'text-white/50 hover:text-white'}`}>المقبولة</button>
+            <button onClick={() => setFilter('rejected')} className={`pb-2 px-4 transition ${filter === 'rejected' ? 'text-red-400 border-b-2 border-red-400 font-bold' : 'text-white/50 hover:text-white'}`}>المرفوضة</button>
+        </div>
+
+        {loading ? (
+           <div className="h-[50vh] flex items-center justify-center text-[#C89B3C]"><Loader2 className="animate-spin w-10 h-10" /></div>
+        ) : requests.length === 0 ? (
+            <div className="text-center p-20 bg-white/5 rounded-2xl border border-white/5 text-white/40 flex flex-col items-center">
+                <Briefcase size={40} className="mb-4 opacity-20"/>
+                لا يوجد طلبات في هذه القائمة.
+            </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {requests.map((req) => (
+                <div key={req.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 hover:border-[#C89B3C]/30 transition group flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-[#C89B3C]/20 flex items-center justify-center text-[#C89B3C] text-xl font-bold">
+                                {req.name.charAt(0)}
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-white line-clamp-1">{req.name}</h3>
+                                <p className="text-xs text-white/50">{req.service_type || 'خدمة عامة'}</p>
+                            </div>
+                        </div>
+                        <span className={`text-[10px] px-2 py-1 rounded border ${
+                            req.status === 'pending' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 
+                            req.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                            'bg-red-500/10 text-red-400 border-red-500/20'
+                        }`}>
+                            {req.status === 'pending' ? 'جديد' : req.status === 'approved' ? 'مقبول' : 'مرفوض'}
+                        </span>
+                    </div>
+                    
+                    <div className="space-y-2 mb-6 text-sm text-white/70 bg-black/20 p-3 rounded-xl">
+                        <div className="flex items-center gap-2"><Mail size={14} className="text-[#C89B3C]"/> {req.email}</div>
+                        <div className="flex items-center gap-2"><Phone size={14} className="text-[#C89B3C]"/> {req.phone}</div>
+                        <div className="flex items-center gap-2"><Calendar size={14} className="text-white/30"/> {new Date(req.created_at).toLocaleDateString('ar-SA')}</div>
+                    </div>
+
+                    <button onClick={() => setSelectedRequest(req)} className="mt-auto w-full py-2.5 bg-white/10 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C]">
+                        <Eye size={18}/> معاينة التفاصيل
+                    </button>
+                </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Modal: Request Details */}
+      {selectedRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in zoom-in-95 duration-200">
+            <div className="bg-[#1e1e1e] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
                 
-                {/* ✅ إضافة: عرض السبب الكامل في الـ Modal */}
-                {(selectedService.status === 'deleted' || selectedService.status === 'stopped' || selectedService.status === 'rejected') && selectedService.rejection_reason && (
-                    <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl mb-6">
-                        <h3 className="text-red-400 font-bold mb-2 flex items-center gap-2">
-                            <Info size={20}/> 
-                            {selectedService.status === 'deleted' ? 'سبب الحذف (الأرشفة)' : selectedService.status === 'stopped' ? 'سبب الإيقاف القسري' : 'سبب الرفض'}
-                        </h3>
-                        <p className="text-white text-sm whitespace-pre-line bg-black/20 p-3 rounded-lg leading-relaxed">
-                            {selectedService.rejection_reason}
-                        </p>
+                {/* Header */}
+                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-gradient-to-r from-[#C89B3C]/10 to-transparent">
+                    <div>
+                        <h2 className="text-2xl font-bold text-white mb-1">تفاصيل طلب الانضمام</h2>
+                        <p className="text-xs text-white/50">رقم الطلب: {selectedRequest.id}</p>
                     </div>
-                )}
+                    <button onClick={() => setSelectedRequest(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition"><X size={20}/></button>
+                </div>
 
-                {/* ⚠️ تنبيه: طلب إيقاف الخدمة */}
-                {selectedService.status === 'stop_requested' && selectedService.details?.stop_reason && (
-                    <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl mb-6 animate-pulse">
-                        <h3 className="text-orange-400 font-bold mb-2 flex items-center gap-2"><AlertTriangle size={20}/> طلب إيقاف خدمة</h3>
-                        <p className="text-white text-sm">سبب المزود: <span className="font-bold bg-orange-500/20 px-2 py-1 rounded">{selectedService.details.stop_reason}</span></p>
-                    </div>
-                )}
-
-                {/* ✅ معرض الصور والفيديو (للمكان) */}
-                {selectedService.details?.images && selectedService.details.images.length > 0 && (
-                    <div className="mb-8">
-                        <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو المكان</h3>
-                        <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                            {selectedService.details.images.map((url: string, i: number) => (
-                                <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition">
-                                    {isVideo(url) ? (
-                                        <div className="w-full h-full relative">
-                                            <video src={url} className="w-full h-full object-cover" muted />
-                                            <div className="absolute inset-0 flex items-center justify-center bg-black/40"><Video className="text-white/80" size={24}/></div>
-                                        </div>
-                                    ) : (
-                                        <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Place Image ${i}`}/>
-                                    )}
-                                </div>
-                            ))}
+                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                    {/* Basic Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        <div className="bg-black/30 p-4 rounded-xl border border-white/5">
+                            <span className="text-xs text-white/40 block mb-1">الاسم التجاري/الشخصي</span>
+                            <span className="font-bold">{selectedRequest.name}</span>
+                        </div>
+                        <div className="bg-black/30 p-4 rounded-xl border border-white/5">
+                            <span className="text-xs text-white/40 block mb-1">البريد الإلكتروني</span>
+                            <span className="font-bold font-mono text-sm">{selectedRequest.email}</span>
+                        </div>
+                        <div className="bg-black/30 p-4 rounded-xl border border-white/5">
+                            <span className="text-xs text-white/40 block mb-1">رقم الجوال</span>
+                            <span className="font-bold font-mono dir-ltr">{selectedRequest.phone}</span>
                         </div>
                     </div>
-                )}
 
-                {/* باقي التفاصيل (الشبكة) */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* عمود 1 */}
-                    <div className="space-y-6">
-                        {/* بيانات المزود */}
-                        <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                            <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><User size={16}/> بيانات المزود</h3>
-                            <div className="space-y-2 text-sm">
-                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">الاسم:</span> <span>{selectedService.profiles?.full_name}</span></p>
-                                <p className="flex justify-between"><span className="text-white/50">البريد:</span> <span>{selectedService.profiles?.email}</span></p>
-                            </div>
-                        </div>
-
-                        {/* البيانات الأساسية */}
-                        <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                            <h3 className="text-[#C89B3C] font-bold text-sm mb-2">البيانات الأساسية</h3>
-                            {isEditing ? (
-                                <div className="space-y-2">
-                                    <input value={editData.title} onChange={e => setEditData({...editData, title: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
-                                    <input type="number" value={editData.price} onChange={e => setEditData({...editData, price: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
-                                    <textarea rows={4} value={editData.description} onChange={e => setEditData({...editData, description: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
+                    {/* Dynamic Data Rendering */}
+                    <h3 className="text-[#C89B3C] font-bold text-lg mb-4 flex items-center gap-2"><FileText size={20}/> البيانات المرفقة</h3>
+                    <div className="space-y-4">
+                        {selectedRequest.dynamic_data && Object.entries(selectedRequest.dynamic_data).map(([key, value], idx) => {
+                            // محاولة إيجاد اسم الحقل من الـ Key (إذا كان الـ Key هو الـ ID)
+                            // هنا نعرض الـ Key كما هو أو يمكن تحسينه إذا كان لدينا مرجع للحقول
+                            if(!value) return null;
+                            return (
+                                <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded-2xl">
+                                    <p className="text-xs text-[#C89B3C] font-bold mb-2 uppercase">بيانات إضافية (ID: {key})</p>
+                                    <div className="text-sm">
+                                        {renderDynamicValue(key, value)}
+                                    </div>
                                 </div>
-                            ) : (
-                                <>
-                                    <div><p className="text-xs text-white/50">العنوان</p><p className="font-bold text-lg">{selectedService.title}</p></div>
-                                    <div><p className="text-xs text-white/50">السعر</p><p className="font-bold text-[#C89B3C] text-xl font-mono">{selectedService.price === 0 ? 'دخول مجاني' : `${selectedService.price} ﷼`}</p></div>
-                                    <div><p className="text-xs text-white/50">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{selectedService.description}</p></div>
-                                </>
-                            )}
-                        </div>
-
-                        {/* تفاصيل السكن */}
-                        {selectedService.sub_category === 'lodging' && (
-                             <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
-                                <h3 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2"><Home size={16}/> تفاصيل السكن</h3>
-                                <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div><p className="text-xs text-white/50">عدد الوحدات</p><p>{selectedService.room_count}</p></div>
-                                    <div><p className="text-xs text-white/50">السعة</p><p>{selectedService.max_capacity} شخص</p></div>
-                                </div>
-                             </div>
-                        )}
-                    </div>
-
-                    {/* عمود 2 */}
-                    <div className="space-y-6">
-                        {/* الخريطة */}
-                        {selectedService.location_lat && selectedService.location_lng && (
-                            <div className="h-64 rounded-xl overflow-hidden border border-white/10 relative shadow-lg">
-                                <Map initialViewState={{ latitude: selectedService.location_lat, longitude: selectedService.location_lng, zoom: 12 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN}>
-                                    <NavigationControl/>
-                                    <Marker latitude={selectedService.location_lat} longitude={selectedService.location_lng} color="#C89B3C"/>
-                                </Map>
-                                <a href={`https://www.google.com/maps/search/?api=1&query=${selectedService.location_lat},${selectedService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-[#C89B3C] hover:text-black transition"><MapPin size={14}/> فتح في Google Maps</a>
-                            </div>
-                        )}
-
-                        {/* المنيو / المنتجات */}
-                        {selectedService.menu_items && selectedService.menu_items.length > 0 && (
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                                <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2">المنتجات / المنيو</h3>
-                                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-                                    {selectedService.menu_items.map((item: any, i: number) => (
-                                        <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded-lg text-sm">
-                                            <div className="flex items-center gap-3">
-                                                {item.image && (
-                                                    <div className="relative w-10 h-10 rounded overflow-hidden cursor-pointer hover:scale-110 transition border border-white/10" onClick={() => setZoomedImage(item.image)}>
-                                                        {isVideo(item.image) ? (
-                                                            <video src={item.image} className="w-full h-full object-cover" muted />
-                                                        ) : (
-                                                            <Image src={item.image} fill className="object-cover" alt={item.name}/>
-                                                        )}
-                                                    </div>
-                                                )}
-                                                <span>{item.name}</span>
-                                            </div>
-                                            <span className="block font-bold text-[#C89B3C]">{item.price} ﷼</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                            );
+                        })}
+                        {(!selectedRequest.dynamic_data || Object.keys(selectedRequest.dynamic_data).length === 0) && (
+                            <p className="text-white/40 text-sm">لا توجد بيانات إضافية.</p>
                         )}
                     </div>
                 </div>
-            </div>
 
-            {/* Footer Actions */}
-            <div className="p-6 border-t border-white/10 bg-[#151515] rounded-b-3xl">
-               {isEditing ? (
-                  <button disabled={actionLoading} onClick={() => handleAction('update')} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 transition shadow-lg shadow-blue-600/20">
-                      {actionLoading ? <Loader2 className="animate-spin"/> : <><Save size={20}/> حفظ التعديلات</>}
-                  </button>
-               ) : (
-                  <div className="flex flex-col gap-4">
-                      {/* الأزرار الأساسية */}
-                      {!actionToConfirm && (
-                          <div className="flex gap-4">
-                              {selectedService.status === 'pending' && (
-                                  <>
-                                    <button disabled={actionLoading} onClick={() => handleAction('approve')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><CheckCircle size={20}/> قبول</button>
-                                    <button onClick={() => setActionToConfirm('reject')} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">رفض</button>
-                                  </>
-                              )}
-                              {selectedService.status === 'stop_requested' && (
-                                  <>
-                                    <button disabled={actionLoading} onClick={() => handleAction('approve_stop')} className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition">قبول الإيقاف</button>
-                                    <button disabled={actionLoading} onClick={() => handleAction('reject_stop')} className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-xl transition">رفض (إبقاء النشاط)</button>
-                                  </>
-                              )}
-                              {selectedService.status === 'approved' && (
-                                  <>
-                                    <button onClick={() => setActionToConfirm('force_stop')} className="flex-1 bg-orange-600/20 text-orange-500 hover:bg-orange-600 hover:text-white font-bold py-3 rounded-xl transition border border-orange-600/30">إيقاف الخدمة (قسري)</button>
-                                    <button onClick={() => setActionToConfirm('soft_delete')} className="flex-1 bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white font-bold py-3 rounded-xl transition border border-red-600/30">حذف الخدمة (أرشفة)</button>
-                                  </>
-                              )}
-                              {(selectedService.status === 'rejected' || selectedService.status === 'stopped' || selectedService.status === 'deleted') && (
-                                  // زر الحذف النهائي (اختياري) أو فقط الإبقاء في الأرشيف
-                                  <div className="w-full text-center text-white/40 text-xs">هذه الخدمة {selectedService.status === 'deleted' ? 'محذوفة ومؤرشفة' : 'متوقفة'}</div>
-                              )}
-                          </div>
-                      )}
-
-                      {/* منطقة تأكيد السبب */}
-                      {actionToConfirm && (
-                          <div className="animate-in slide-in-from-bottom-2 fade-in space-y-3 bg-red-500/5 p-4 rounded-xl border border-red-500/10">
-                              <h4 className="text-white text-sm font-bold">
-                                  {actionToConfirm === 'reject' ? 'سبب الرفض' : actionToConfirm === 'force_stop' ? 'سبب الإيقاف القسري' : 'سبب الحذف'}
-                                  <span className="text-red-400 text-xs font-normal mr-2">(سيتم إرساله للمزود عبر الإيميل)</span>
-                              </h4>
-                              <textarea 
-                                  rows={3} 
-                                  placeholder="اكتب السبب بوضوح..." 
-                                  value={rejectionReason} 
-                                  onChange={e => setRejectionReason(e.target.value)} 
-                                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-[#C89B3C] outline-none"
-                              />
-                              <div className="flex gap-2">
-                                  <button 
-                                      disabled={actionLoading} 
-                                      onClick={() => handleAction(actionToConfirm)} 
-                                      className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2 rounded-lg transition flex justify-center items-center gap-2"
-                                  >
-                                      {actionLoading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={18}/> تأكيد وإرسال</>}
-                                  </button>
-                                  <button onClick={() => {setActionToConfirm(null); setRejectionReason("");}} className="px-6 bg-white/10 text-white font-bold py-2 rounded-lg hover:bg-white/20 transition">إلغاء</button>
-                              </div>
-                          </div>
-                      )}
-                  </div>
-               )}
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ✅ Lightbox */}
-      {zoomedImage && (
-        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
-            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition"><XCircle size={32} /></button>
-            <div className="relative w-full max-w-5xl h-[85vh] flex items-center justify-center">
-                {isVideo(zoomedImage) ? (
-                    <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
-                ) : (
-                    <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/>
-                )}
+                {/* Footer Actions */}
+                <div className="p-6 border-t border-white/10 bg-[#151515] flex flex-col md:flex-row gap-4 justify-end">
+                    {selectedRequest.status === 'pending' ? (
+                        <>
+                            <div className="flex-1">
+                                <input 
+                                    type="text" 
+                                    placeholder="سبب الرفض (إلزامي في حال الرفض)..." 
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-red-500 outline-none"
+                                    value={rejectionReason}
+                                    onChange={(e) => setRejectionReason(e.target.value)}
+                                />
+                            </div>
+                            <button 
+                                onClick={() => handleAction('reject')} 
+                                disabled={actionLoading}
+                                className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-6 py-3 rounded-xl font-bold transition disabled:opacity-50"
+                            >
+                                رفض الطلب
+                            </button>
+                            <button 
+                                onClick={() => handleAction('approve')} 
+                                disabled={actionLoading}
+                                className="bg-emerald-500 text-white hover:bg-emerald-600 px-8 py-3 rounded-xl font-bold transition flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                            >
+                                {actionLoading ? <Loader2 className="animate-spin"/> : <><CheckCircle size={20}/> قبول وإنشاء حساب</>}
+                            </button>
+                        </>
+                    ) : (
+                        <div className="w-full text-center text-white/50 text-sm py-2">
+                            تم {selectedRequest.status === 'approved' ? 'قبول' : 'رفض'} هذا الطلب سابقاً.
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
       )}
 
-    </div>
+    </main>
   );
 }
