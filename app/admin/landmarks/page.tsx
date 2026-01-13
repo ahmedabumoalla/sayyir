@@ -148,6 +148,48 @@ export default function AdminLandmarksPage() {
     } 
   }, [isModalOpen]);
 
+  // ✅ دالة جديدة لمعالجة تغيير الإحداثيات (تقبل العربي واللصق)
+  const handleCoordinateChange = (field: 'lat' | 'lng', value: string) => {
+      // 1. تحويل الأرقام العربية إلى إنجليزية
+      let cleanValue = value.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+
+      // 2. التحقق: هل قام الأدمن بلصق إحداثيات كاملة (مثلاً: "18.216, 42.505")؟
+      if (cleanValue.includes(',')) {
+          const parts = cleanValue.split(',');
+          // تنظيف واستخراج الأرقام
+          const latVal = parseFloat(parts[0].trim());
+          const lngVal = parseFloat(parts[1].trim());
+
+          if (!isNaN(latVal) && !isNaN(lngVal)) {
+              setFormData(prev => ({ ...prev, lat: latVal, lng: lngVal }));
+              
+              // تحديث الخريطة فوراً
+              if (map.current && marker.current) {
+                  map.current.flyTo({ center: [lngVal, latVal] });
+                  marker.current.setLngLat([lngVal, latVal]);
+              }
+              return; 
+          }
+      }
+
+      // 3. التعامل مع الإدخال العادي (حقل واحد)
+      const numValue = parseFloat(cleanValue);
+      
+      if (!isNaN(numValue)) {
+          setFormData(prev => {
+              const newData = { ...prev, [field]: numValue };
+              // تحديث الخريطة عند الكتابة اليدوية الصحيحة
+              if (map.current && marker.current) {
+                  const newLat = field === 'lat' ? numValue : prev.lat;
+                  const newLng = field === 'lng' ? numValue : prev.lng;
+                  map.current.flyTo({ center: [newLng, newLat] });
+                  marker.current.setLngLat([newLng, newLat]);
+              }
+              return newData;
+          });
+      }
+  };
+
   const checkRole = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if(session) {
@@ -648,12 +690,33 @@ export default function AdminLandmarksPage() {
                     {/* Column 2: Media & Map (Right) - Span 5 */}
                     <div className="lg:col-span-5 space-y-6">
                         {/* Map */}
-                        <div className="bg-white/5 p-5 rounded-2xl border border-white/5 flex flex-col h-[350px]">
+                        <div className="bg-white/5 p-5 rounded-2xl border border-white/5 flex flex-col h-auto">
                             <label className="text-xs text-white/60 mb-2 flex items-center gap-1"><MapPin size={14}/> تحديد الموقع الجغرافي (قمر صناعي)</label>
-                            <div className="flex-1 rounded-xl overflow-hidden border border-white/10 relative">
+                            <div className="h-[300px] rounded-xl overflow-hidden border border-white/10 relative mb-4">
                                 <div ref={mapContainer} className="w-full h-full absolute inset-0" />
-                                <div className="absolute bottom-2 left-2 bg-white/90 text-black text-[10px] px-2 py-1 rounded shadow font-mono dir-ltr">
-                                {formData.lat.toFixed(5)}, {formData.lng.toFixed(5)}
+                            </div>
+                            
+                            {/* ✅ حقول الإحداثيات المعدلة */}
+                            <div className="grid grid-cols-2 gap-3 bg-black/20 p-3 rounded-xl border border-white/5">
+                                <div>
+                                    <label className="text-[10px] text-white/40 block mb-1">خط العرض (Latitude)</label>
+                                    <input 
+                                        type="text" 
+                                        value={formData.lat} 
+                                        onChange={(e) => handleCoordinateChange('lat', e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-[#C89B3C] outline-none font-mono dir-ltr"
+                                        placeholder="مثال: 18.2164"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-white/40 block mb-1">خط الطول (Longitude)</label>
+                                    <input 
+                                        type="text" 
+                                        value={formData.lng} 
+                                        onChange={(e) => handleCoordinateChange('lng', e.target.value)}
+                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-[#C89B3C] outline-none font-mono dir-ltr"
+                                        placeholder="مثال: 42.5053"
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -670,20 +733,20 @@ export default function AdminLandmarksPage() {
                                 <div className="flex gap-2 overflow-x-auto py-2 custom-scrollbar">
                                     {mediaPreviews.map((media, idx) => (
                                     <div key={idx} className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 bg-black/30 relative group">
-                                        {media.type === 'video' ? ( 
-                                            <div className="w-full h-full bg-black flex items-center justify-center">
-                                                <PlayCircle size={20} className="text-white/80" />
-                                            </div>
-                                        ) : (
-                                            <img src={media.url} alt="Preview" className="w-full h-full object-cover" />
-                                        )}
-                                        <button 
-                                            type="button" 
-                                            onClick={() => removeMedia(idx)}
-                                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
-                                        >
-                                            <X size={12}/>
-                                        </button>
+                                            {media.type === 'video' ? ( 
+                                                <div className="w-full h-full bg-black flex items-center justify-center">
+                                                    <PlayCircle size={20} className="text-white/80" />
+                                                </div>
+                                            ) : (
+                                                <img src={media.url} alt="Preview" className="w-full h-full object-cover" />
+                                            )}
+                                            <button 
+                                                type="button" 
+                                                onClick={() => removeMedia(idx)}
+                                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
+                                            >
+                                                <X size={12}/>
+                                            </button>
                                     </div>
                                     ))}
                                 </div>

@@ -9,7 +9,7 @@ import DynamicShowcase from "@/components/DynamicShowcase";
 import { 
   Briefcase, Map as MapIcon, Sparkles, Tent, Coffee, Landmark, 
   User, LayoutDashboard, Eye, Target, Phone, Mail, 
-  Instagram, Twitter, Linkedin
+  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin
 } from "lucide-react";
 import Link from "next/link";
 
@@ -31,13 +31,11 @@ export default function HomePage() {
   
   const [platformInfo, setPlatformInfo] = useState<any>(null);
 
-  // ... (الجزء الخاص بالـ Animation للنص يبقى كما هو)
   const text = "اكتشف جمال الماضي وعِش تجربة سياحية مميزة";
   const [displayedText, setDisplayedText] = useState("");
   const [index, setIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
   
-  // Animation Effect Code ... (نفس الكود السابق)
   useEffect(() => {
     const speed = deleting ? 45 : 90;
     const timeout = setTimeout(() => {
@@ -56,7 +54,6 @@ export default function HomePage() {
     return () => clearTimeout(timeout);
   }, [index, deleting]);
 
-  // Auth Check ... (نفس الكود السابق)
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -79,36 +76,20 @@ export default function HomePage() {
     checkUser();
   }, []);
 
-  // Fetch Data - HERE IS THE FIX
   useEffect(() => {
     const fetchData = async () => {
       console.log("Fetching Homepage Data...");
 
       // 1. المعالم
-      const { data: places, error: placesError } = await supabase
-        .from('places')
-        .select('*')
-        .eq('is_active', true)
-        .limit(6);
+      const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
       if (places) setLandmarksData(places);
-      if (placesError) console.error("Places Error:", placesError);
 
-      // 2. المرافق (سكن ومطاعم)
-      const { data: facilities, error: facilitiesError } = await supabase
-        .from('services')
-        .select('*')
-        .in('service_type', ['accommodation', 'food'])
-        .eq('status', 'approved') // تأكد أن الحالة approved في قاعدة البيانات
-        .limit(6);
-      
-      if (facilities) {
-        console.log("Facilities Found:", facilities.length);
-        setFacilitiesData(facilities);
-      }
-      if (facilitiesError) console.error("Facilities Error:", facilitiesError);
+      // 2. المرافق
+      const { data: facilities } = await supabase.from('services').select('*').in('service_type', ['accommodation', 'food']).eq('status', 'approved').limit(6);
+      if (facilities) setFacilitiesData(facilities);
 
-      // 3. التجارب
-      const { data: experiences, error: expError } = await supabase
+      // 3. التجارب (بنفس منطق صفحة التجارب)
+      const { data: experiences } = await supabase
         .from('services')
         .select('*')
         .eq('service_type', 'experience')
@@ -116,10 +97,20 @@ export default function HomePage() {
         .limit(6);
 
       if (experiences) {
-        console.log("Experiences Found:", experiences.length);
-        setExperiencesData(experiences);
+        // نستخدم نفس المنطق الموجود في صفحة التجارب لجلب الصورة أو الفيديو الصحيح
+        const formattedExperiences = experiences.map((item: any) => ({
+            ...item,
+            // الأولوية للصورة في image_url، ثم أول عنصر في menu_items (لأن بعضها يخزن الفيديو هناك)، ثم صورة افتراضية
+            image: item.image_url 
+                ? item.image_url 
+                : (item.details?.images && item.details.images.length > 0 ? item.details.images[0] : 
+                   (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : 
+                   "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop")),
+            activity_type: item.activity_type || 'تجربة مميزة',
+            source: 'service'
+        }));
+        setExperiencesData(formattedExperiences);
       }
-      if (expError) console.error("Experiences Error:", expError);
 
       // 4. إعدادات المنصة
       const { data: info } = await supabase.from('platform_settings').select('*').single();
@@ -129,12 +120,12 @@ export default function HomePage() {
   }, []);
 
   return (
-    <main className={`relative min-h-screen ${tajawal.className} bg-black text-white`}>
-      {/* HEADER SECTION - Keep as is */}
+    <main className={`relative min-h-screen ${tajawal.className} bg-black text-white`} dir="rtl">
+      {/* HEADER SECTION */}
       <header className="fixed top-0 left-0 right-0 z-50 p-6 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent transition-all duration-300">
         <div className="w-28 md:w-32 hover:scale-105 transition duration-300">
           <Link href="/">
-             <Image src="/logo.png" alt="Sayyir" width={120} height={50} priority className="drop-shadow-lg" />
+              <Image src="/logo.png" alt="Sayyir" width={120} height={50} priority className="drop-shadow-lg" />
           </Link>
         </div>
 
@@ -162,11 +153,12 @@ export default function HomePage() {
           )}
 
           <Link href="/ai-guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-tr from-[#C89B3C] to-[#dcb45e] flex items-center justify-center shadow-lg animate-pulse hover:animate-none hover:scale-110 transition border border-[#C89B3C]/50" title="المرشد الذكي">
-             <Sparkles size={20} className="text-[#2B1F17]" />
+              <Sparkles size={20} className="text-[#2B1F17]" />
           </Link>
         </div>
       </header>
 
+      {/* ✅ استرجاع فيديو الخلفية الأصلي (hero.mp4) */}
       <video className="fixed inset-0 w-full h-full object-cover z-0 pointer-events-none" src="/hero.mp4" autoPlay muted loop playsInline />
       <div className="fixed inset-0 bg-black/60 z-0 pointer-events-none" />
 
@@ -208,23 +200,38 @@ export default function HomePage() {
           
           {/* المعالم */}
           {landmarksData.length > 0 && (
-             <div className="container mx-auto px-4">
-               <DynamicShowcase title="أبرز المعالم المختارة" linkHref="/landmarks" data={landmarksData} dataType="places" />
-             </div>
+              <div className="container mx-auto px-4">
+                <DynamicShowcase title="أبرز المعالم المختارة" linkHref="/landmarks" data={landmarksData} dataType="places" />
+              </div>
           )}
 
-          {/* المرافق - تم التأكد من تمرير services هنا */}
+          {/* المرافق */}
           {facilitiesData.length > 0 && (
-             <div className="container mx-auto px-4">
-               <DynamicShowcase title="أرقى المرافق والخدمات" linkHref="/facilities" data={facilitiesData} dataType="services" />
-             </div>
+              <div className="container mx-auto px-4">
+                <DynamicShowcase title="أرقى المرافق والخدمات" linkHref="/facilities" data={facilitiesData} dataType="services" />
+              </div>
           )}
 
-          {/* التجارب */}
+          {/* التجارب (عرض مباشر للكروت لدعم الفيديو) */}
           {experiencesData.length > 0 && (
-             <div className="container mx-auto px-4">
-               <DynamicShowcase title="تجارب سياحية لا تُنسى" linkHref="/experiences" data={experiencesData} dataType="services" />
-             </div>
+              <div className="container mx-auto px-4">
+                {/* ✅ تعديل العنوان لليمين والزر لليسار */}
+                <div className="flex flex-row items-center justify-between mb-8 w-full">
+                    <h2 className="text-3xl font-bold text-white flex items-center gap-2">
+                        <span className="w-2 h-8 bg-[#C89B3C] rounded-full inline-block"></span>
+                        تجارب سياحية لا تُنسى
+                    </h2>
+                    <Link href="/experiences" className="text-[#C89B3C] hover:text-white transition flex items-center gap-2 text-sm font-bold">
+                        عرض الكل <ArrowRight size={16} className="rotate-180" /> 
+                    </Link>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {experiencesData.map((exp) => (
+                        <ExperienceCard key={exp.id} data={exp} />
+                    ))}
+                </div>
+              </div>
           )}
         </div>
 
@@ -233,8 +240,8 @@ export default function HomePage() {
           <div className="relative bg-black py-20 px-4 border-t border-white/5">
             <div className="container mx-auto max-w-6xl">
               <div className="text-center mb-16">
-                 <h2 className="text-3xl md:text-4xl font-bold text-[#C89B3C] mb-4">عن منصة سَيّر</h2>
-                 <p className="text-white/60 max-w-2xl mx-auto">{platformInfo.about_us || "منصة سياحية متكاملة لاكتشاف منطقة عسير..."}</p>
+                  <h2 className="text-3xl md:text-4xl font-bold text-[#C89B3C] mb-4">عن منصة سَيّر</h2>
+                  <p className="text-white/60 max-w-2xl mx-auto">{platformInfo.about_us || "منصة سياحية متكاملة لاكتشاف منطقة عسير..."}</p>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -303,12 +310,97 @@ export default function HomePage() {
   );
 }
 
-function GlassCard({ title, desc, icon }: { title: string; desc: string; icon: React.ReactNode }) {
+// دالة فحص الفيديو
+const isVideo = (url: string | null) => {
+    if (!url) return false;
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') || lowerUrl.includes('.ogg') || lowerUrl.includes('video'); 
+};
+
+// مكون كرت التجربة (مع دعم الفيديو)
+function ExperienceCard({ data }: { data: any }) {
+  const linkHref = `/service/${data.id}`;
+  const mediaIsVideo = isVideo(data.image);
+
   return (
-    <div className="h-full group backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-6 md:p-8 text-white transition-all duration-500 hover:-translate-y-2 hover:bg-white/10 hover:border-[#C89B3C]/50 hover:shadow-2xl hover:shadow-[#C89B3C]/10 cursor-pointer flex flex-col items-center text-center">
-      <div className="mb-6 p-4 rounded-full bg-white/5 group-hover:bg-white/10 transition duration-500 group-hover:scale-110 shadow-inner">{icon}</div>
-      <h3 className="text-xl md:text-2xl font-bold mb-3 group-hover:text-[#C89B3C] transition">{title}</h3>
-      <p className="text-sm text-white/70 leading-relaxed group-hover:text-white/90 transition">{desc}</p>
+    <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
+      <div className="relative h-64 w-full overflow-hidden shrink-0 bg-black">
+        {mediaIsVideo ? (
+            <video 
+                src={data.image} 
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                autoPlay 
+                muted 
+                loop 
+                playsInline 
+            />
+        ) : (
+            <img 
+              src={data.image} 
+              alt={data.title} 
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+              onError={(e) => {
+                e.currentTarget.src = "/logo.png"; 
+                e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; 
+              }}
+            />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+        
+        {data.price > 0 && (
+            <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl z-10">
+            <span className="text-[#C89B3C] font-bold text-lg">
+                {data.price} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span>
+            </span>
+            </div>
+        )}
+        
+        <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10 z-10">
+            {mediaIsVideo ? <PlayCircle size={12} className="text-[#C89B3C]"/> : <Compass size={12} />} 
+            {data.activity_type}
+        </div>
+      </div>
+      
+      <div className="p-6 flex flex-col flex-1">
+        <div className="flex justify-between items-start mb-2">
+            <h3 className="text-2xl font-bold group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3>
+        </div>
+        
+        <div className="flex flex-wrap gap-4 mb-4 text-xs text-white/50 bg-white/5 p-3 rounded-xl border border-white/5">
+            {data.duration && (
+                <div className="flex items-center gap-1"><Clock size={14} className="text-[#C89B3C]"/> {data.duration}</div>
+            )}
+            {data.difficulty_level && (
+                <div className="flex items-center gap-1">
+                    <Activity size={14} className="text-[#C89B3C]"/> 
+                    {data.difficulty_level === 'easy' ? 'سهل' : data.difficulty_level === 'medium' ? 'متوسط' : data.difficulty_level === 'hard' ? 'صعب' : data.difficulty_level}
+                </div>
+            )}
+            {data.meeting_point && (
+                <div className="flex items-center gap-1 line-clamp-1"><MapPin size={14} className="text-[#C89B3C]"/> {data.meeting_point}</div>
+            )}
+        </div>
+
+        <p className="text-white/60 text-sm line-clamp-3 mb-6 flex-1 leading-relaxed">
+            {data.description}
+        </p>
+        
+        <Link href={linkHref} className="w-full block mt-auto">
+            <button className="w-full py-3 rounded-xl bg-[#C89B3C] text-black font-bold hover:bg-[#b38a35] transition-all flex items-center justify-center gap-2">
+                احجز تجربتك <ArrowRight size={18} className="rotate-180"/>
+            </button>
+        </Link>
+      </div>
     </div>
   );
+}
+
+function GlassCard({ title, desc, icon }: { title: string; desc: string; icon: React.ReactNode }) {
+  return (
+    <div className="h-full group backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-6 md:p-8 text-white transition-all duration-500 hover:-translate-y-2 hover:bg-white/10 hover:border-[#C89B3C]/50 hover:shadow-2xl hover:shadow-[#C89B3C]/10 cursor-pointer flex flex-col items-center text-center">
+      <div className="mb-6 p-4 rounded-full bg-white/5 group-hover:bg-white/10 transition duration-500 group-hover:scale-110 shadow-inner">{icon}</div>
+      <h3 className="text-xl md:text-2xl font-bold mb-3 group-hover:text-[#C89B3C] transition">{title}</h3>
+      <p className="text-sm text-white/70 leading-relaxed group-hover:text-white/90 transition">{desc}</p>
+    </div>
+  );
 }
