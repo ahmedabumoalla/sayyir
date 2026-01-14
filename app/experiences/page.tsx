@@ -45,7 +45,6 @@ export default function ExperiencesPage() {
         title: item.title,
         description: item.description,
         price: item.price,
-        // ✅ جلب الصورة أو الفيديو (الأولوية للرابط في image_url ثم menu_items)
         image: item.image_url 
                ? item.image_url 
                : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder-experience.jpg"),
@@ -53,7 +52,7 @@ export default function ExperiencesPage() {
         duration: item.duration,
         difficulty_level: item.difficulty_level,
         meeting_point: item.meeting_point,
-        source: 'service'
+        source: 'service' // ✅ مصدر: خدمة
       }));
 
       const adminItems = (adminRes.data || []).map((item: any) => ({
@@ -61,13 +60,12 @@ export default function ExperiencesPage() {
         title: item.name,
         description: item.description,
         price: item.price || 0,
-        // ✅ جلب الصورة أو الفيديو للأدمن
         image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "/placeholder-experience.jpg",
         activity_type: item.category || 'تجربة سياحية',
         duration: item.duration,
         difficulty_level: item.difficulty,
         meeting_point: item.city || 'عسير',
-        source: 'place'
+        source: 'place' // ✅ مصدر: مكان (أدمن)
       }));
 
       setExperiences([...providerItems, ...adminItems]);
@@ -84,7 +82,6 @@ export default function ExperiencesPage() {
       
       {/* HEADER */}
       <div className="relative h-[40vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
-        {/* خلفية ثابتة للتجارب */}
         <div className="absolute inset-0 bg-black/40" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/60 to-[#0a0a0a]" />
         
@@ -124,7 +121,7 @@ export default function ExperiencesPage() {
   );
 }
 
-// ✅ دالة محسنة للتحقق من الفيديو (تشمل جميع الاحتمالات)
+// دالة التحقق من الفيديو
 const isVideo = (url: string | null) => {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
@@ -135,25 +132,26 @@ const isVideo = (url: string | null) => {
 };
 
 function ExperienceCard({ data }: { data: any }) {
-  const linkHref = `/service/${data.id}`; // توحيد الرابط لصفحة التفاصيل
-  const buttonText = data.source === 'service' ? 'احجز تجربتك' : 'استكشف التجربة';
+  // ✅ التعديل الجوهري هنا: تحديد الرابط بناءً على المصدر
+  const linkHref = data.source === 'place' 
+      ? `/place/${data.id}`   // إذا كان من الأدمن يروح لصفحة المكان
+      : `/service/${data.id}`; // إذا كان من مزود يروح لصفحة الخدمة
 
-  // التحقق هل الملف فيديو
+  const buttonText = data.source === 'service' ? 'احجز تجربتك' : 'استكشف التجربة';
   const mediaIsVideo = isVideo(data.image);
 
   return (
     <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
       <div className="relative h-64 w-full overflow-hidden shrink-0 bg-black">
         
-        {/* ✅ عرض الفيديو أو الصورة */}
         {mediaIsVideo ? (
             <video 
                 src={data.image} 
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                 autoPlay 
-                muted // مهم جداً للتشغيل التلقائي
+                muted 
                 loop 
-                playsInline // مهم للجوال
+                playsInline 
             />
         ) : (
             <img 
@@ -167,10 +165,8 @@ function ExperienceCard({ data }: { data: any }) {
             />
         )}
         
-        {/* طبقة شفافة لضمان وضوح النصوص */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
-        {/* السعر */}
         {data.price > 0 && (
             <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl z-10">
             <span className="text-[#C89B3C] font-bold text-lg">
@@ -179,7 +175,6 @@ function ExperienceCard({ data }: { data: any }) {
             </div>
         )}
         
-        {/* نوع النشاط */}
         <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10 z-10">
             {mediaIsVideo ? <PlayCircle size={12} className="text-[#C89B3C]"/> : <Compass size={12} />} 
             {data.activity_type}
@@ -191,7 +186,6 @@ function ExperienceCard({ data }: { data: any }) {
             <h3 className="text-2xl font-bold group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3>
         </div>
         
-        {/* معلومات إضافية */}
         <div className="flex flex-wrap gap-4 mb-4 text-xs text-white/50 bg-white/5 p-3 rounded-xl border border-white/5">
             {data.duration && (
                 <div className="flex items-center gap-1"><Clock size={14} className="text-[#C89B3C]"/> {data.duration}</div>

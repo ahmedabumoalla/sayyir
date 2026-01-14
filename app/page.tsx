@@ -88,29 +88,53 @@ export default function HomePage() {
       const { data: facilities } = await supabase.from('services').select('*').in('service_type', ['accommodation', 'food']).eq('status', 'approved').limit(6);
       if (facilities) setFacilitiesData(facilities);
 
-      // 3. التجارب (بنفس منطق صفحة التجارب)
-      const { data: experiences } = await supabase
+      // 3. التجارب (تم الإصلاح: جلب من الأدمن والمزودين)
+      // أ. تجارب المزودين
+      const { data: providerExp } = await supabase
         .from('services')
         .select('*')
-        .eq('service_type', 'experience')
-        .eq('status', 'approved')
-        .limit(6);
+        .eq('service_category', 'experience') // تأكدنا من اسم العمود
+        .eq('status', 'approved');
 
-      if (experiences) {
-        // نستخدم نفس المنطق الموجود في صفحة التجارب لجلب الصورة أو الفيديو الصحيح
-        const formattedExperiences = experiences.map((item: any) => ({
-            ...item,
-            // الأولوية للصورة في image_url، ثم أول عنصر في menu_items (لأن بعضها يخزن الفيديو هناك)، ثم صورة افتراضية
-            image: item.image_url 
-                ? item.image_url 
-                : (item.details?.images && item.details.images.length > 0 ? item.details.images[0] : 
-                   (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : 
-                   "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop")),
-            activity_type: item.activity_type || 'تجربة مميزة',
-            source: 'service'
-        }));
-        setExperiencesData(formattedExperiences);
-      }
+      // ب. تجارب الأدمن
+      const { data: adminExp } = await supabase
+        .from('places')
+        .select('*')
+        .eq('type', 'experience')
+        .eq('is_active', true);
+
+      // ج. دمج وتنسيق البيانات
+      const formattedProvider = (providerExp || []).map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        price: item.price,
+        image: item.image_url 
+               ? item.image_url 
+               : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop"),
+        activity_type: item.activity_type || 'تجربة مميزة',
+        duration: item.duration,
+        difficulty_level: item.difficulty_level,
+        meeting_point: item.meeting_point,
+        source: 'service'
+      }));
+
+      const formattedAdmin = (adminExp || []).map((item: any) => ({
+        id: item.id,
+        title: item.name,
+        description: item.description,
+        price: item.price || 0,
+        image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop",
+        activity_type: item.category || 'تجربة سياحية',
+        duration: item.duration,
+        difficulty_level: item.difficulty,
+        meeting_point: item.city || 'عسير',
+        source: 'place'
+      }));
+
+      // دمج وعرض أول 6 تجارب
+      const allExperiences = [...formattedProvider, ...formattedAdmin];
+      setExperiencesData(allExperiences.slice(0, 6));
 
       // 4. إعدادات المنصة
       const { data: info } = await supabase.from('platform_settings').select('*').single();
@@ -158,7 +182,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* ✅ استرجاع فيديو الخلفية الأصلي (hero.mp4) */}
+      {/* VIDEO BACKGROUND */}
       <video className="fixed inset-0 w-full h-full object-cover z-0 pointer-events-none" src="/hero.mp4" autoPlay muted loop playsInline />
       <div className="fixed inset-0 bg-black/60 z-0 pointer-events-none" />
 
@@ -212,10 +236,9 @@ export default function HomePage() {
               </div>
           )}
 
-          {/* التجارب (عرض مباشر للكروت لدعم الفيديو) */}
+          {/* التجارب */}
           {experiencesData.length > 0 && (
               <div className="container mx-auto px-4">
-                {/* ✅ تعديل العنوان لليمين والزر لليسار */}
                 <div className="flex flex-row items-center justify-between mb-8 w-full">
                     <h2 className="text-3xl font-bold text-white flex items-center gap-2">
                         <span className="w-2 h-8 bg-[#C89B3C] rounded-full inline-block"></span>
@@ -235,7 +258,7 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Footer & Info Section ... (يبقى كما هو) */}
+        {/* Footer & Info Section */}
         {platformInfo && (
           <div className="relative bg-black py-20 px-4 border-t border-white/5">
             <div className="container mx-auto max-w-6xl">
@@ -263,7 +286,6 @@ export default function HomePage() {
         )}
 
         <footer className="bg-[#050505] border-t border-white/10 pt-16 pb-8 px-4 text-center md:text-right">
-             {/* Footer Content ... Same as before */}
              <div className="container mx-auto max-w-6xl flex flex-col md:flex-row justify-between items-start gap-10">
                 <div className="flex-1">
                   <Image src="/logo.png" alt="Sayyir" width={140} height={60} className="mb-6 opacity-90 mx-auto md:mx-0" />
@@ -319,7 +341,11 @@ const isVideo = (url: string | null) => {
 
 // مكون كرت التجربة (مع دعم الفيديو)
 function ExperienceCard({ data }: { data: any }) {
-  const linkHref = `/service/${data.id}`;
+  // ✅ التعديل هنا: التوجيه حسب المصدر
+  const linkHref = data.source === 'place' 
+      ? `/place/${data.id}` 
+      : `/service/${data.id}`;
+
   const mediaIsVideo = isVideo(data.image);
 
   return (
@@ -396,11 +422,11 @@ function ExperienceCard({ data }: { data: any }) {
 }
 
 function GlassCard({ title, desc, icon }: { title: string; desc: string; icon: React.ReactNode }) {
-  return (
-    <div className="h-full group backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-6 md:p-8 text-white transition-all duration-500 hover:-translate-y-2 hover:bg-white/10 hover:border-[#C89B3C]/50 hover:shadow-2xl hover:shadow-[#C89B3C]/10 cursor-pointer flex flex-col items-center text-center">
-      <div className="mb-6 p-4 rounded-full bg-white/5 group-hover:bg-white/10 transition duration-500 group-hover:scale-110 shadow-inner">{icon}</div>
-      <h3 className="text-xl md:text-2xl font-bold mb-3 group-hover:text-[#C89B3C] transition">{title}</h3>
-      <p className="text-sm text-white/70 leading-relaxed group-hover:text-white/90 transition">{desc}</p>
-    </div>
-  );
+  return (
+    <div className="h-full group backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-6 md:p-8 text-white transition-all duration-500 hover:-translate-y-2 hover:bg-white/10 hover:border-[#C89B3C]/50 hover:shadow-2xl hover:shadow-[#C89B3C]/10 cursor-pointer flex flex-col items-center text-center">
+      <div className="mb-6 p-4 rounded-full bg-white/5 group-hover:bg-white/10 transition duration-500 group-hover:scale-110 shadow-inner">{icon}</div>
+      <h3 className="text-xl md:text-2xl font-bold mb-3 group-hover:text-[#C89B3C] transition">{title}</h3>
+      <p className="text-sm text-white/70 leading-relaxed group-hover:text-white/90 transition">{desc}</p>
+    </div>
+  );
 }

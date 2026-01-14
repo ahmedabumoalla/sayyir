@@ -11,7 +11,7 @@ import Link from "next/link";
 import { 
   X, ArrowRight, Camera, 
   BedDouble, Utensils, Filter, Layers, 
-  Tent, Landmark, Mountain, Box, MapPin
+  Tent, Landmark, Mountain, Box, MapPin, Check
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -26,6 +26,7 @@ interface MapItem {
   type: string;
   category?: string;
   sub_category?: string;
+  city?: string;
   lat: number;
   lng: number;
   description: string;
@@ -41,7 +42,11 @@ export default function MapPage() {
   const [filteredItems, setFilteredItems] = useState<MapItem[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<MapItem | null>(null);
   const [hoveredLocation, setHoveredLocation] = useState<MapItem | null>(null);
-  const [activeFilter, setActiveFilter] = useState('الكل'); 
+  
+  // ✅ بيانات الفلترة
+  const [citiesList, setCitiesList] = useState<string[]>([]);
+  const [selectedCity, setSelectedCity] = useState('الكل');
+  const [selectedCategory, setSelectedCategory] = useState('الكل');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const [viewState, setViewState] = useState({
@@ -50,21 +55,31 @@ export default function MapPage() {
     zoom: 10
   });
   
+  // تصنيفات ثابتة للنوع
+  const categoryFilters = [
+    { label: 'الكل', value: 'الكل', icon: Layers },
+    { label: 'معالم', value: 'places', icon: Landmark }, // يشمل التراثي والسياحي
+    { label: 'مرافق', value: 'facilities', icon: Utensils }, // يشمل السكن والمطاعم والحرف
+    { label: 'تجارب', value: 'experience', icon: Tent },
+  ];
+
   useEffect(() => {
     fetchAllData();
+    fetchCities();
   }, []);
+
+  // جلب المدن من قاعدة البيانات
+  const fetchCities = async () => {
+    const { data } = await supabase.from('cities').select('name').order('name');
+    if (data) {
+        setCitiesList(data.map(c => c.name));
+    }
+  };
 
   const fetchAllData = async () => {
     try {
-      const { data: placesData } = await supabase
-        .from('places')
-        .select('*')
-        .eq('is_active', true);
-      
-      const { data: servicesData } = await supabase
-        .from('services')
-        .select('*')
-        .eq('status', 'approved');
+      const { data: placesData } = await supabase.from('places').select('*').eq('is_active', true);
+      const { data: servicesData } = await supabase.from('services').select('*').eq('status', 'approved');
 
       const allItems: MapItem[] = [];
 
@@ -74,7 +89,7 @@ export default function MapPage() {
             id: p.id,
             name: p.name,
             type: p.type,
-            category: 'place',
+            city: p.city,
             lat: p.lat,
             lng: p.lng,
             description: p.description,
@@ -87,18 +102,15 @@ export default function MapPage() {
       if (servicesData) {
         servicesData.forEach((s: any) => {
           if (!s.location_lat || !s.location_lng) return;
-
           if (s.sub_category === 'craft' && s.stock_quantity !== null && s.stock_quantity <= 0) return;
-          if (s.capacity_type === 'limited' && s.max_capacity !== null) {
-              if ((s.current_bookings || 0) >= s.max_capacity) return;
-          }
+          if (s.capacity_type === 'limited' && s.max_capacity !== null && (s.current_bookings || 0) >= s.max_capacity) return;
 
           allItems.push({
             id: s.id,
             name: s.title,
             type: s.service_category === 'experience' ? 'experience' : s.sub_category || 'service',
-            category: 'service',
             sub_category: s.sub_category,
+            city: s.city,
             lat: s.location_lat,
             lng: s.location_lng,
             description: s.description,
@@ -117,87 +129,131 @@ export default function MapPage() {
     }
   };
 
+  // ✅ منطق الفلترة المزدوج (مدينة + تصنيف)
   useEffect(() => {
-    if (activeFilter === 'الكل') {
-      setFilteredItems(items);
-    } else {
-      setFilteredItems(items.filter(item => {
-        if (activeFilter === 'معالم' && item.sourceTable === 'places') return true;
-        if (item.sourceTable === 'services') {
-            if (activeFilter === 'سكن' && item.sub_category === 'lodging') return true;
-            if (activeFilter === 'مطاعم' && item.sub_category === 'food') return true;
-            if (activeFilter === 'حرف' && item.sub_category === 'craft') return true;
-            if (activeFilter === 'تجارب' && item.type === 'experience') return true;
-        }
-        return false;
-      }));
-    }
-  }, [activeFilter, items]);
+    let result = items;
 
+    // 1. فلترة المدينة
+    if (selectedCity !== 'الكل') {
+        result = result.filter(item => item.city === selectedCity);
+    }
+
+    // 2. فلترة التصنيف
+    if (selectedCategory !== 'الكل') {
+        if (selectedCategory === 'places') {
+            // المعالم فقط (جدول places) بس نستثني التجارب عشان تروح لفلتر التجارب
+            result = result.filter(item => item.sourceTable === 'places' && item.type !== 'experience');
+        } else if (selectedCategory === 'experience') {
+            // التجارب فقط (من الأدمن أو المزود)
+            result = result.filter(item => item.type === 'experience');
+        } else if (selectedCategory === 'facilities') {
+            // المرافق (خدمات ليست تجارب)
+            result = result.filter(item => item.sourceTable === 'services' && item.type !== 'experience');
+        }
+    }
+
+    setFilteredItems(result);
+  }, [selectedCity, selectedCategory, items]);
+
+  // ✅ تعديل منطق الأيقونات لإصلاح مشكلة التجارب
   const getItemStyle = (item: MapItem) => {
+    // 1. الأولوية للتجارب (سواء من الأدمن أو المزود)
+    if (item.type === 'experience') {
+        return { icon: Tent, color: "text-emerald-400", bg: "bg-emerald-900" };
+    }
+
+    // 2. ثم نفحص المصدر
     if (item.sourceTable === 'places') {
         if (item.type === 'heritage') return { icon: Landmark, color: "text-[#C89B3C]", bg: "bg-[#4a3b2a]" };
+        // الباقي معالم سياحية
         return { icon: Mountain, color: "text-blue-400", bg: "bg-blue-900" };
     } 
-    if (item.type === 'experience') return { icon: Tent, color: "text-emerald-400", bg: "bg-emerald-900" };
+    
+    // 3. باقي خدمات المزودين
     if (item.sub_category === 'lodging') return { icon: BedDouble, color: "text-indigo-400", bg: "bg-indigo-900" };
     if (item.sub_category === 'food') return { icon: Utensils, color: "text-orange-400", bg: "bg-orange-900" };
     if (item.sub_category === 'craft') return { icon: Box, color: "text-pink-400", bg: "bg-pink-900" };
+    
     return { icon: MapPin, color: "text-gray-400", bg: "bg-gray-800" };
   };
 
-  // ✅ الدالة المعدلة للتوجيه الصحيح
   const handleActionClick = () => {
     if (!selectedLocation || !selectedLocation.id) return;
-    
-    if (selectedLocation.sourceTable === 'places') {
-      // إذا كان المجلد عندك اسمه 'places' بدلاً من 'place' عدل هذه الكلمة
-      router.push(`/place/${selectedLocation.id}`);
-    } else {
-      // ✅ تم التعديل إلى 'service' (مفرد) لأن هذا هو اسم المجلد الظاهر في صورك السابقة
-      router.push(`/service/${selectedLocation.id}`);
-    }
+    if (selectedLocation.sourceTable === 'places') router.push(`/place/${selectedLocation.id}`);
+    else router.push(`/service/${selectedLocation.id}`);
   };
 
-  const filters = [
-    { label: 'الكل', icon: Layers },
-    { label: 'معالم', icon: Landmark },
-    { label: 'سكن', icon: BedDouble },
-    { label: 'مطاعم', icon: Utensils },
-    { label: 'حرف', icon: Box },
-    { label: 'تجارب', icon: Tent },
-  ];
-
   return (
-    <main className={`relative h-screen flex flex-col ${tajawal.className} bg-black overflow-hidden`}>
+    <main className={`relative h-screen flex flex-col ${tajawal.className} bg-black overflow-hidden`} dir="rtl">
       <video className="fixed inset-0 w-full h-full object-cover z-0 pointer-events-none opacity-60" src="/hero.mp4" autoPlay muted loop playsInline />
       
-      <div className="absolute top-4 left-4 z-50">
+      <div className="absolute top-4 right-4 z-50">
         <Link href="/" className="block transition hover:opacity-80 hover:scale-105 duration-300">
           <Image src="/logo.png" alt="Sayyir Logo" width={100} height={35} priority className="drop-shadow-xl" />
         </Link>
       </div>
 
-      <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2">
+      {/* ✅ زر الفلتر والبطاقة المنبثقة */}
+      <div className="absolute top-4 left-4 z-50 flex flex-col items-start gap-2">
         <button 
           onClick={() => setIsFilterOpen(!isFilterOpen)}
-          className={`w-12 h-12 rounded-xl backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg transition hover:bg-white/20 ${isFilterOpen ? 'bg-[#C89B3C] text-black' : 'bg-black/60 text-white'}`}
+          className={`h-12 px-4 rounded-xl backdrop-blur-md border border-white/20 flex items-center gap-2 shadow-lg transition hover:bg-white/20 ${isFilterOpen ? 'bg-[#C89B3C] text-black font-bold' : 'bg-black/60 text-white'}`}
         >
-          {isFilterOpen ? <X size={24} /> : <Filter size={24} />}
+          <Filter size={20} />
+          <span>تصفية الخريطة</span>
+          {/* عرض عدد النتائج */}
+          <span className="bg-white/20 px-2 py-0.5 rounded text-xs ml-1">{filteredItems.length}</span>
         </button>
 
         {isFilterOpen && (
-          <div className="flex flex-col gap-2 bg-black/80 backdrop-blur-md p-2 rounded-2xl border border-white/10 animate-in slide-in-from-right-4 duration-300 min-w-[140px]">
-            {filters.map((f) => (
-               <button
-                 key={f.label}
-                 onClick={() => { setActiveFilter(f.label); setIsFilterOpen(false); }}
-                 className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition w-full ${activeFilter === f.label ? 'bg-[#C89B3C] text-black' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}
-               >
-                 <f.icon size={16} />
-                 <span>{f.label}</span>
-               </button>
-            ))}
+          <div className="bg-[#1a1a1a]/95 backdrop-blur-xl p-5 rounded-2xl border border-white/10 shadow-2xl animate-in slide-in-from-left-4 duration-300 w-[300px] flex flex-col gap-6">
+            
+            {/* 1. قسم المدن */}
+            <div>
+                <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><MapPin size={14}/> اختر المدينة</h3>
+                <div className="flex flex-wrap gap-2">
+                    <button 
+                        onClick={() => setSelectedCity('الكل')}
+                        className={`text-xs px-3 py-1.5 rounded-lg border transition ${selectedCity === 'الكل' ? 'bg-white text-black border-white' : 'bg-transparent text-white/60 border-white/10 hover:border-white/30'}`}
+                    >
+                        الكل
+                    </button>
+                    {citiesList.map(city => (
+                        <button 
+                            key={city}
+                            onClick={() => setSelectedCity(city)}
+                            className={`text-xs px-3 py-1.5 rounded-lg border transition ${selectedCity === city ? 'bg-white text-black border-white' : 'bg-transparent text-white/60 border-white/10 hover:border-white/30'}`}
+                        >
+                            {city}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="h-px bg-white/10 w-full"></div>
+
+            {/* 2. قسم التصنيف */}
+            <div>
+                <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Layers size={14}/> اختر التصنيف</h3>
+                <div className="grid grid-cols-2 gap-2">
+                    {categoryFilters.map(cat => (
+                        <button 
+                            key={cat.value}
+                            onClick={() => setSelectedCategory(cat.value)}
+                            className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border transition ${selectedCategory === cat.value ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'bg-transparent text-white/60 border-white/10 hover:border-white/30'}`}
+                        >
+                            <cat.icon size={14} /> {cat.label}
+                            {selectedCategory === cat.value && <Check size={12} className="mr-auto"/>}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* زر إغلاق / تطبيق */}
+            <button onClick={() => setIsFilterOpen(false)} className="w-full bg-white/10 hover:bg-white/20 text-white py-2 rounded-xl text-xs font-bold transition">
+                إغلاق القائمة
+            </button>
+
           </div>
         )}
       </div>
@@ -211,7 +267,7 @@ export default function MapPage() {
           style={{ width: "100%", height: "100%" }}
           onClick={() => setSelectedLocation(null)}
         >
-          <NavigationControl position="bottom-left" style={{ marginBottom: '100px', marginLeft: '20px' }} />
+          <NavigationControl position="bottom-right" style={{ marginBottom: '100px', marginRight: '20px' }} />
 
           {hoveredLocation && (
             <Popup

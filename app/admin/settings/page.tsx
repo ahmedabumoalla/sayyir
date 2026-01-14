@@ -26,6 +26,10 @@ export default function AdminSettingsPage() {
   const [optionsText, setOptionsText] = useState("");
   const [fieldSaving, setFieldSaving] = useState(false);
 
+  // === States for Cities & Categories ===
+  const [cities, setCities] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+
   // === States for Settings ===
   const [formData, setFormData] = useState({
     is_app_active: true, about_us: "", vision: "", mission: "",
@@ -36,19 +40,19 @@ export default function AdminSettingsPage() {
     googleMapKey: "",
     geminiKey: "",
     paymentGateway: "Stripe",
-    moyasarKey: "", // ✅ مفتاح ميسر
+    moyasarKey: "", 
     gmailUser: "",
     gmailAppPassword: "",
-    resendApiKey: "", // ✅ مفتاح Resend
-    twilioSid: "",    // ✅ Twilio SID
-    twilioToken: "",  // ✅ Twilio Token
-    twilioPhone: ""   // ✅ Twilio Phone
+    resendApiKey: "", 
+    twilioSid: "",    
+    twilioToken: "",  
+    twilioPhone: ""   
   });
 
   // --- Fetch Data ---
   useEffect(() => {
     const initData = async () => {
-        await Promise.all([fetchSettings(), fetchFields()]);
+        await Promise.all([fetchSettings(), fetchFields(), fetchCitiesAndCats()]);
         setLoading(false);
     };
     initData();
@@ -59,14 +63,17 @@ export default function AdminSettingsPage() {
     if (data) setFields(data);
   };
 
+  const fetchCitiesAndCats = async () => {
+      const { data: citiesData } = await supabase.from('cities').select('*').order('name');
+      if (citiesData) setCities(citiesData);
+
+      const { data: catsData } = await supabase.from('categories').select('*').order('name');
+      if (catsData) setCategories(catsData);
+  };
+
   const fetchSettings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('platform_settings')
-        .select('*')
-        .eq('id', 1)
-        .single();
-      
+      const { data, error } = await supabase.from('platform_settings').select('*').eq('id', 1).single();
       if (data) {
         setFormData({
           is_app_active: data.is_app_active ?? true,
@@ -74,7 +81,6 @@ export default function AdminSettingsPage() {
           whatsapp: data.whatsapp || "", email: data.email || "",
           twitter: data.twitter || "", instagram: data.instagram || "", linkedin: data.linkedin || ""
         });
-
         setTechData({
           googleMapKey: data.google_map_key || "",
           geminiKey: data.gemini_key || "",
@@ -88,44 +94,29 @@ export default function AdminSettingsPage() {
           twilioPhone: data.twilio_phone_number || ""
         });
       }
-    } catch (error) {
-      console.error(error);
-    }
+    } catch (error) { console.error(error); }
   };
 
-  // --- Handle Save ---
+  // --- Handle Save Settings ---
   const handleSave = async () => {
     setSaving(true);
     try {
       let dataToUpdate = {};
-
-      if (activeTab === "app_settings") {
-        dataToUpdate = { ...formData };
-      } else if (activeTab === "tech_link") {
+      if (activeTab === "app_settings") dataToUpdate = { ...formData };
+      else if (activeTab === "tech_link") {
         dataToUpdate = {
-          google_map_key: techData.googleMapKey,
-          gemini_key: techData.geminiKey,
-          payment_gateway: techData.paymentGateway,
-          moyasar_key: techData.moyasarKey,
-          gmail_user: techData.gmailUser,
-          gmail_app_password: techData.gmailAppPassword,
-          resend_api_key: techData.resendApiKey,
-          twilio_account_sid: techData.twilioSid,
-          twilio_auth_token: techData.twilioToken,
-          twilio_phone_number: techData.twilioPhone
+          google_map_key: techData.googleMapKey, gemini_key: techData.geminiKey,
+          payment_gateway: techData.paymentGateway, moyasar_key: techData.moyasarKey,
+          gmail_user: techData.gmailUser, gmail_app_password: techData.gmailAppPassword,
+          resend_api_key: techData.resendApiKey, twilio_account_sid: techData.twilioSid,
+          twilio_auth_token: techData.twilioToken, twilio_phone_number: techData.twilioPhone
         };
-      } else {
-        setSaving(false); return; 
-      }
+      } else { setSaving(false); return; }
 
       const { error } = await supabase.from('platform_settings').upsert({ id: 1, ...dataToUpdate, updated_at: new Date().toISOString() });
       if (error) throw error;
       alert("✅ تم حفظ الإعدادات بنجاح!");
-    } catch (error: any) {
-      alert("❌ خطأ: " + error.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (error: any) { alert("❌ خطأ: " + error.message); } finally { setSaving(false); }
   };
 
   // --- Field Logic ---
@@ -139,15 +130,68 @@ export default function AdminSettingsPage() {
       let finalOptions: string[] | null = null;
       if (currentField.field_type === 'select') finalOptions = optionsText.split(',').map(s => s.trim()).filter(Boolean);
       else if (currentField.field_type === 'policy') finalOptions = [optionsText];
-
       const fieldData = { ...currentField, options: finalOptions, is_required: currentField.field_type === 'policy' ? true : currentField.is_required };
-      
-      // هنا نفترض الحفظ المباشر في Supabase لتبسيط الكود
       const { error } = await supabase.from('registration_fields').upsert(fieldData);
       if (error) throw error;
-      
       await fetchFields(); setIsModalOpen(false); alert("✅ تم الحفظ");
     } catch (e: any) { alert(e.message); } finally { setFieldSaving(false); }
+  };
+
+  // --- Cities & Categories Logic ---
+  const handleAddCity = async () => {
+      const name = prompt("أدخل اسم المدينة الجديدة:");
+      if (!name) return;
+      const { data, error } = await supabase.from('cities').insert({ name }).select();
+      if (!error && data) setCities([...cities, data[0]]);
+      else alert("خطأ في الإضافة: " + (error?.message || "unknown"));
+  };
+
+  // ✅ دالة تعديل المدينة
+  const handleEditCity = async (id: string, currentName: string) => {
+      const newName = prompt("تعديل اسم المدينة:", currentName);
+      if (!newName || newName === currentName) return;
+
+      const { error } = await supabase.from('cities').update({ name: newName }).eq('id', id);
+      if (!error) {
+          setCities(cities.map(c => c.id === id ? { ...c, name: newName } : c));
+      } else {
+          alert("فشل التعديل: " + error.message);
+      }
+  };
+
+  const handleDeleteCity = async (id: string) => {
+      if(!confirm("هل أنت متأكد من حذف هذه المدينة؟")) return;
+      const { error } = await supabase.from('cities').delete().eq('id', id);
+      if(!error) setCities(cities.filter(c => c.id !== id));
+      else alert("خطأ في الحذف");
+  };
+
+  const handleAddCategory = async () => {
+      const name = prompt("أدخل اسم التصنيف الجديد:");
+      if (!name) return;
+      const { data, error } = await supabase.from('categories').insert({ name, type: 'place' }).select();
+      if (!error && data) setCategories([...categories, data[0]]);
+      else alert("خطأ في الإضافة");
+  };
+
+  // ✅ دالة تعديل التصنيف
+  const handleEditCategory = async (id: string, currentName: string) => {
+      const newName = prompt("تعديل اسم التصنيف:", currentName);
+      if (!newName || newName === currentName) return;
+
+      const { error } = await supabase.from('categories').update({ name: newName }).eq('id', id);
+      if (!error) {
+          setCategories(categories.map(c => c.id === id ? { ...c, name: newName } : c));
+      } else {
+          alert("فشل التعديل: " + error.message);
+      }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+      if(!confirm("حذف التصنيف؟")) return;
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if(!error) setCategories(categories.filter(c => c.id !== id));
+      else alert("خطأ في الحذف");
   };
 
   if (loading) return <div className="p-10 text-center text-white">جاري التحميل...</div>;
@@ -219,12 +263,8 @@ export default function AdminSettingsPage() {
       {/* ============== تبويب إعدادات الربط والتقنية ============== */}
       {activeTab === "tech_link" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-          
-          {/* 1. بوابات الدفع */}
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
-              <Key size={20} /> بوابات الدفع الإلكتروني
-            </h2>
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2"><Key size={20} /> بوابات الدفع الإلكتروني</h2>
             <div className="space-y-4">
                 <div>
                     <label className="block text-gray-400 mb-2 text-sm">البوابة المفضلة</label>
@@ -234,7 +274,6 @@ export default function AdminSettingsPage() {
                         <option value="Tamara">Tamara (تقسيط)</option>
                     </select>
                 </div>
-
                 {techData.paymentGateway === 'Moyasar' && (
                     <div className="animate-in fade-in slide-in-from-top-2 p-4 bg-black/20 rounded-xl border border-[#C89B3C]/30">
                         <label className="block text-[#C89B3C] mb-2 text-xs font-bold">مفتاح الربط الخاص (Moyasar Secret Key)</label>
@@ -245,70 +284,36 @@ export default function AdminSettingsPage() {
             </div>
           </section>
 
-          {/* 2. خدمات البريد (Gmail & Resend) */}
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
-              <Mail size={20} /> خدمات البريد الإلكتروني
-            </h2>
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2"><Mail size={20} /> خدمات البريد الإلكتروني</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4 p-4 bg-black/20 rounded-xl border border-white/5">
                     <h3 className="text-white font-bold text-sm border-b border-white/10 pb-2">إعدادات Gmail SMTP</h3>
-                    <div>
-                        <label className="block text-gray-400 mb-2 text-xs">البريد المرسل</label>
-                        <input type="email" value={techData.gmailUser} onChange={(e) => setTechData({...techData, gmailUser: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm" dir="ltr" placeholder="email@gmail.com"/>
-                    </div>
-                    <div>
-                        <label className="block text-gray-400 mb-2 text-xs">كلمة مرور التطبيق</label>
-                        <input type="password" value={techData.gmailAppPassword} onChange={(e) => setTechData({...techData, gmailAppPassword: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm" dir="ltr"/>
-                    </div>
+                    <div><label className="block text-gray-400 mb-2 text-xs">البريد المرسل</label><input type="email" value={techData.gmailUser} onChange={(e) => setTechData({...techData, gmailUser: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm" dir="ltr" placeholder="email@gmail.com"/></div>
+                    <div><label className="block text-gray-400 mb-2 text-xs">كلمة مرور التطبيق</label><input type="password" value={techData.gmailAppPassword} onChange={(e) => setTechData({...techData, gmailAppPassword: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm" dir="ltr"/></div>
                 </div>
-
                 <div className="space-y-4 p-4 bg-black/20 rounded-xl border border-white/5">
                     <h3 className="text-white font-bold text-sm border-b border-white/10 pb-2">إعدادات Resend API</h3>
-                    <div>
-                        <label className="block text-gray-400 mb-2 text-xs">API Key</label>
-                        <input type="text" value={techData.resendApiKey} onChange={(e) => setTechData({...techData, resendApiKey: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr" placeholder="re_123..."/>
-                    </div>
+                    <div><label className="block text-gray-400 mb-2 text-xs">API Key</label><input type="text" value={techData.resendApiKey} onChange={(e) => setTechData({...techData, resendApiKey: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr" placeholder="re_123..."/></div>
                     <p className="text-[10px] text-gray-500">يستخدم Resend لإرسال إيميلات احترافية وسريعة.</p>
                 </div>
             </div>
           </section>
 
-          {/* 3. خدمات الرسائل (Twilio) */}
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
-              <MessageSquare size={20} /> خدمات الرسائل القصيرة (Twilio)
-            </h2>
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2"><MessageSquare size={20} /> خدمات الرسائل القصيرة (Twilio)</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <label className="block text-gray-400 mb-2 text-xs">Account SID</label>
-                    <input type="text" value={techData.twilioSid} onChange={(e) => setTechData({...techData, twilioSid: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/>
-                </div>
-                <div>
-                    <label className="block text-gray-400 mb-2 text-xs">Auth Token</label>
-                    <input type="password" value={techData.twilioToken} onChange={(e) => setTechData({...techData, twilioToken: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/>
-                </div>
-                <div>
-                    <label className="block text-gray-400 mb-2 text-xs">رقم المرسل (Sender Phone)</label>
-                    <input type="text" value={techData.twilioPhone} onChange={(e) => setTechData({...techData, twilioPhone: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr" placeholder="+123456789"/>
-                </div>
+                <div><label className="block text-gray-400 mb-2 text-xs">Account SID</label><input type="text" value={techData.twilioSid} onChange={(e) => setTechData({...techData, twilioSid: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/></div>
+                <div><label className="block text-gray-400 mb-2 text-xs">Auth Token</label><input type="password" value={techData.twilioToken} onChange={(e) => setTechData({...techData, twilioToken: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/></div>
+                <div><label className="block text-gray-400 mb-2 text-xs">رقم المرسل (Sender Phone)</label><input type="text" value={techData.twilioPhone} onChange={(e) => setTechData({...techData, twilioPhone: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr" placeholder="+123456789"/></div>
             </div>
           </section>
 
-          {/* 4. خدمات أخرى (Google & Gemini) */}
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
-              <Server size={20} /> خدمات أخرى
-            </h2>
+            <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2"><Server size={20} /> خدمات أخرى</h2>
             <div className="space-y-4">
-                <div>
-                    <label className="block text-gray-400 mb-2 text-sm">Google Maps API Key</label>
-                    <input type="text" value={techData.googleMapKey} onChange={(e) => setTechData({...techData, googleMapKey: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/>
-                </div>
-                <div>
-                    <label className="block text-gray-400 mb-2 text-sm">Gemini AI Key</label>
-                    <input type="text" value={techData.geminiKey} onChange={(e) => setTechData({...techData, geminiKey: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/>
-                </div>
+                <div><label className="block text-gray-400 mb-2 text-sm">Google Maps API Key</label><input type="text" value={techData.googleMapKey} onChange={(e) => setTechData({...techData, googleMapKey: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/></div>
+                <div><label className="block text-gray-400 mb-2 text-sm">Gemini AI Key</label><input type="text" value={techData.geminiKey} onChange={(e) => setTechData({...techData, geminiKey: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none text-sm font-mono" dir="ltr"/></div>
             </div>
           </section>
 
@@ -333,7 +338,6 @@ export default function AdminSettingsPage() {
                 </div>
                 <button onClick={handleAddNewField} className="bg-[#C89B3C] text-black px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-[#b38a35] text-sm"><Plus size={16} /> إضافة حقل</button>
             </div>
-
             <div className="overflow-x-auto custom-scrollbar rounded-xl border border-white/5">
                 <table className="w-full text-right border-collapse min-w-[600px]">
                     <thead className="bg-black/20 text-white/50 text-xs uppercase">
@@ -352,7 +356,6 @@ export default function AdminSettingsPage() {
                 </table>
             </div>
           </section>
-
           {isModalOpen && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
             <div className="bg-[#2B2B2B] w-full max-w-lg rounded-2xl border border-white/10 p-6 shadow-2xl">
@@ -390,13 +393,45 @@ export default function AdminSettingsPage() {
       {activeTab === "cities" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Cities Section */}
             <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-              <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2"><MapPin size={20} /> المدن المدعومة</h2><button className="text-xs bg-[#C89B3C] text-black px-3 py-1 rounded hover:bg-[#b88a2c]">+ إضافة</button></div>
-              <div className="space-y-2">{['أبها', 'خميس مشيط', 'النماص', 'رجال ألمع', 'تنومة'].map((city, idx) => (<div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5"><span>{city}</span><span className="text-xs text-green-400 bg-green-400/10 px-2 py-1 rounded">نشط</span></div>))}</div>
+              <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2"><MapPin size={20} /> المدن المدعومة</h2>
+                  <button onClick={handleAddCity} className="text-xs bg-[#C89B3C] text-black px-3 py-1 rounded hover:bg-[#b88a2c]">+ إضافة</button>
+              </div>
+              <div className="space-y-2">
+                  {cities.length === 0 ? <p className="text-white/40 text-center py-4">لا توجد مدن مضافة.</p> : cities.map((city, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5 group">
+                          <span>{city.name}</span>
+                          <div className="flex items-center gap-2">
+                              {/* زر التعديل المضاف ✅ */}
+                              <button onClick={() => handleEditCity(city.id, city.name)} className="text-blue-400 hover:bg-blue-500/20 p-1.5 rounded transition"><Edit size={14}/></button>
+                              <button onClick={() => handleDeleteCity(city.id)} className="text-red-400 hover:bg-red-500/20 p-1.5 rounded transition"><Trash2 size={14}/></button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
             </section>
+
+            {/* Categories Section */}
             <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-              <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2"><List size={20} /> التصنيفات</h2><button className="text-xs bg-[#C89B3C] text-black px-3 py-1 rounded hover:bg-[#b88a2c]">+ إضافة</button></div>
-              <div className="space-y-2">{['مطاعم ومقاهي', 'نزل تراثية', 'فنادق ومنتجعات', 'تجارب هايكنج', 'متاحف'].map((cat, idx) => (<div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5"><span>{cat}</span><span className="text-xs text-white/40">50 خدمة</span></div>))}</div>
+              <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-[#C89B3C] flex items-center gap-2"><List size={20} /> التصنيفات</h2>
+                  <button onClick={handleAddCategory} className="text-xs bg-[#C89B3C] text-black px-3 py-1 rounded hover:bg-[#b88a2c]">+ إضافة</button>
+              </div>
+              <div className="space-y-2">
+                  {categories.length === 0 ? <p className="text-white/40 text-center py-4">لا توجد تصنيفات مضافة.</p> : categories.map((cat, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5 group">
+                          <span>{cat.name}</span>
+                          <div className="flex items-center gap-2">
+                              {/* زر التعديل المضاف ✅ */}
+                              <button onClick={() => handleEditCategory(cat.id, cat.name)} className="text-blue-400 hover:bg-blue-500/20 p-1.5 rounded transition"><Edit size={14}/></button>
+                              <button onClick={() => handleDeleteCategory(cat.id)} className="text-red-400 hover:bg-red-500/20 p-1.5 rounded transition"><Trash2 size={14}/></button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
             </section>
           </div>
         </div>
