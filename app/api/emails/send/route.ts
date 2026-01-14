@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
+
+// تهيئة مكتبة Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: Request) {
   try {
@@ -18,36 +21,29 @@ export async function POST(request: Request) {
         bookingId 
     } = body;
 
-    console.log("📨 جاري إرسال إيميل...", { type, email: email || clientEmail });
+    console.log("📨 جاري إرسال إيميل عبر Resend...", { type, email: email || clientEmail });
 
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-      console.error("❌ خطأ: بيانات Gmail غير موجودة في .env");
-      return NextResponse.json({ error: "Gmail config missing" }, { status: 500 });
+    // التحقق من مفتاح API
+    if (!process.env.RESEND_API_KEY) {
+      console.error("❌ خطأ: مفتاح RESEND_API_KEY غير موجود في ملف .env");
+      return NextResponse.json({ error: "Resend config missing" }, { status: 500 });
     }
-
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD, 
-      },
-    });
 
     let recipient = email || clientEmail;
     let subject = '';
     let html = '';
 
-    // إشعارات الإدارة
+    // إشعارات الإدارة: هنا نرسلها لإيميل الأدمن (ممكن يكون جيميلك الشخصي)
     if (type === 'new_service_notification') {
-       recipient = process.env.ADMIN_EMAIL || process.env.GMAIL_USER;
+       recipient = process.env.ADMIN_EMAIL || 'ahmedabumoalla@gmail.com'; // ضع إيميلك الشخصي هنا لاستقبال التنبيهات
     }
 
-    // الرابط الأساسي للموقع
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    // الرابط الأساسي للموقع (تأكدنا أنه صار https://sayyir.sa)
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sayyir.sa';
 
     switch (type) {
         
-        // ✅ 1. فاتورة الموافقة (للعميل) - هنا التعديل المهم للرابط
+        // ✅ 1. فاتورة الموافقة (للعميل)
         case 'booking_approved_invoice':
             subject = `✅ تمت الموافقة على حجزك #${bookingId?.slice(0,6)}`;
             html = `
@@ -115,18 +111,24 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Recipient missing" }, { status: 400 });
     }
 
-    await transporter.sendMail({
-      from: `"منصة سَير" <${process.env.GMAIL_USER}>`,
+    // ✅ الإرسال عبر Resend
+    const data = await resend.emails.send({
+      from: 'فريق سَيّر <info@emails.sayyir.sa>', // الدومين الرسمي الموثق
       to: recipient,
       subject: subject,
       html: html,
     });
 
-    console.log("✅ تم الإرسال بنجاح إلى:", recipient);
-    return NextResponse.json({ success: true });
+    if (data.error) {
+        console.error("🔥 فشل الإرسال عبر Resend:", data.error);
+        return NextResponse.json({ error: data.error.message }, { status: 500 });
+    }
+
+    console.log("✅ تم الإرسال بنجاح (Resend ID):", data.data?.id);
+    return NextResponse.json({ success: true, id: data.data?.id });
 
   } catch (error: any) {
-    console.error("🔥 فشل الإرسال:", error);
+    console.error("🔥 فشل غير متوقع:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
