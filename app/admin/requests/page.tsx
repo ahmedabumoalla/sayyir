@@ -61,7 +61,7 @@ export default function JoinRequestsPage() {
     setLoading(true);
     // نفترض أن الجدول اسمه provider_requests أو نفس الجدول الذي يصب فيه النموذج
     const { data, error } = await supabase
-      .from('provider_requests') // ⚠️ تأكد من اسم الجدول في قاعدتك
+      .from('provider_requests') 
       .select('*')
       .eq('status', filter)
       .order('created_at', { ascending: false });
@@ -72,6 +72,7 @@ export default function JoinRequestsPage() {
     setLoading(false);
   };
 
+  // ✅ التعديل الرئيسي هنا:
   const handleAction = async (action: 'approve' | 'reject') => {
     if (!selectedRequest) return;
     if (action === 'reject' && !rejectionReason) return alert("الرجاء كتابة سبب الرفض");
@@ -80,20 +81,35 @@ export default function JoinRequestsPage() {
 
     setActionLoading(true);
     try {
-        // إرسال الطلب للـ API لمعالجة التسجيل (إنشاء مستخدم وإرسال إيميل)
-        const response = await fetch('/api/admin/requests/process', {
+        // 1. جلب معرف الأدمن الحالي (Requester ID)
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("جلسة العمل انتهت، يرجى تسجيل الدخول مرة أخرى");
+
+        const adminId = session.user.id;
+        
+        // 2. تحديد الرابط والبيانات بناءً على الإجراء
+        let endpoint = '';
+        let body = {};
+
+        if (action === 'approve') {
+            endpoint = '/api/admin/approve';
+            body = { 
+                requestId: selectedRequest.id, 
+                requesterId: adminId // ✅ ضروري جداً للتحقق الأمني في الباك إند
+            };
+        } else {
+            endpoint = '/api/admin/reject';
+            body = { 
+                requestId: selectedRequest.id, 
+                reason: rejectionReason 
+            };
+        }
+
+        // 3. إرسال الطلب
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                requestId: selectedRequest.id,
-                action: action,
-                reason: rejectionReason,
-                // نرسل البيانات الأساسية لإنشاء الحساب في حال القبول
-                email: selectedRequest.email,
-                name: selectedRequest.name,
-                phone: selectedRequest.phone,
-                role: 'provider'
-            })
+            body: JSON.stringify(body)
         });
 
         const result = await response.json();
@@ -282,8 +298,6 @@ export default function JoinRequestsPage() {
                     <h3 className="text-[#C89B3C] font-bold text-lg mb-4 flex items-center gap-2"><FileText size={20}/> البيانات المرفقة</h3>
                     <div className="space-y-4">
                         {selectedRequest.dynamic_data && Object.entries(selectedRequest.dynamic_data).map(([key, value], idx) => {
-                            // محاولة إيجاد اسم الحقل من الـ Key (إذا كان الـ Key هو الـ ID)
-                            // هنا نعرض الـ Key كما هو أو يمكن تحسينه إذا كان لدينا مرجع للحقول
                             if(!value) return null;
                             return (
                                 <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded-2xl">
