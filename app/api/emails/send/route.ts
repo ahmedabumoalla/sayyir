@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
     // إشعارات الإدارة: هنا نرسلها لإيميل الأدمن (ممكن يكون جيميلك الشخصي)
     if (type === 'new_service_notification') {
-       recipient = process.env.ADMIN_EMAIL || 'ahmedabumoalla@gmail.com'; // ضع إيميلك الشخصي هنا لاستقبال التنبيهات
+       recipient = process.env.ADMIN_EMAIL || 'ahmed.abumoalla95@gmail.com'; // ضع إيميلك الشخصي هنا لاستقبال التنبيهات
     }
 
     // الرابط الأساسي للموقع (تأكدنا أنه صار https://sayyir.sa)

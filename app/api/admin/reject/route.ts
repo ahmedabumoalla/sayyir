@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,10 +8,7 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
   try {
@@ -19,7 +16,6 @@ export async function POST(req: Request) {
 
     if (!reason) return NextResponse.json({ error: "سبب الرفض مطلوب" }, { status: 400 });
 
-    // 1. جلب بيانات الطلب
     const { data: requestData } = await supabaseAdmin
       .from('provider_requests')
       .select('*')
@@ -28,12 +24,11 @@ export async function POST(req: Request) {
 
     if (!requestData) return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
 
-    // 2. تحديث الحالة
     await supabaseAdmin.from('provider_requests').update({ status: 'rejected' }).eq('id', requestId);
 
-    // 3. إرسال إيميل الاعتذار اللطيف
-    await transporter.sendMail({
-        from: `"منصة سيّر" <${process.env.GMAIL_USER}>`,
+    // إرسال عبر Resend ✅
+    await resend.emails.send({
+        from: 'فريق سَيّر <info@emails.sayyir.sa>',
         to: requestData.email,
         subject: 'تحديث بخصوص طلب انضمامك لمنصة سيّر',
         html: `
