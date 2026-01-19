@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   keywords: ["سياحة", "حجوزات", "مرشد سياحي", "تراث", "السعودية", "سير", "Sayyir"],
   authors: [{ name: "Sayyir Team" }],
   icons: {
-    icon: "/favicon.ico",
+   
   },
   openGraph: {
     title: "منصة سَيّر - رحلتك تبدأ هنا",
