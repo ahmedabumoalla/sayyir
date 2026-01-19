@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { sendSMS } from '@/lib/twilio'; // ✅
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,41 +16,42 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { name, email, phone, service_type, dynamic_data } = body;
 
-    // 1. التحقق
+    // التحقق من وجود طلب سابق
     const { data: existingRequest } = await supabaseAdmin
       .from('provider_requests')
-      .select('id, status')
+      .select('id')
       .eq('email', email)
       .eq('status', 'pending')
       .single();
 
     if (existingRequest) {
-      return NextResponse.json({ error: "يوجد طلب معلق لهذا البريد." }, { status: 400 });
+      return NextResponse.json({ error: "يوجد طلب معلق مسجل بهذا البريد." }, { status: 400 });
     }
 
-    // 2. إدخال الطلب
+    // إدخال الطلب
     const { error: insertError } = await supabaseAdmin
       .from('provider_requests')
       .insert([{ name, email, phone, service_type, dynamic_data, status: 'pending' }]);
 
     if (insertError) throw insertError;
 
-    // 3. إرسال تنبيه للأدمن عبر Resend ✅
-    // يتم إرساله إلى بريدك الشخصي لتنبيهك
-    const adminEmail = process.env.ADMIN_EMAIL || 'ahmedabumoalla@gmail.com';
+    // 📩 إشعار للأدمن (أنت)
+    // ضع رقم جوالك وإيميلك هنا لتستقبل التنبيهات
+    const adminEmail = process.env.ADMIN_EMAIL || 'ahmedabumoalla@gmail.com'; 
+    const adminPhone = process.env.ADMIN_PHONE || '+966500000000'; // استبدله برقمك
 
+    // 1. إرسال إيميل للأدمن
     await resend.emails.send({
         from: 'نظام سَيّر <info@emails.sayyir.sa>',
         to: adminEmail,
         subject: '🔔 طلب انضمام مزود جديد!',
-        html: `
-            <div dir="rtl">
-                <h3>وصل طلب جديد من: ${name}</h3>
-                <p>البريد: ${email}</p>
-                <p>نوع الخدمة: ${service_type}</p>
-                <p>يرجى مراجعة لوحة التحكم.</p>
-            </div>
-        `
+        html: `<div dir="rtl"><h3>طلب جديد: ${name}</h3><p>الخدمة: ${service_type}</p><p>راجع لوحة التحكم.</p></div>`
+    });
+
+    // 2. إرسال SMS للأدمن ✅
+    await sendSMS({
+        to: adminPhone,
+        body: `🔔 تنبيه سَيّر:\nوصل طلب انضمام جديد من: ${name}\nالخدمة: ${service_type}`
     });
 
     return NextResponse.json({ success: true, message: "تم استقبال طلبك بنجاح." });
