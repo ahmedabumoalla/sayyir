@@ -16,17 +16,17 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: {
     template: '%s | منصة سَيّر',
-    default: 'منصة سَيّر - خيارك الأول للخدمات اللوجستية والسياحية',
+    default: 'منصة سَيّر - خيارك الأول للخدمات التراثية والسياحية في عسير',
   },
   description: "منصة سَيّر تربطك بأفضل مزودي الخدمات في السعودية. حجز سهل، دفع آمن، وخدمة موثوقة.",
-  keywords: ["سياحة", "حجوزات", "مرشد سياحي", "نقل", "السعودية", "سير", "Sayyir"],
+  keywords: ["سياحة", "حجوزات", "مرشد سياحي", "تراث", "السعودية", "سير", "Sayyir"],
   authors: [{ name: "Sayyir Team" }],
   icons: {
     icon: "/favicon.ico",
   },
   openGraph: {
     title: "منصة سَيّر - رحلتك تبدأ هنا",
-    description: "اكتشف واحجز أفضل الخدمات السياحية واللوجستية في السعودية بكل سهولة.",
+    description: "اكتشف واحجز أفضل الخدمات السياحية والتراثية في عسير بكل سهولة.",
     url: "https://sayyir.sa",
     siteName: "Sayyir",
     images: [
