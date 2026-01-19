@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    template: '%s | منصة سَيّر',
-    default: 'منصة سَيّر - خيارك الأول للخدمات التراثية والسياحية في عسير',
+    template: '%s | منصة سير',
+    default: 'منصة سير - خيارك الأول للخدمات التراثية والسياحية في عسير',
   },
   description: "منصة سَيّر تربطك بأفضل مزودي الخدمات في السعودية. حجز سهل، دفع آمن، وخدمة موثوقة.",
   keywords: ["سياحة", "حجوزات", "مرشد سياحي", "تراث", "السعودية", "سير", "Sayyir"],
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
    
   },
   openGraph: {
-    title: "منصة سَيّر - رحلتك تبدأ هنا",
+    title: "منصة سير - رحلتك تبدأ هنا",
     description: "اكتشف واحجز أفضل الخدمات السياحية والتراثية في عسير بكل سهولة.",
     url: "https://sayyir.sa",
     siteName: "Sayyir",
