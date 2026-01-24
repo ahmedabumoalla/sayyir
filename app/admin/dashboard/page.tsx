@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Users, CheckCircle, Clock, Loader2, LogOut, 
   Briefcase, ShieldAlert, Map, DollarSign, Settings,
   UserPlus, Menu, X, User, Activity, Home, FileBox, CheckSquare, XSquare, Trash2, Edit, FileText, Info, 
-  XCircle, ChevronDown, ChevronUp 
+  XCircle, ChevronDown, ChevronUp, Handshake // 👈 1. تمت إضافة أيقونة المصافحة
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -33,15 +33,14 @@ export default function AdminDashboard() {
   const [selectedLog, setSelectedLog] = useState<any>(null);
   const [showAllLogs, setShowAllLogs] = useState(false);
 
-  // ✅ تحديث الحالة لتشمل تفاصيل العدادات المنفصلة
   const [stats, setStats] = useState({
     revenue: 0,
     users: 0,
     providers: 0,
-    pendingServices: 0,   // عداد الخدمات المعلقة
-    pendingProviders: 0,  // عداد طلبات الانضمام المعلقة
-    pendingPayouts: 0,    // عداد السحوبات المالية المعلقة
-    pendingTotal: 0       // الإجمالي (للعرض في البطاقات العلوية)
+    pendingServices: 0,
+    pendingProviders: 0,
+    pendingPayouts: 0,
+    pendingTotal: 0
   });
 
   const [activityLog, setActivityLog] = useState<any[]>([]);
@@ -51,7 +50,6 @@ export default function AdminDashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.replace("/login"); return; }
 
-      // 1. معلومات الأدمن
       const { data: profile } = await supabase
         .from('profiles')
         .select('full_name, is_super_admin')
@@ -63,21 +61,18 @@ export default function AdminDashboard() {
         if (profile.is_super_admin) setIsSuperAdmin(true);
       }
 
-      // 2. الإحصائيات
       const { data: payments } = await supabase.from('payments').select('amount').eq('status', 'succeeded');
       const totalRevenue = payments?.reduce((acc, curr) => acc + curr.amount, 0) || 0;
 
       const { count: usersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'client');
       const { count: providersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_provider', true);
 
-      // ✅ جلب العدادات بشكل منفصل
       const { count: pendingServices } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('status', 'pending');
       const { count: pendingProviders } = await supabase.from('provider_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending');
       const { count: pendingPayouts } = await supabase.from('payout_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending');
       
       const totalPending = (pendingServices || 0) + (pendingProviders || 0) + (pendingPayouts || 0);
 
-      // ✅ تخزين العدادات بشكل صحيح ومنفصل
       setStats({
         revenue: totalRevenue,
         users: usersCount || 0,
@@ -88,7 +83,6 @@ export default function AdminDashboard() {
         pendingTotal: totalPending
       });
 
-      // 3. سجل العمليات (كما هو)
       const { data: newLogs } = await supabase
         .from('admin_logs')
         .select('*')
@@ -181,22 +175,15 @@ export default function AdminDashboard() {
       return { icon: Activity, color: 'text-white', bg: 'bg-white/10', label: 'عملية' };
   };
 
-  // ✅ تصحيح توزيع العدادات على القائمة وتصحيح رابط مراجعة الخدمات
   const menuItems = [
     { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
-    
-    // عداد طلبات الانضمام فقط
     { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true, badge: stats.pendingProviders },
-    
-    // ✅ تم تعديل الرابط هنا ليوجه إلى الصفحة الصحيحة /admin/services
     { label: "مراجعة الخدمات", icon: CheckCircle, href: "/admin/services", show: true, badge: stats.pendingServices },
-    
     { label: "إدارة المعالم", icon: Map, href: "/admin/landmarks", show: true },
+    // 👇 2. هنا تمت إضافة الرابط الجديد
+    { label: "شركاء النجاح", icon: Handshake, href: "/admin/partners", show: true }, 
     { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
-    
-    // عداد المالية فقط
     { label: "المالية والأرباح", icon: DollarSign, href: "/admin/finance", show: true, badge: stats.pendingPayouts },
-    
     { label: "فريق الإدارة", icon: ShieldAlert, href: "/admin/users", show: isSuperAdmin },
     { label: "الإعدادات", icon: Settings, href: "/admin/settings", show: true },
   ];
@@ -372,7 +359,6 @@ export default function AdminDashboard() {
                     <h3 className="font-bold mb-4 text-white/80">إجراءات سريعة</h3>
                     <div className="grid grid-cols-1 gap-3">
                         <QuickAction label="إدارة طلبات الانضمام" icon={UserPlus} href="/admin/requests" />
-                        {/* ✅ تم تعديل الرابط هنا أيضاً */}
                         <QuickAction label="مراجعة الخدمات" icon={CheckCircle} href="/admin/services" />
                         <QuickAction label="إدارة المعالم" icon={Map} href="/admin/landmarks" />
                         <QuickAction label="إعدادات المنصة" icon={Settings} href="/admin/settings" />

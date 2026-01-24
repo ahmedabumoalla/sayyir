@@ -5,13 +5,18 @@ import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
-import { ArrowRight, Loader2, BedDouble, Utensils, Box, MapPin, Store } from "lucide-react";
+import { 
+  ArrowRight, Loader2, BedDouble, Utensils, Box, MapPin, Store, Search, X // 👈 تمت إضافة أيقونات البحث
+} from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
 export default function FacilitiesPage() {
   const [facilities, setFacilities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // ✅ حالة البحث الجديدة
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetchProviderFacilities();
@@ -41,6 +46,13 @@ export default function FacilitiesPage() {
     }
   };
 
+  // ✅ منطق الفلترة بناءً على البحث
+  const filteredFacilities = facilities.filter(item => 
+    item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (item.sub_category && item.sub_category.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
       
@@ -61,21 +73,57 @@ export default function FacilitiesPage() {
         </Link>
       </div>
 
+      {/* ======================================================= */}
+      {/* ==================== قسم البحث ======================== */}
+      {/* ======================================================= */}
+      <div className="container mx-auto px-4 -mt-8 relative z-30 mb-8">
+        <div className="max-w-md mx-auto relative group">
+            <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-4 h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
+                <Search className="text-white/50 ml-3 shrink-0" size={20} />
+                <input
+                    type="text"
+                    placeholder="ابحث عن خدمة، مطعم، سكن..."
+                    className="bg-transparent border-none outline-none text-white w-full text-sm placeholder-white/40 h-full"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                    <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition">
+                        <X size={16} />
+                    </button>
+                )}
+            </div>
+        </div>
+      </div>
+      {/* ======================================================= */}
+
       {/* LIST */}
-      <div className="container mx-auto px-4 py-16">
+      <div className="container mx-auto px-4 pb-20">
         {loading ? (
           <div className="flex justify-center h-60 items-center">
             <Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" />
           </div>
-        ) : facilities.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10">
-              <Store size={48} className="mx-auto text-white/20 mb-4"/>
-              <h3 className="text-2xl font-bold text-white/50">لا توجد مرافق متاحة حالياً</h3>
-              <p className="text-white/30 mt-2">انتظروا انضمام شركاء جدد قريباً.</p>
+        ) : filteredFacilities.length === 0 ? (
+          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-4">
+              {facilities.length === 0 ? (
+                  <>
+                    <Store size={48} className="mx-auto text-white/20 mb-4"/>
+                    <h3 className="text-2xl font-bold text-white/50">لا توجد مرافق متاحة حالياً</h3>
+                    <p className="text-white/30 mt-2">انتظروا انضمام شركاء جدد قريباً.</p>
+                  </>
+              ) : (
+                  <>
+                    <Search size={48} className="text-white/20" />
+                    <p className="text-white/40">لا توجد نتائج تطابق بحثك.</p>
+                    <button onClick={() => setSearchQuery("")} className="text-[#C89B3C] text-sm hover:underline">
+                        عرض جميع الخدمات
+                    </button>
+                  </>
+              )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {facilities.map((item) => (<FacilityCard key={item.id} data={item} />))}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
+            {filteredFacilities.map((item) => (<FacilityCard key={item.id} data={item} />))}
           </div>
         )}
       </div>
@@ -85,7 +133,6 @@ export default function FacilitiesPage() {
 
 function FacilityCard({ data }: { data: any }) {
   // 1. تحديد الصورة (من المنيو أو صورة افتراضية)
-  // المزود يرفع صور المنتجات/الغرف في menu_items
   const imageUrl = data.menu_items && data.menu_items.length > 0 && data.menu_items[0].image 
     ? data.menu_items[0].image 
     : "/placeholder-facility.jpg";
@@ -147,9 +194,7 @@ function FacilityCard({ data }: { data: any }) {
 
         <p className="text-white/60 text-sm line-clamp-3 mb-4 flex-1 leading-relaxed">{data.description}</p>
         
-        {/* الرابط يودي لصفحة تفاصيل الخدمة للحجز */}
-{/* تأكد أن المسار '/services/' يطابق اسم المجلد الذي أنشأته في src/app/services */}
-<Link href={`/service/${data.id}`} className="w-full block mt-auto">
+        <Link href={`/service/${data.id}`} className="w-full block mt-auto">
             <button className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-[#C89B3C] hover:text-[#2B1F17] transition-all flex items-center justify-center gap-2">
               عرض التفاصيل والحجز <ArrowRight size={16}/>
             </button>

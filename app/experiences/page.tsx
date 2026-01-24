@@ -4,13 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
-import { ArrowRight, Loader2, Compass, Clock, Activity, MapPin, PlayCircle } from "lucide-react";
+import { 
+  ArrowRight, Loader2, Compass, Clock, Activity, MapPin, PlayCircle, Search, X // 👈 تمت إضافة أيقونات البحث
+} from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
 export default function ExperiencesPage() {
   const [experiences, setExperiences] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // ✅ حالة البحث الجديدة
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetchAllExperiences();
@@ -46,8 +51,8 @@ export default function ExperiencesPage() {
         description: item.description,
         price: item.price,
         image: item.image_url 
-               ? item.image_url 
-               : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder-experience.jpg"),
+                ? item.image_url 
+                : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder-experience.jpg"),
         activity_type: item.activity_type || 'تجربة مميزة',
         duration: item.duration,
         difficulty_level: item.difficulty_level,
@@ -77,6 +82,13 @@ export default function ExperiencesPage() {
     }
   };
 
+  // ✅ منطق الفلترة المعتمد على البحث
+  const filteredExperiences = experiences.filter(item => 
+    item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (item.activity_type && item.activity_type.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
       
@@ -97,21 +109,57 @@ export default function ExperiencesPage() {
         </Link>
       </div>
 
+      {/* ======================================================= */}
+      {/* ==================== قسم البحث ======================== */}
+      {/* ======================================================= */}
+      <div className="container mx-auto px-4 -mt-8 relative z-30 mb-8">
+        <div className="max-w-md mx-auto relative group">
+            <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-4 h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
+                <Search className="text-white/50 ml-3 shrink-0" size={20} />
+                <input
+                    type="text"
+                    placeholder="ابحث عن هايكنج، تخييم، جلسات..."
+                    className="bg-transparent border-none outline-none text-white w-full text-sm placeholder-white/40 h-full"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                    <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition">
+                        <X size={16} />
+                    </button>
+                )}
+            </div>
+        </div>
+      </div>
+      {/* ======================================================= */}
+
       {/* LIST */}
       <div className="container mx-auto px-4 py-16">
         {loading ? (
           <div className="flex justify-center h-60 items-center">
             <Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" />
           </div>
-        ) : experiences.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10">
-            <Compass size={48} className="mx-auto text-white/20 mb-4"/>
-            <h3 className="text-2xl font-bold text-white/50">لا توجد تجارب متاحة حالياً</h3>
-            <p className="text-white/30 mt-2">ترقبوا تجارب جديدة ومميزة قريباً!</p>
+        ) : filteredExperiences.length === 0 ? (
+          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-4">
+            {experiences.length === 0 ? (
+                <>
+                    <Compass size={48} className="mx-auto text-white/20 mb-4"/>
+                    <h3 className="text-2xl font-bold text-white/50">لا توجد تجارب متاحة حالياً</h3>
+                    <p className="text-white/30 mt-2">ترقبوا تجارب جديدة ومميزة قريباً!</p>
+                </>
+            ) : (
+                <>
+                    <Search size={48} className="text-white/20" />
+                    <p className="text-white/40">لا توجد نتائج تطابق بحثك.</p>
+                    <button onClick={() => setSearchQuery("")} className="text-[#C89B3C] text-sm hover:underline">
+                        عرض جميع التجارب
+                    </button>
+                </>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {experiences.map((exp) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
+            {filteredExperiences.map((exp) => (
               <ExperienceCard key={`${exp.source}-${exp.id}`} data={exp} />
             ))}
           </div>

@@ -9,7 +9,7 @@ import DynamicShowcase from "@/components/DynamicShowcase";
 import { 
   Briefcase, Map as MapIcon, Sparkles, Tent, Coffee, Landmark, 
   User, LayoutDashboard, Eye, Target, Phone, Mail, 
-  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin
+  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin, TrendingUp, Users, Search, Handshake
 } from "lucide-react";
 import Link from "next/link";
 
@@ -17,6 +17,30 @@ const tajawal = Tajawal({
   subsets: ["arabic"],
   weight: ["400", "500", "700"],
 });
+
+// مكون العداد الرقمي المتحرك
+const AnimatedCounter = ({ end }: { end: number }) => {
+  const [count, setCount] = useState(0);
+  
+  useEffect(() => {
+    let startTime: number | null = null;
+    const duration = 2000; 
+
+    const step = (timestamp: number) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      setCount(Math.floor(progress * end));
+      
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      }
+    };
+    
+    window.requestAnimationFrame(step);
+  }, [end]);
+
+  return <span>{count}</span>;
+};
 
 export default function HomePage() {
   const router = useRouter();
@@ -28,13 +52,24 @@ export default function HomePage() {
   const [landmarksData, setLandmarksData] = useState<any[]>([]);
   const [facilitiesData, setFacilitiesData] = useState<any[]>([]);
   const [experiencesData, setExperiencesData] = useState<any[]>([]);
+  const [partners, setPartners] = useState<any[]>([]); 
   
+  const [stats, setStats] = useState({ places: 0, services: 0, providers: 0 });
+  const [searchQuery, setSearchQuery] = useState("");
   const [platformInfo, setPlatformInfo] = useState<any>(null);
 
   const text = "اكتشف جمال الماضي وعِش تجربة سياحية مميزة";
   const [displayedText, setDisplayedText] = useState("");
   const [index, setIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  
+  // ✅ دالة البحث (تعمل بشكل صحيح وتوجه لصفحة البحث)
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
+    }
+  };
   
   useEffect(() => {
     const speed = deleting ? 45 : 90;
@@ -88,30 +123,16 @@ export default function HomePage() {
       const { data: facilities } = await supabase.from('services').select('*').in('service_type', ['accommodation', 'food']).eq('status', 'approved').limit(6);
       if (facilities) setFacilitiesData(facilities);
 
-      // 3. التجارب (تم الإصلاح: جلب من الأدمن والمزودين)
-      // أ. تجارب المزودين
-      const { data: providerExp } = await supabase
-        .from('services')
-        .select('*')
-        .eq('service_category', 'experience') // تأكدنا من اسم العمود
-        .eq('status', 'approved');
+      // 3. التجارب
+      const { data: providerExp } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('status', 'approved');
+      const { data: adminExp } = await supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);
 
-      // ب. تجارب الأدمن
-      const { data: adminExp } = await supabase
-        .from('places')
-        .select('*')
-        .eq('type', 'experience')
-        .eq('is_active', true);
-
-      // ج. دمج وتنسيق البيانات
       const formattedProvider = (providerExp || []).map((item: any) => ({
         id: item.id,
         title: item.title,
         description: item.description,
         price: item.price,
-        image: item.image_url 
-               ? item.image_url 
-               : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop"),
+        image: item.image_url ? item.image_url : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop"),
         activity_type: item.activity_type || 'تجربة مميزة',
         duration: item.duration,
         difficulty_level: item.difficulty_level,
@@ -132,13 +153,27 @@ export default function HomePage() {
         source: 'place'
       }));
 
-      // دمج وعرض أول 6 تجارب
       const allExperiences = [...formattedProvider, ...formattedAdmin];
       setExperiencesData(allExperiences.slice(0, 6));
 
       // 4. إعدادات المنصة
       const { data: info } = await supabase.from('platform_settings').select('*').single();
       if (info) setPlatformInfo(info);
+
+      // 5. جلب الإحصائيات
+      const { count: placesCount } = await supabase.from('places').select('*', { count: 'exact', head: true }).eq('is_active', true);
+      const { count: servicesCount } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('status', 'approved');
+      const { count: providersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_provider', true);
+
+      setStats({
+        places: placesCount || 0,
+        services: servicesCount || 0,
+        providers: providersCount || 0
+      });
+
+      // 6. شركاء النجاح
+      const { data: partnersData } = await supabase.from('partners').select('*').order('created_at', { ascending: false });
+      if (partnersData) setPartners(partnersData);
     };
     fetchData();
   }, []);
@@ -200,7 +235,24 @@ export default function HomePage() {
             دليلك الذكي لاستكشاف المعالم، حجز التجارب، والعثور على أفضل أماكن الإقامة في عسير.
           </p>
 
-          <div className="mt-12 mb-20 relative z-20 flex flex-col md:flex-row gap-4 w-full max-w-3xl justify-center px-4">
+          {/* ✅ نموذج البحث في الصفحة الرئيسية */}
+          <form onSubmit={handleSearch} className="w-full max-w-2xl mt-8 mb-4 relative group z-20 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
+            <div className="relative flex items-center bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-2 transition-all duration-300 focus-within:bg-white/20 focus-within:border-[#C89B3C]/50 shadow-2xl">
+                <Search className="text-white/50 mr-4 ml-2" size={24} />
+                <input
+                    type="text"
+                    placeholder="ابحث عن وجهتك، معلم سياحي، أو تجربة..."
+                    className="w-full bg-transparent border-none outline-none text-white placeholder-white/50 text-lg font-medium h-12 px-2"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <button type="submit" className="bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] p-3 rounded-xl transition-all duration-300 hover:scale-105 shadow-lg">
+                    <ArrowRight className="rotate-180" size={24} />
+                </button>
+            </div>
+          </form>
+
+          <div className="mt-6 mb-20 relative z-20 flex flex-col md:flex-row gap-4 w-full max-w-3xl justify-center px-4">
             <button onClick={() => router.push("/map")} className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl backdrop-blur-md bg-white/5 border border-white/10 text-white font-bold shadow-lg transition-all hover:-translate-y-1 hover:bg-white/10 hover:border-[#C89B3C]/50 group">
               <MapIcon size={20} className="group-hover:text-[#C89B3C] transition" /> استكشف الخريطة
             </button>
@@ -221,22 +273,16 @@ export default function HomePage() {
 
         {/* Dynamic Data Sections */}
         <div className="bg-gradient-to-t from-black via-[#0a0a0a] to-transparent py-10 space-y-24">
-          
-          {/* المعالم */}
           {landmarksData.length > 0 && (
               <div className="container mx-auto px-4">
                 <DynamicShowcase title="أبرز المعالم المختارة" linkHref="/landmarks" data={landmarksData} dataType="places" />
               </div>
           )}
-
-          {/* المرافق */}
           {facilitiesData.length > 0 && (
               <div className="container mx-auto px-4">
                 <DynamicShowcase title="أرقى المرافق والخدمات" linkHref="/facilities" data={facilitiesData} dataType="services" />
               </div>
           )}
-
-          {/* التجارب */}
           {experiencesData.length > 0 && (
               <div className="container mx-auto px-4">
                 <div className="flex flex-row items-center justify-between mb-8 w-full">
@@ -248,7 +294,6 @@ export default function HomePage() {
                         عرض الكل <ArrowRight size={16} className="rotate-180" /> 
                     </Link>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {experiencesData.map((exp) => (
                         <ExperienceCard key={exp.id} data={exp} />
@@ -257,6 +302,99 @@ export default function HomePage() {
               </div>
           )}
         </div>
+
+        {/* ========================================================================= */}
+        {/* ================ منطقة الإحصائيات + شركاء النجاح + التسويق ================ */}
+        {/* ========================================================================= */}
+        <div className="py-24 px-4 bg-[#0a0a0a] relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-[#C89B3C]/5 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2 pointer-events-none"></div>
+
+            <div className="container mx-auto max-w-6xl">
+                {/* 1. قسم الإحصائيات */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-24">
+                    <div className="bg-white/5 border border-white/10 p-8 rounded-3xl text-center hover:bg-white/10 transition duration-500 hover:border-[#C89B3C]/30 group">
+                        <div className="w-16 h-16 mx-auto bg-[#C89B3C]/10 rounded-full flex items-center justify-center text-[#C89B3C] mb-4 group-hover:scale-110 transition">
+                            <Landmark size={32} />
+                        </div>
+                        <div className="text-5xl font-bold text-white mb-2 font-mono">
+                           +<AnimatedCounter end={stats.places} />
+                        </div>
+                        <p className="text-white/60">معلم سياحي وتراثي</p>
+                    </div>
+
+                    <div className="bg-white/5 border border-white/10 p-8 rounded-3xl text-center hover:bg-white/10 transition duration-500 hover:border-[#C89B3C]/30 group">
+                        <div className="w-16 h-16 mx-auto bg-blue-500/10 rounded-full flex items-center justify-center text-blue-400 mb-4 group-hover:scale-110 transition">
+                            <Briefcase size={32} />
+                        </div>
+                        <div className="text-5xl font-bold text-white mb-2 font-mono">
+                           +<AnimatedCounter end={stats.services} />
+                        </div>
+                        <p className="text-white/60">خدمة وتجربة متوفرة</p>
+                    </div>
+
+                    <div className="bg-white/5 border border-white/10 p-8 rounded-3xl text-center hover:bg-white/10 transition duration-500 hover:border-[#C89B3C]/30 group">
+                        <div className="w-16 h-16 mx-auto bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-400 mb-4 group-hover:scale-110 transition">
+                            <Users size={32} />
+                        </div>
+                        <div className="text-5xl font-bold text-white mb-2 font-mono">
+                           +<AnimatedCounter end={stats.providers} />
+                        </div>
+                        <p className="text-white/60">شريك نجاح مسجل معنا</p>
+                    </div>
+                </div>
+
+                {/* 2. قسم شركاء النجاح */}
+                {partners.length > 0 && (
+                  <div className="mb-24 text-center animate-in fade-in slide-in-from-bottom-8 duration-700">
+                     <div className="flex items-center justify-center gap-2 mb-2">
+                        <Handshake className="text-[#C89B3C]" size={24}/>
+                        <h2 className="text-3xl font-bold text-white">
+                          {platformInfo?.partners_title || "شركاء النجاح"}
+                        </h2>
+                     </div>
+                     <p className="text-white/50 mb-10 max-w-2xl mx-auto font-light">
+                       {platformInfo?.partners_subtitle || "نفخر بشراكتنا مع نخبة من الجهات والمؤسسات التي تساهم في إثراء تجربة السائح في عسير"}
+                     </p>
+                     
+                     <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-sm">
+                       <div className="flex flex-wrap justify-center gap-10 md:gap-16 items-center">
+                          {partners.map((p) => (
+                             <div key={p.id} className="group relative w-24 h-24 md:w-32 md:h-32 flex items-center justify-center hover:scale-110 transition-all duration-500 ease-in-out cursor-pointer" title={p.name}>
+                                <Image src={p.logo_url} alt={p.name} fill className="object-contain drop-shadow-md" />
+                             </div>
+                          ))}
+                       </div>
+                     </div>
+                  </div>
+                )}
+
+                {/* 3. قسم الدعوة للانضمام (تسويقي) */}
+                <div className="bg-gradient-to-r from-[#C89B3C] to-[#8a6a26] rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-2xl shadow-[#C89B3C]/20 text-center md:text-right flex flex-col md:flex-row items-center justify-between gap-8">
+                    <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                    <div className="relative z-10 max-w-2xl">
+                        <h3 className="text-3xl md:text-4xl font-bold text-[#2B1F17] mb-4">
+                            هل تملك خدمة سياحية في عسير؟
+                        </h3>
+                        <p className="text-[#2B1F17]/90 text-lg leading-relaxed font-medium">
+                            لا تضيع الفرصة! انضم الآن إلى نخبة مقدمي الخدمات في المنطقة. 
+                            منصة <span className="font-bold">سَيّر</span> تمنحك وصولاً مباشراً لآلاف السياح، 
+                            نظام حجوزات ذكي، وتسويق مجاني لخدماتك.
+                        </p>
+                    </div>
+                    <div className="relative z-10 shrink-0">
+                        <button 
+                            onClick={() => router.push("/register/provider")}
+                            className="bg-[#2B1F17] text-[#C89B3C] text-lg font-bold px-8 py-4 rounded-xl shadow-xl hover:bg-black hover:scale-105 transition-all flex items-center gap-3"
+                        >
+                            <TrendingUp size={20} />
+                            سجّل كشريك الآن
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {/* ========================================================================= */}
 
         {/* Footer & Info Section */}
         {platformInfo && (
@@ -318,9 +456,9 @@ export default function HomePage() {
                         </li>
                      )}
                      <div className="flex gap-4 mt-4 justify-center md:justify-start">
-                        {platformInfo?.twitter && <a href={platformInfo.twitter} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Twitter size={18} /></a>}
-                        {platformInfo?.instagram && <a href={platformInfo.instagram} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Instagram size={18} /></a>}
-                        {platformInfo?.linkedin && <a href={platformInfo.linkedin} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Linkedin size={18} /></a>}
+                       {platformInfo?.twitter && <a href={platformInfo.twitter} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Twitter size={18} /></a>}
+                       {platformInfo?.instagram && <a href={platformInfo.instagram} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Instagram size={18} /></a>}
+                       {platformInfo?.linkedin && <a href={platformInfo.linkedin} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Linkedin size={18} /></a>}
                      </div>
                    </ul>
                 </div>

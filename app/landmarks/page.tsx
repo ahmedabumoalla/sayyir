@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
   MapPin, ArrowRight, Loader2, Mountain, Landmark, 
-  Clock, DollarSign, X, Info, PlayCircle 
+  Clock, DollarSign, X, Info, PlayCircle, Search, Trees // 👈 تمت إضافة أيقونة Trees
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -21,6 +21,9 @@ export default function LandmarksPage() {
   const [filter, setFilter] = useState('all');
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [zoomedMedia, setZoomedMedia] = useState<string | null>(null);
+  
+  // ✅ حالة البحث
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetchPlaces();
@@ -38,14 +41,25 @@ export default function LandmarksPage() {
     setLoading(false);
   };
 
-  // ✅ تم التصحيح: إجبار الدالة على إرجاع boolean دائماً
   const isVideo = (url: string): boolean => {
     if (!url) return false;
-    // استخدام !! لتحويل النتيجة إلى true/false
     return !!(url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video') || url.includes('mp4'));
   };
 
-  const filteredPlaces = filter === 'all' ? places : places.filter(place => place.type === filter);
+  // ✅ منطق الفلترة المحدث (النوع + البحث)
+  const filteredPlaces = places.filter(place => {
+    // 1. فلتر النوع
+    const matchesType = filter === 'all' || place.type === filter;
+    
+    // 2. فلتر البحث
+    const query = searchQuery.toLowerCase().trim();
+    const matchesSearch = query === "" || 
+        place.name.toLowerCase().includes(query) ||
+        (place.city && place.city.toLowerCase().includes(query)) ||
+        (place.description && place.description.toLowerCase().includes(query));
+
+    return matchesType && matchesSearch;
+  });
 
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
@@ -72,12 +86,34 @@ export default function LandmarksPage() {
         </Link>
       </div>
 
+      {/* ==================== قسم البحث ======================== */}
+      <div className="container mx-auto px-4 -mt-8 relative z-30 mb-6">
+        <div className="max-w-md mx-auto relative group">
+            <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-4 h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
+                <Search className="text-white/50 ml-3 shrink-0" size={20} />
+                <input
+                    type="text"
+                    placeholder="ابحث عن اسم المعلم، المدينة..."
+                    className="bg-transparent border-none outline-none text-white w-full text-sm placeholder-white/40 h-full"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                    <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition">
+                        <X size={16} />
+                    </button>
+                )}
+            </div>
+        </div>
+      </div>
+
       {/* FILTER TABS */}
-      <div className="container mx-auto px-4 -mt-8 relative z-20 mb-12">
-        <div className="flex justify-center gap-3 bg-white/5 backdrop-blur-xl p-2 rounded-full w-fit mx-auto border border-white/10 shadow-xl">
-          <button onClick={() => setFilter('all')} className={`px-6 py-2 rounded-full transition text-sm font-bold ${filter === 'all' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}>الكل</button>
-          <button onClick={() => setFilter('tourist')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold ${filter === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Mountain size={16} /> سياحي</button>
-          <button onClick={() => setFilter('heritage')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold ${filter === 'heritage' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Landmark size={16} /> تراث</button>
+      <div className="container mx-auto px-4 relative z-20 mb-12">
+        <div className="flex justify-center gap-3 bg-white/5 backdrop-blur-xl p-2 rounded-full w-fit mx-auto border border-white/10 shadow-xl overflow-x-auto custom-scrollbar">
+          <button onClick={() => setFilter('all')} className={`px-6 py-2 rounded-full transition text-sm font-bold whitespace-nowrap ${filter === 'all' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}>الكل</button>
+          <button onClick={() => setFilter('tourist')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold whitespace-nowrap ${filter === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Mountain size={16} /> سياحي</button>
+          <button onClick={() => setFilter('natural')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold whitespace-nowrap ${filter === 'natural' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Trees size={16} /> طبيعي</button>
+          <button onClick={() => setFilter('heritage')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold whitespace-nowrap ${filter === 'heritage' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Landmark size={16} /> تراث</button>
         </div>
       </div>
 
@@ -86,9 +122,17 @@ export default function LandmarksPage() {
         {loading ? (
           <div className="flex justify-center h-40 items-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div>
         ) : filteredPlaces.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10"><p className="text-white/40">لا توجد معالم مضافة حالياً.</p></div>
+          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-4">
+              <Search size={48} className="text-white/20" />
+              <p className="text-white/40">لا توجد نتائج تطابق بحثك.</p>
+              {searchQuery && (
+                  <button onClick={() => setSearchQuery("")} className="text-[#C89B3C] text-sm hover:underline">
+                      مسح البحث وعرض الكل
+                  </button>
+              )}
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
             {filteredPlaces.map((place) => (
                 <div key={place.id} onClick={() => setSelectedPlace(place)} className="cursor-pointer">
                     <LandmarkCard data={place} isVideo={isVideo} />
@@ -128,9 +172,18 @@ export default function LandmarksPage() {
                     
                     <div className="absolute bottom-6 right-6 left-6">
                         <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit ${selectedPlace.type === 'heritage' ? 'bg-amber-500 text-black' : 'bg-blue-500 text-white'}`}>
-                                {selectedPlace.type === 'tourist' ? <Mountain size={14}/> : <Landmark size={14}/>}
-                                {selectedPlace.type === 'tourist' ? 'معلم سياحي' : 'موقع تراثي'}
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit ${
+                                selectedPlace.type === 'heritage' ? 'bg-amber-500 text-black' : 
+                                selectedPlace.type === 'natural' ? 'bg-teal-600 text-white' : 
+                                'bg-blue-500 text-white'
+                            }`}>
+                                {selectedPlace.type === 'tourist' ? <Mountain size={14}/> : 
+                                 selectedPlace.type === 'heritage' ? <Landmark size={14}/> : 
+                                 selectedPlace.type === 'natural' ? <Trees size={14}/> : <Mountain size={14}/>}
+                                
+                                {selectedPlace.type === 'tourist' ? 'معلم سياحي' : 
+                                 selectedPlace.type === 'heritage' ? 'موقع تراثي' : 
+                                 selectedPlace.type === 'natural' ? 'معلم طبيعي' : 'معلم'}
                             </span>
                             <span className={`px-3 py-1 rounded-full text-xs font-bold ${selectedPlace.price > 0 ? 'bg-emerald-500 text-black' : 'bg-white/20 text-white backdrop-blur-md'}`}>
                                 {selectedPlace.price > 0 ? `${selectedPlace.price} ريال` : 'دخول مجاني'}
@@ -282,6 +335,7 @@ export default function LandmarksPage() {
 
 function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => boolean }) {
   const isHeritage = data.type === 'heritage';
+  const isNatural = data.type === 'natural';
   const mainMedia = data.media_urls && data.media_urls[0] ? data.media_urls[0] : null;
   const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   
@@ -306,9 +360,11 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
           )}
           
           <div className="absolute top-4 left-4 backdrop-blur-md bg-black/30 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5">
-            {isHeritage ? <Landmark size={14} className="text-amber-400"/> : <Mountain size={14} className="text-emerald-400"/>}
+            {isHeritage ? <Landmark size={14} className="text-amber-400"/> : 
+             isNatural ? <Trees size={14} className="text-teal-400"/> : 
+             <Mountain size={14} className="text-emerald-400"/>}
             <span className="text-xs font-bold text-white">
-                {isHeritage ? 'تراثي' : 'سياحي'}
+                {isHeritage ? 'تراثي' : isNatural ? 'طبيعي' : 'سياحي'}
             </span>
           </div>
 

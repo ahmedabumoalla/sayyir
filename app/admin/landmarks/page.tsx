@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Map as MapIcon, DollarSign, Settings, ShieldAlert,
   Search, Plus, Edit, Trash2, MapPin, X, Save, Loader2, Image as ImageIcon, Briefcase, LogOut, UploadCloud, Video,
   Menu, User, Home, Camera, Mountain, History, Clock, CheckCircle, XCircle,
-  Calendar, Info, AlertTriangle, UserCheck, Activity, Hourglass, List, PlayCircle
+  Calendar, Info, AlertTriangle, UserCheck, Activity, Hourglass, List, PlayCircle, Trees // 👈 1. تمت إضافة أيقونة Trees
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -40,7 +40,7 @@ const defaultWorkHours: WorkHour[] = DAYS_ARABIC.map(day => ({
 interface Place {
   id?: string;
   name: string;
-  type: 'tourist' | 'heritage' | 'experience';
+  type: 'tourist' | 'heritage' | 'experience' | 'natural'; // 👈 2. تمت إضافة النوع natural
   category?: string; 
   city?: string;    
   description: string;
@@ -214,7 +214,7 @@ export default function AdminLandmarksPage() {
     if (cats) setCategoriesList(cats);
   };
 
-  const handleAddNew = (type: 'tourist' | 'heritage' | 'experience') => {
+  const handleAddNew = (type: 'tourist' | 'heritage' | 'experience' | 'natural') => {
     setFormData({ 
         name: "", type: type, category: "", city: "", description: "", media_urls: [], 
         lat: 18.2164, lng: 42.5053, is_active: true, work_hours: defaultWorkHours,
@@ -340,7 +340,7 @@ export default function AdminLandmarksPage() {
 
       let details = "";
       if (!formData.id) {
-          details = `إضافة ${formData.type} جديد: ${formData.name}`;
+          details = `إضافة ${formData.type === 'natural' ? 'معلم طبيعي' : formData.type} جديد: ${formData.name}`;
       } else {
           details = `تحديث بيانات: ${formData.name}`;
       }
@@ -469,6 +469,9 @@ export default function AdminLandmarksPage() {
                <button onClick={() => handleAddNew('tourist')} className="bg-[#1a1a1a] border border-[#C89B3C]/50 text-white px-4 py-2.5 rounded-xl hover:bg-[#C89B3C] hover:text-[#2B1F17] transition flex items-center gap-2 text-sm font-bold">
                   <Mountain size={18} /> إضافة معلم سياحي
                </button>
+               <button onClick={() => handleAddNew('natural')} className="bg-[#1a1a1a] border border-teal-500/50 text-white px-4 py-2.5 rounded-xl hover:bg-teal-600 transition flex items-center gap-2 text-sm font-bold">
+                  <Trees size={18} /> إضافة معلم طبيعي
+               </button>
                <button onClick={() => handleAddNew('heritage')} className="bg-[#1a1a1a] border border-amber-500/50 text-white px-4 py-2.5 rounded-xl hover:bg-amber-600 transition flex items-center gap-2 text-sm font-bold">
                   <History size={18} /> إضافة موقع تراثي
                </button>
@@ -479,9 +482,12 @@ export default function AdminLandmarksPage() {
         </header>
 
         {/* Mobile Buttons */}
-        <div className="md:hidden grid grid-cols-3 gap-2 mb-6">
+        <div className="md:hidden grid grid-cols-2 gap-2 mb-6">
            <button onClick={() => handleAddNew('tourist')} className="bg-[#C89B3C]/10 border border-[#C89B3C]/30 text-[#C89B3C] p-2 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold">
-              <Mountain size={20} /> معلم
+              <Mountain size={20} /> معلم سياحي
+           </button>
+           <button onClick={() => handleAddNew('natural')} className="bg-teal-500/10 border border-teal-500/30 text-teal-500 p-2 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold">
+              <Trees size={20} /> معلم طبيعي
            </button>
            <button onClick={() => handleAddNew('heritage')} className="bg-amber-500/10 border border-amber-500/30 text-amber-500 p-2 rounded-xl flex flex-col items-center gap-1 text-[10px] font-bold">
               <History size={20} /> تراث
@@ -520,9 +526,14 @@ export default function AdminLandmarksPage() {
                     <td className="px-6 py-4 font-bold">{p.name}</td>
                     <td className="px-6 py-4">{p.city || '-'}</td>
                     <td className="px-6 py-4">
-                        <span className={`text-[10px] px-2 py-0.5 rounded w-fit flex items-center gap-1 w-fit ${p.type === 'experience' ? 'bg-emerald-500/20 text-emerald-400' : p.type === 'heritage' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                            {p.type === 'tourist' ? <Mountain size={12}/> : p.type === 'heritage' ? <History size={12}/> : <Camera size={12}/>}
-                            {p.type === 'tourist' ? 'سياحي' : p.type === 'heritage' ? 'تراثي' : 'تجربة'}
+                        <span className={`text-[10px] px-2 py-0.5 rounded w-fit flex items-center gap-1 w-fit ${
+                            p.type === 'experience' ? 'bg-emerald-500/20 text-emerald-400' : 
+                            p.type === 'heritage' ? 'bg-amber-500/20 text-amber-400' : 
+                            p.type === 'natural' ? 'bg-teal-500/20 text-teal-400' : 
+                            'bg-blue-500/20 text-blue-400'
+                        }`}>
+                            {p.type === 'tourist' ? <Mountain size={12}/> : p.type === 'heritage' ? <History size={12}/> : p.type === 'natural' ? <Trees size={12}/> : <Camera size={12}/>}
+                            {p.type === 'tourist' ? 'سياحي' : p.type === 'heritage' ? 'تراثي' : p.type === 'natural' ? 'طبيعي' : 'تجربة'}
                         </span>
                     </td>
                     <td className="px-6 py-4 font-mono text-[#C89B3C]">{p.price > 0 ? `${p.price} ريال` : 'مجاني'}</td>
@@ -541,13 +552,19 @@ export default function AdminLandmarksPage() {
             <div className="bg-[#2B2B2B] w-full max-w-6xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
               <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/5">
                 <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${formData.type === 'experience' ? 'bg-emerald-500/20 text-emerald-500' : formData.type === 'heritage' ? 'bg-amber-500/20 text-amber-500' : 'bg-[#C89B3C]/20 text-[#C89B3C]'}`}>
-                        {formData.type === 'tourist' ? <Mountain size={20}/> : formData.type === 'heritage' ? <History size={20}/> : <Camera size={20}/>}
+                    <div className={`p-2 rounded-lg ${
+                        formData.type === 'experience' ? 'bg-emerald-500/20 text-emerald-500' : 
+                        formData.type === 'heritage' ? 'bg-amber-500/20 text-amber-500' : 
+                        formData.type === 'natural' ? 'bg-teal-500/20 text-teal-500' :
+                        'bg-[#C89B3C]/20 text-[#C89B3C]'
+                    }`}>
+                        {formData.type === 'tourist' ? <Mountain size={20}/> : formData.type === 'heritage' ? <History size={20}/> : formData.type === 'natural' ? <Trees size={20}/> : <Camera size={20}/>}
                     </div>
                     <div>
                         <h3 className="text-lg font-bold text-white">{formData.id ? "تعديل البيانات" : 
                             formData.type === 'tourist' ? "إضافة معلم سياحي جديد" : 
                             formData.type === 'heritage' ? "إضافة موقع تراثي جديد" : 
+                            formData.type === 'natural' ? "إضافة معلم طبيعي جديد" : 
                             "إضافة تجربة سياحية جديدة"}
                         </h3>
                     </div>
@@ -560,6 +577,7 @@ export default function AdminLandmarksPage() {
                 {/* Visual Type Indicator */}
                 <div className="flex bg-black/30 p-1 rounded-xl mb-6 w-fit mx-auto border border-white/10">
                     <button type="button" onClick={() => setFormData({...formData, type: 'tourist'})} className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${formData.type === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17] font-bold' : 'text-white/60 hover:text-white'}`}><Mountain size={16}/> معلم سياحي</button>
+                    <button type="button" onClick={() => setFormData({...formData, type: 'natural'})} className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${formData.type === 'natural' ? 'bg-teal-600 text-white font-bold' : 'text-white/60 hover:text-white'}`}><Trees size={16}/> معلم طبيعي</button>
                     <button type="button" onClick={() => setFormData({...formData, type: 'heritage'})} className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${formData.type === 'heritage' ? 'bg-amber-600 text-white font-bold' : 'text-white/60 hover:text-white'}`}><History size={16}/> موقع تراثي</button>
                     <button type="button" onClick={() => setFormData({...formData, type: 'experience'})} className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${formData.type === 'experience' ? 'bg-emerald-600 text-white font-bold' : 'text-white/60 hover:text-white'}`}><Camera size={16}/> تجربة</button>
                 </div>
@@ -604,7 +622,7 @@ export default function AdminLandmarksPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Price (All Types) */}
                                 <div className="space-y-2">
-                                    <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type === 'tourist' || formData.type === 'heritage' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
+                                    <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type !== 'experience' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
                                     <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
                                 </div>
 

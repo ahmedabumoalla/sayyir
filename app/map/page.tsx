@@ -11,7 +11,7 @@ import Link from "next/link";
 import { 
   X, ArrowRight, Camera, 
   BedDouble, Utensils, Filter, Layers, 
-  Tent, Landmark, Mountain, Box, MapPin, Check
+  Tent, Landmark, Mountain, Box, MapPin, Check, Search // 👈 تمت إضافة أيقونة البحث
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -49,6 +49,10 @@ export default function MapPage() {
   const [selectedCategory, setSelectedCategory] = useState('الكل');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
+  // ✅ بيانات البحث (جديد)
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<MapItem[]>([]);
+
   const [viewState, setViewState] = useState({
     latitude: 18.216,
     longitude: 42.505,
@@ -58,8 +62,8 @@ export default function MapPage() {
   // تصنيفات ثابتة للنوع
   const categoryFilters = [
     { label: 'الكل', value: 'الكل', icon: Layers },
-    { label: 'معالم', value: 'places', icon: Landmark }, // يشمل التراثي والسياحي
-    { label: 'مرافق', value: 'facilities', icon: Utensils }, // يشمل السكن والمطاعم والحرف
+    { label: 'معالم', value: 'places', icon: Landmark }, 
+    { label: 'مرافق', value: 'facilities', icon: Utensils }, 
     { label: 'تجارب', value: 'experience', icon: Tent },
   ];
 
@@ -68,7 +72,6 @@ export default function MapPage() {
     fetchCities();
   }, []);
 
-  // جلب المدن من قاعدة البيانات
   const fetchCities = async () => {
     const { data } = await supabase.from('cities').select('name').order('name');
     if (data) {
@@ -129,51 +132,60 @@ export default function MapPage() {
     }
   };
 
-  // ✅ منطق الفلترة المزدوج (مدينة + تصنيف)
+  // ✅ منطق الفلترة المزدوج
   useEffect(() => {
     let result = items;
-
-    // 1. فلترة المدينة
     if (selectedCity !== 'الكل') {
         result = result.filter(item => item.city === selectedCity);
     }
-
-    // 2. فلترة التصنيف
     if (selectedCategory !== 'الكل') {
         if (selectedCategory === 'places') {
-            // المعالم فقط (جدول places) بس نستثني التجارب عشان تروح لفلتر التجارب
             result = result.filter(item => item.sourceTable === 'places' && item.type !== 'experience');
         } else if (selectedCategory === 'experience') {
-            // التجارب فقط (من الأدمن أو المزود)
             result = result.filter(item => item.type === 'experience');
         } else if (selectedCategory === 'facilities') {
-            // المرافق (خدمات ليست تجارب)
             result = result.filter(item => item.sourceTable === 'services' && item.type !== 'experience');
         }
     }
-
     setFilteredItems(result);
   }, [selectedCity, selectedCategory, items]);
 
-  // ✅ تعديل منطق الأيقونات لإصلاح مشكلة التجارب
-  const getItemStyle = (item: MapItem) => {
-    // 1. الأولوية للتجارب (سواء من الأدمن أو المزود)
-    if (item.type === 'experience') {
-        return { icon: Tent, color: "text-emerald-400", bg: "bg-emerald-900" };
+  // ✅ منطق البحث (جديد)
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+        setSearchResults([]);
+        return;
     }
+    const lowerQuery = query.toLowerCase();
+    const results = items.filter(item => 
+        item.name.toLowerCase().includes(lowerQuery) || 
+        (item.city && item.city.toLowerCase().includes(lowerQuery))
+    );
+    setSearchResults(results.slice(0, 5)); // إظهار أول 5 نتائج فقط
+  };
 
-    // 2. ثم نفحص المصدر
+  const handleSelectSearchResult = (item: MapItem) => {
+    setSelectedLocation(item);
+    setViewState({
+        latitude: item.lat - 0.005, // إزاحة بسيطة للأسفل عشان البوب أب يبان
+        longitude: item.lng,
+        zoom: 15
+    });
+    setSearchResults([]); // إخفاء القائمة
+    setSearchQuery(""); // تفريغ البحث
+  };
+
+  // ✅ منطق الأيقونات
+  const getItemStyle = (item: MapItem) => {
+    if (item.type === 'experience') return { icon: Tent, color: "text-emerald-400", bg: "bg-emerald-900" };
     if (item.sourceTable === 'places') {
         if (item.type === 'heritage') return { icon: Landmark, color: "text-[#C89B3C]", bg: "bg-[#4a3b2a]" };
-        // الباقي معالم سياحية
         return { icon: Mountain, color: "text-blue-400", bg: "bg-blue-900" };
     } 
-    
-    // 3. باقي خدمات المزودين
     if (item.sub_category === 'lodging') return { icon: BedDouble, color: "text-indigo-400", bg: "bg-indigo-900" };
     if (item.sub_category === 'food') return { icon: Utensils, color: "text-orange-400", bg: "bg-orange-900" };
     if (item.sub_category === 'craft') return { icon: Box, color: "text-pink-400", bg: "bg-pink-900" };
-    
     return { icon: MapPin, color: "text-gray-400", bg: "bg-gray-800" };
   };
 
@@ -193,16 +205,64 @@ export default function MapPage() {
         </Link>
       </div>
 
+      {/* ========================================================= */}
+      {/* ================== شريط البحث (جديد) =================== */}
+      {/* ========================================================= */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4">
+        <div className="relative group">
+            <div className="relative flex items-center bg-black/60 backdrop-blur-xl border border-white/20 rounded-full px-4 h-12 shadow-2xl transition focus-within:bg-black/80 focus-within:border-[#C89B3C]/50">
+                <Search className="text-white/50 ml-3" size={20} />
+                <input 
+                    type="text" 
+                    placeholder="ابحث عن معلم، فندق، مطعم..." 
+                    className="bg-transparent border-none outline-none text-white w-full text-sm placeholder-white/40 h-full"
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                />
+                {searchQuery && (
+                    <button onClick={() => { setSearchQuery(""); setSearchResults([]); }} className="text-white/30 hover:text-white transition">
+                        <X size={16} />
+                    </button>
+                )}
+            </div>
+
+            {/* قائمة نتائج البحث */}
+            {searchResults.length > 0 && (
+                <div className="absolute top-14 left-0 right-0 bg-[#1a1a1a]/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2">
+                    {searchResults.map((result) => {
+                        const style = getItemStyle(result);
+                        const Icon = style.icon;
+                        return (
+                            <button 
+                                key={`${result.sourceTable}-${result.id}`}
+                                onClick={() => handleSelectSearchResult(result)}
+                                className="w-full text-right flex items-center gap-3 p-3 hover:bg-white/10 transition border-b border-white/5 last:border-0"
+                            >
+                                <div className={`w-8 h-8 rounded-full ${style.bg} flex items-center justify-center text-white shrink-0`}>
+                                    <Icon size={14} />
+                                </div>
+                                <div>
+                                    <p className="text-white text-sm font-bold line-clamp-1">{result.name}</p>
+                                    <p className="text-white/40 text-xs">{result.city || result.type}</p>
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+      </div>
+      {/* ========================================================= */}
+
       {/* ✅ زر الفلتر والبطاقة المنبثقة */}
       <div className="absolute top-4 left-4 z-50 flex flex-col items-start gap-2">
         <button 
           onClick={() => setIsFilterOpen(!isFilterOpen)}
-          className={`h-12 px-4 rounded-xl backdrop-blur-md border border-white/20 flex items-center gap-2 shadow-lg transition hover:bg-white/20 ${isFilterOpen ? 'bg-[#C89B3C] text-black font-bold' : 'bg-black/60 text-white'}`}
+          className={`h-12 w-12 md:w-auto md:px-4 rounded-full md:rounded-xl backdrop-blur-md border border-white/20 flex items-center justify-center gap-2 shadow-lg transition hover:bg-white/20 ${isFilterOpen ? 'bg-[#C89B3C] text-black font-bold' : 'bg-black/60 text-white'}`}
         >
           <Filter size={20} />
-          <span>تصفية الخريطة</span>
-          {/* عرض عدد النتائج */}
-          <span className="bg-white/20 px-2 py-0.5 rounded text-xs ml-1">{filteredItems.length}</span>
+          <span className="hidden md:inline">تصفية</span>
+          <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] hidden md:inline">{filteredItems.length}</span>
         </button>
 
         {isFilterOpen && (
@@ -249,7 +309,6 @@ export default function MapPage() {
                 </div>
             </div>
 
-            {/* زر إغلاق / تطبيق */}
             <button onClick={() => setIsFilterOpen(false)} className="w-full bg-white/10 hover:bg-white/20 text-white py-2 rounded-xl text-xs font-bold transition">
                 إغلاق القائمة
             </button>
