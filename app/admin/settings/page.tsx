@@ -44,9 +44,9 @@ export default function AdminSettingsPage() {
     gmailUser: "",
     gmailAppPassword: "",
     resendApiKey: "", 
-    twilioSid: "",    
-    twilioToken: "",  
-    twilioPhone: ""   
+    twilioSid:    "", 
+    twilioToken:  "", 
+    twilioPhone:  ""  
   });
 
   // --- Fetch Data ---
@@ -146,7 +146,6 @@ export default function AdminSettingsPage() {
       else alert("خطأ في الإضافة: " + (error?.message || "unknown"));
   };
 
-  // ✅ دالة تعديل المدينة
   const handleEditCity = async (id: string, currentName: string) => {
       const newName = prompt("تعديل اسم المدينة:", currentName);
       if (!newName || newName === currentName) return;
@@ -174,7 +173,6 @@ export default function AdminSettingsPage() {
       else alert("خطأ في الإضافة");
   };
 
-  // ✅ دالة تعديل التصنيف
   const handleEditCategory = async (id: string, currentName: string) => {
       const newName = prompt("تعديل اسم التصنيف:", currentName);
       if (!newName || newName === currentName) return;
@@ -218,6 +216,8 @@ export default function AdminSettingsPage() {
       {/* ============== تبويب إعدادات التطبيق ============== */}
       {activeTab === "app_settings" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+           
+           {/* Section 1: App Status */}
            <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
              <h2 className="text-xl font-bold text-[#C89B3C] mb-4 flex gap-2"><Globe size={20}/> حالة التطبيق</h2>
              <div className="flex justify-between items-center bg-black/40 p-4 rounded-xl border border-white/5">
@@ -229,6 +229,48 @@ export default function AdminSettingsPage() {
              </div>
            </section>
 
+           {/* ✅ Section 2: Content Management (Vision, Mission, About) - تمت إضافته هنا */}
+           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
+             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
+               <FileText size={20} /> إدارة المحتوى التعريفي
+             </h2>
+             <div className="space-y-4">
+               <div>
+                 <label className="block text-gray-400 mb-2 text-sm">من نحن (About Us)</label>
+                 <textarea 
+                   rows={4}
+                   value={formData.about_us} 
+                   onChange={(e) => setFormData({ ...formData, about_us: e.target.value })} 
+                   className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none resize-none leading-relaxed"
+                   placeholder="اكتب نبذة عن المنصة..."
+                 />
+               </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div>
+                   <label className="block text-gray-400 mb-2 text-sm">الرؤية (Vision)</label>
+                   <textarea 
+                     rows={3}
+                     value={formData.vision} 
+                     onChange={(e) => setFormData({ ...formData, vision: e.target.value })} 
+                     className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none resize-none"
+                     placeholder="رؤية المنصة..."
+                   />
+                 </div>
+                 <div>
+                   <label className="block text-gray-400 mb-2 text-sm">الرسالة (Mission)</label>
+                   <textarea 
+                     rows={3}
+                     value={formData.mission} 
+                     onChange={(e) => setFormData({ ...formData, mission: e.target.value })} 
+                     className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white focus:border-[#C89B3C] outline-none resize-none"
+                     placeholder="رسالة المنصة..."
+                   />
+                 </div>
+               </div>
+             </div>
+           </section>
+
+           {/* Section 3: Contact Info */}
            <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
               <Phone size={20} /> معلومات التواصل

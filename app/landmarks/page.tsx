@@ -7,20 +7,16 @@ import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
   MapPin, ArrowRight, Loader2, Mountain, Landmark, 
-  Clock, DollarSign, X, Info, PlayCircle, Search, Trees // 👈 تمت إضافة أيقونة Trees
+  Search, Trees, X // 👈 ✅ تم إضافة X هنا لحل المشكلة
 } from "lucide-react";
-import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 export default function LandmarksPage() {
   const [places, setPlaces] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [selectedPlace, setSelectedPlace] = useState<any>(null);
-  const [zoomedMedia, setZoomedMedia] = useState<string | null>(null);
   
   // ✅ حالة البحث
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,7 +42,7 @@ export default function LandmarksPage() {
     return !!(url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video') || url.includes('mp4'));
   };
 
-  // ✅ منطق الفلترة المحدث (النوع + البحث)
+  // ✅ منطق الفلترة (شامل النوع الطبيعي والبحث)
   const filteredPlaces = places.filter(place => {
     // 1. فلتر النوع
     const matchesType = filter === 'all' || place.type === filter;
@@ -100,7 +96,7 @@ export default function LandmarksPage() {
                 />
                 {searchQuery && (
                     <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition">
-                        <X size={16} />
+                        <X size={16} /> {/* الآن ستعمل بدون مشاكل */}
                     </button>
                 )}
             </div>
@@ -134,200 +130,14 @@ export default function LandmarksPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
             {filteredPlaces.map((place) => (
-                <div key={place.id} onClick={() => setSelectedPlace(place)} className="cursor-pointer">
+                // ✅ تم التعديل: التوجيه لصفحة التفاصيل بدلاً من فتح نافذة
+                <Link key={place.id} href={`/place/${place.id}`} className="block transition-transform hover:-translate-y-2">
                     <LandmarkCard data={place} isVideo={isVideo} />
-                </div>
+                </Link>
             ))}
           </div>
         )}
       </div>
-
-      {/* DETAILED MODAL */}
-      {selectedPlace && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95">
-            <div className="bg-[#1a1a1a] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-                
-                {/* Header with Media Background */}
-                <div className="relative h-64 md:h-80 shrink-0 bg-black">
-                    {isVideo(selectedPlace.media_urls?.[0]) ? (
-                        <video 
-                            src={selectedPlace.media_urls[0]} 
-                            className="w-full h-full object-cover opacity-80"
-                            autoPlay 
-                            muted 
-                            loop 
-                            playsInline 
-                        />
-                    ) : (
-                        <Image 
-                            src={selectedPlace.media_urls?.[0] || "/placeholder.jpg"} 
-                            alt={selectedPlace.name} 
-                            fill 
-                            className="object-cover"
-                        />
-                    )}
-                    
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-transparent" />
-                    <button onClick={() => setSelectedPlace(null)} className="absolute top-4 left-4 bg-black/50 p-2 rounded-full text-white hover:bg-black/80 transition z-10"><X size={24}/></button>
-                    
-                    <div className="absolute bottom-6 right-6 left-6">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit ${
-                                selectedPlace.type === 'heritage' ? 'bg-amber-500 text-black' : 
-                                selectedPlace.type === 'natural' ? 'bg-teal-600 text-white' : 
-                                'bg-blue-500 text-white'
-                            }`}>
-                                {selectedPlace.type === 'tourist' ? <Mountain size={14}/> : 
-                                 selectedPlace.type === 'heritage' ? <Landmark size={14}/> : 
-                                 selectedPlace.type === 'natural' ? <Trees size={14}/> : <Mountain size={14}/>}
-                                
-                                {selectedPlace.type === 'tourist' ? 'معلم سياحي' : 
-                                 selectedPlace.type === 'heritage' ? 'موقع تراثي' : 
-                                 selectedPlace.type === 'natural' ? 'معلم طبيعي' : 'معلم'}
-                            </span>
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${selectedPlace.price > 0 ? 'bg-emerald-500 text-black' : 'bg-white/20 text-white backdrop-blur-md'}`}>
-                                {selectedPlace.price > 0 ? `${selectedPlace.price} ريال` : 'دخول مجاني'}
-                            </span>
-                        </div>
-                        <h2 className="text-3xl md:text-4xl font-bold text-white drop-shadow-md">{selectedPlace.name}</h2>
-                        <div className="flex items-center gap-2 text-white/80 mt-1 text-sm">
-                            <MapPin size={16} className="text-[#C89B3C]"/>
-                            {selectedPlace.city || "عسير"}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Body Content */}
-                <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        
-                        {/* Main Info (Right) */}
-                        <div className="lg:col-span-2 space-y-8">
-                            <div>
-                                <h3 className="text-xl font-bold text-[#C89B3C] mb-3 flex items-center gap-2"><Info size={20}/> نبذة عن المكان</h3>
-                                <p className="text-gray-300 leading-relaxed whitespace-pre-line text-lg">{selectedPlace.description}</p>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-white/5 p-4 rounded-xl border border-white/5 flex items-center gap-3">
-                                    <div className="p-2 bg-[#C89B3C]/10 rounded-lg text-[#C89B3C]"><DollarSign size={24}/></div>
-                                    <div>
-                                        <p className="text-xs text-gray-400">رسوم الدخول</p>
-                                        <p className="font-bold text-lg text-white">
-                                            {selectedPlace.price > 0 ? `${selectedPlace.price} ريال / للشخص` : 'مجاني تماماً'}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {selectedPlace.services && (
-                                <div>
-                                    <h3 className="text-lg font-bold text-white mb-3">الخدمات المتوفرة</h3>
-                                    <div className="bg-white/5 p-4 rounded-xl border border-white/5 text-gray-300">
-                                        {selectedPlace.services}
-                                    </div>
-                                </div>
-                            )}
-
-                            {selectedPlace.media_urls && selectedPlace.media_urls.length > 0 && (
-                                <div>
-                                    <h3 className="text-lg font-bold text-white mb-3">معرض الوسائط</h3>
-                                    <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                                        {selectedPlace.media_urls.map((url: string, i: number) => (
-                                            <div key={i} onClick={() => setZoomedMedia(url)} className="relative w-40 h-28 shrink-0 rounded-lg overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 bg-black">
-                                                {isVideo(url) ? (
-                                                    <>
-                                                        <video src={url} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition" muted />
-                                                        <div className="absolute inset-0 flex items-center justify-center"><PlayCircle className="text-white/80 w-8 h-8"/></div>
-                                                    </>
-                                                ) : (
-                                                    <Image src={url} alt={`Gallery ${i}`} fill className="object-cover group-hover:scale-110 transition duration-500"/>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Sidebar (Left) - Map & Hours */}
-                        <div className="space-y-6">
-                            
-                            <div className="bg-[#252525] rounded-2xl overflow-hidden border border-white/10 h-64 relative shadow-lg group">
-                                <Map
-                                    initialViewState={{
-                                        latitude: Number(selectedPlace.lat),
-                                        longitude: Number(selectedPlace.lng),
-                                        zoom: 13
-                                    }}
-                                    mapStyle="mapbox://styles/mapbox/satellite-streets-v12" 
-                                    mapboxAccessToken={MAPBOX_TOKEN}
-                                    attributionControl={false}
-                                >
-                                    <NavigationControl position="top-left" showCompass={false}/>
-                                    <Marker latitude={Number(selectedPlace.lat)} longitude={Number(selectedPlace.lng)} color="#C89B3C"/>
-                                </Map>
-                                <a 
-                                    href={`https://www.google.com/maps/search/?api=1&query=${selectedPlace.lat},${selectedPlace.lng}`} 
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="absolute bottom-3 left-3 right-3 bg-[#C89B3C] hover:bg-[#b38a35] text-black font-bold py-2 rounded-xl text-center text-sm shadow-lg transition flex items-center justify-center gap-2"
-                                >
-                                    <MapPin size={16}/> افتح في Google Maps
-                                </a>
-                            </div>
-
-                            {selectedPlace.work_hours && selectedPlace.work_hours.length > 0 && (
-                                <div className="bg-[#252525] p-5 rounded-2xl border border-white/5">
-                                    <h4 className="font-bold text-white mb-4 flex items-center gap-2 text-sm"><Clock size={16} className="text-[#C89B3C]"/> ساعات العمل</h4>
-                                    <div className="space-y-2">
-                                        {selectedPlace.work_hours.map((wh: any, idx: number) => (
-                                            <div key={idx} className="flex justify-between text-xs py-1 border-b border-white/5 last:border-0">
-                                                <span className={wh.is_active ? "text-white" : "text-white/30"}>{wh.day}</span>
-                                                <span className={wh.is_active ? "text-[#C89B3C] dir-ltr" : "text-red-400"}>
-                                                    {wh.is_active ? `${wh.from} - ${wh.to}` : "مغلق"}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* Lightbox */}
-      {zoomedMedia && (
-        <div 
-            className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"
-            onClick={() => setZoomedMedia(null)}
-        >
-            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition">
-                <X size={32} />
-            </button>
-            <div className="relative w-full max-w-5xl h-[85vh] flex items-center justify-center">
-                {isVideo(zoomedMedia) ? (
-                    <video 
-                        src={zoomedMedia} 
-                        controls 
-                        autoPlay 
-                        className="max-w-full max-h-full rounded-lg shadow-2xl"
-                        onClick={(e) => e.stopPropagation()} 
-                    />
-                ) : (
-                    <Image 
-                        src={zoomedMedia} 
-                        alt="Zoomed View" 
-                        fill 
-                        className="object-contain"
-                    />
-                )}
-            </div>
-        </div>
-      )}
 
     </main>
   );
@@ -340,7 +150,7 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
   const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   
   return (
-    <div className="group h-full relative bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
+    <div className="group h-full relative bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
         <div className="relative h-72 w-full overflow-hidden bg-black">
           {mainMedia ? (
               isMainMediaVideo ? (
@@ -359,6 +169,7 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
               <Image src="/placeholder.jpg" alt={data.name} fill className="object-cover"/>
           )}
           
+          {/* شارة التصنيف */}
           <div className="absolute top-4 left-4 backdrop-blur-md bg-black/30 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5">
             {isHeritage ? <Landmark size={14} className="text-amber-400"/> : 
              isNatural ? <Trees size={14} className="text-teal-400"/> : 

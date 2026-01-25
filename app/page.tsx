@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient"; 
@@ -9,7 +9,7 @@ import DynamicShowcase from "@/components/DynamicShowcase";
 import { 
   Briefcase, Map as MapIcon, Sparkles, Tent, Coffee, Landmark, 
   User, LayoutDashboard, Eye, Target, Phone, Mail, 
-  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin, TrendingUp, Users, Search, Handshake
+  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin, TrendingUp, Users, Search, Handshake, X, Loader2, Mountain
 } from "lucide-react";
 import Link from "next/link";
 
@@ -55,7 +55,13 @@ export default function HomePage() {
   const [partners, setPartners] = useState<any[]>([]); 
   
   const [stats, setStats] = useState({ places: 0, services: 0, providers: 0 });
+  
+  // ✅ متغيرات البحث الذكي
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
   const [platformInfo, setPlatformInfo] = useState<any>(null);
 
   const text = "اكتشف جمال الماضي وعِش تجربة سياحية مميزة";
@@ -63,13 +69,77 @@ export default function HomePage() {
   const [index, setIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
   
-  // ✅ دالة البحث (تعمل بشكل صحيح وتوجه لصفحة البحث)
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
+  // ✅ دالة البحث الذكي (Live Search)
+  useEffect(() => {
+    const fetchSearchResults = async () => {
+      if (searchQuery.trim().length < 2) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      const searchTerm = `%${searchQuery}%`;
+
+      try {
+        // 1. بحث في المعالم (Places)
+        const { data: places } = await supabase
+          .from('places')
+          .select('id, name, type, media_urls, city')
+          .ilike('name', searchTerm)
+          .eq('is_active', true)
+          .limit(4);
+
+        // 2. بحث في الخدمات (Services)
+        const { data: services } = await supabase
+          .from('services')
+          .select('id, title, service_category, image_url, city')
+          .ilike('title', searchTerm)
+          .eq('status', 'approved')
+          .limit(4);
+
+        // تنسيق النتائج لتوحيد الشكل
+        const formattedPlaces = (places || []).map((p: any) => ({
+            id: p.id,
+            title: p.name,
+            type: p.type === 'heritage' ? 'موقع تراثي' : (p.type === 'natural' ? 'معلم طبيعي' : 'معلم سياحي'),
+            image: p.media_urls?.[0] || "/placeholder.jpg",
+            link: `/place/${p.id}`,
+            icon: <Landmark size={14}/>
+        }));
+
+        const formattedServices = (services || []).map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            type: s.service_category === 'experience' ? 'تجربة سياحية' : 'خدمة / مرفق',
+            image: s.image_url || "/placeholder.jpg",
+            link: `/service/${s.id}`,
+            icon: s.service_category === 'experience' ? <Tent size={14}/> : <Coffee size={14}/>
+        }));
+
+        setSearchResults([...formattedPlaces, ...formattedServices]);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    const delayDebounceFn = setTimeout(() => {
+      fetchSearchResults();
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setSearchResults([]);
+      }
     }
-  };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   
   useEffect(() => {
     const speed = deleting ? 45 : 90;
@@ -180,6 +250,21 @@ export default function HomePage() {
 
   return (
     <main className={`relative min-h-screen ${tajawal.className} bg-black text-white`} dir="rtl">
+      
+      {/* ستايل خاص للأنيميشن لتجنب أي تعارضات */}
+      <style jsx global>{`
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(50%); } /* تحريك 50% لليمين (لأن القائمة مكررة) */
+        }
+        .animate-marquee {
+          animation: marquee 30s linear infinite;
+        }
+        .animate-marquee:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
+
       {/* HEADER SECTION */}
       <header className="fixed top-0 left-0 right-0 z-50 p-6 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent transition-all duration-300">
         <div className="w-28 md:w-32 hover:scale-105 transition duration-300">
@@ -235,9 +320,9 @@ export default function HomePage() {
             دليلك الذكي لاستكشاف المعالم، حجز التجارب، والعثور على أفضل أماكن الإقامة في عسير.
           </p>
 
-          {/* ✅ نموذج البحث في الصفحة الرئيسية */}
-          <form onSubmit={handleSearch} className="w-full max-w-2xl mt-8 mb-4 relative group z-20 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
-            <div className="relative flex items-center bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-2 transition-all duration-300 focus-within:bg-white/20 focus-within:border-[#C89B3C]/50 shadow-2xl">
+          {/* ✅ نظام البحث الذكي (YouTube Style) */}
+          <div ref={searchContainerRef} className="w-full max-w-2xl mt-8 mb-4 relative z-50 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
+            <div className={`relative flex items-center bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-2 transition-all duration-300 focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50 shadow-2xl ${searchResults.length > 0 ? 'rounded-b-none border-b-0 bg-[#1a1a1a]' : ''}`}>
                 <Search className="text-white/50 mr-4 ml-2" size={24} />
                 <input
                     type="text"
@@ -246,11 +331,37 @@ export default function HomePage() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
-                <button type="submit" className="bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] p-3 rounded-xl transition-all duration-300 hover:scale-105 shadow-lg">
-                    <ArrowRight className="rotate-180" size={24} />
-                </button>
+                <div className="px-3">
+                    {isSearching ? <Loader2 className="animate-spin text-[#C89B3C]" size={24}/> : 
+                     searchQuery && <button onClick={() => {setSearchQuery(""); setSearchResults([])}}><X className="text-white/50 hover:text-white" size={24}/></button>
+                    }
+                </div>
             </div>
-          </form>
+
+            {/* القائمة المنسدلة للنتائج */}
+            {searchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-[#1a1a1a] border border-t-0 border-white/20 rounded-b-2xl shadow-2xl overflow-hidden max-h-[400px] overflow-y-auto custom-scrollbar">
+                    {searchResults.map((result, idx) => (
+                        <Link 
+                            key={`${result.id}-${idx}`} 
+                            href={result.link}
+                            className="flex items-center gap-4 p-4 hover:bg-white/5 transition border-b border-white/5 last:border-0 group"
+                        >
+                            <div className="relative w-16 h-12 rounded-lg overflow-hidden shrink-0 border border-white/10">
+                                <Image src={result.image} alt={result.title} fill className="object-cover group-hover:scale-110 transition duration-500" />
+                            </div>
+                            <div className="text-right flex-1">
+                                <h4 className="text-white font-bold text-sm group-hover:text-[#C89B3C] transition">{result.title}</h4>
+                                <div className="flex items-center gap-2 text-xs text-white/50 mt-1">
+                                    <span className="flex items-center gap-1 text-[#C89B3C]">{result.icon} {result.type}</span>
+                                </div>
+                            </div>
+                            <ArrowRight size={16} className="text-white/30 group-hover:text-[#C89B3C] rotate-180 transition" />
+                        </Link>
+                    ))}
+                </div>
+            )}
+          </div>
 
           <div className="mt-6 mb-20 relative z-20 flex flex-col md:flex-row gap-4 w-full max-w-3xl justify-center px-4">
             <button onClick={() => router.push("/map")} className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl backdrop-blur-md bg-white/5 border border-white/10 text-white font-bold shadow-lg transition-all hover:-translate-y-1 hover:bg-white/10 hover:border-[#C89B3C]/50 group">
@@ -344,7 +455,7 @@ export default function HomePage() {
                     </div>
                 </div>
 
-                {/* 2. قسم شركاء النجاح */}
+                {/* 2. قسم شركاء النجاح (ديناميكي) */}
                 {partners.length > 0 && (
                   <div className="mb-24 text-center animate-in fade-in slide-in-from-bottom-8 duration-700">
                      <div className="flex items-center justify-center gap-2 mb-2">
@@ -357,15 +468,33 @@ export default function HomePage() {
                        {platformInfo?.partners_subtitle || "نفخر بشراكتنا مع نخبة من الجهات والمؤسسات التي تساهم في إثراء تجربة السائح في عسير"}
                      </p>
                      
-                     <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-sm">
-                       <div className="flex flex-wrap justify-center gap-10 md:gap-16 items-center">
-                          {partners.map((p) => (
-                             <div key={p.id} className="group relative w-24 h-24 md:w-32 md:h-32 flex items-center justify-center hover:scale-110 transition-all duration-500 ease-in-out cursor-pointer" title={p.name}>
-                                <Image src={p.logo_url} alt={p.name} fill className="object-contain drop-shadow-md" />
-                             </div>
-                          ))}
-                       </div>
-                     </div>
+                     {partners.length <= 10 ? (
+                        /* عرض ثابت إذا كان العدد 10 أو أقل */
+                        <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-sm">
+                           <div className="flex flex-wrap justify-center gap-10 md:gap-16 items-center">
+                              {partners.map((p) => (
+                                 <div key={p.id} className="group relative w-24 h-24 md:w-32 md:h-32 flex items-center justify-center hover:scale-110 transition-all duration-500 ease-in-out cursor-pointer" title={p.name}>
+                                    <Image src={p.logo_url} alt={p.name} fill className="object-contain drop-shadow-md" />
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     ) : (
+                        /* عرض متحرك (Infinite Marquee) إذا زاد عن 10 */
+                        <div className="bg-white/5 border border-white/10 rounded-3xl py-12 backdrop-blur-sm overflow-hidden relative">
+                           <div className="flex w-max animate-marquee gap-16 md:gap-24 items-center" dir="ltr">
+                              {/* تكرار القائمة مرتين لضمان استمرارية الحركة بدون فراغات */}
+                              {[...partners, ...partners].map((p, index) => (
+                                 <div key={`${p.id}-${index}`} className="relative w-24 h-24 md:w-32 md:h-32 flex-shrink-0 flex items-center justify-center grayscale-0 hover:scale-110 transition-all duration-500" title={p.name}>
+                                    <Image src={p.logo_url} alt={p.name} fill className="object-contain drop-shadow-md" />
+                                 </div>
+                              ))}
+                           </div>
+                           {/* تدرج لوني على الجوانب للجمالية */}
+                           <div className="absolute top-0 left-0 bottom-0 w-20 bg-gradient-to-r from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
+                           <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-l from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
+                        </div>
+                     )}
                   </div>
                 )}
 
