@@ -61,42 +61,42 @@ export default function LandmarksPage() {
     <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
       
       {/* HEADER SECTION */}
-      <div className="relative h-[45vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
+      <div className="relative h-[40vh] md:h-[45vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
         <Image 
           src="/logo.png" 
           alt="Sayyir Logo" 
           fill 
-          className="object-contain p-24 opacity-30"
+          className="object-contain p-16 md:p-24 opacity-30"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/70 to-[#0a0a0a]" />
         
         <div className="relative z-10 text-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <h1 className="text-4xl md:text-6xl font-bold mb-4 drop-shadow-lg">كنوز عسير</h1>
-          <p className="text-xl text-white/90 max-w-2xl mx-auto font-medium">
+          <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-2 md:mb-4 drop-shadow-lg">كنوز عسير</h1>
+          <p className="text-base sm:text-lg md:text-xl text-white/90 max-w-2xl mx-auto font-medium">
             اكتشف سحر الطبيعة وعبق التاريخ في أهم الوجهات السياحية والتراثية.
           </p>
         </div>
         
-        <Link href="/" className="absolute top-8 right-8 z-20 p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition group">
-           <ArrowRight className="text-white group-hover:-translate-x-1 transition" />
+        <Link href="/" className="absolute top-6 right-6 md:top-8 md:right-8 z-20 p-2 md:p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition group">
+           <ArrowRight className="text-white group-hover:-translate-x-1 transition w-5 h-5 md:w-6 md:h-6" />
         </Link>
       </div>
 
       {/* ==================== قسم البحث ======================== */}
-      <div className="container mx-auto px-4 -mt-8 relative z-30 mb-6">
+      <div className="container mx-auto px-4 -mt-6 md:-mt-8 relative z-30 mb-6 md:mb-8">
         <div className="max-w-md mx-auto relative group">
-            <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-4 h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
-                <Search className="text-white/50 ml-3 shrink-0" size={20} />
+            <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-3 md:px-4 h-10 md:h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
+                <Search className="text-white/50 ml-2 md:ml-3 shrink-0 w-4 h-4 md:w-5 md:h-5" />
                 <input
                     type="text"
                     placeholder="ابحث عن اسم المعلم، المدينة..."
-                    className="bg-transparent border-none outline-none text-white w-full text-sm placeholder-white/40 h-full"
+                    className="bg-transparent border-none outline-none text-white w-full text-xs md:text-sm placeholder-white/40 h-full"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
                 {searchQuery && (
-                    <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition">
-                        <X size={16} /> {/* الآن ستعمل بدون مشاكل */}
+                    <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition p-1">
+                        <X className="w-3.5 h-3.5 md:w-4 md:h-4" /> {/* الآن ستعمل بدون مشاكل */}
                     </button>
                 )}
             </div>
@@ -104,33 +104,32 @@ export default function LandmarksPage() {
       </div>
 
       {/* FILTER TABS */}
-      <div className="container mx-auto px-4 relative z-20 mb-12">
-        <div className="flex justify-center gap-3 bg-white/5 backdrop-blur-xl p-2 rounded-full w-fit mx-auto border border-white/10 shadow-xl overflow-x-auto custom-scrollbar">
-          <button onClick={() => setFilter('all')} className={`px-6 py-2 rounded-full transition text-sm font-bold whitespace-nowrap ${filter === 'all' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}>الكل</button>
-          <button onClick={() => setFilter('tourist')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold whitespace-nowrap ${filter === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Mountain size={16} /> سياحي</button>
-          <button onClick={() => setFilter('natural')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold whitespace-nowrap ${filter === 'natural' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Trees size={16} /> طبيعي</button>
-          <button onClick={() => setFilter('heritage')} className={`px-6 py-2 rounded-full transition flex items-center gap-2 text-sm font-bold whitespace-nowrap ${filter === 'heritage' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Landmark size={16} /> تراث</button>
+      <div className="container mx-auto px-4 relative z-20 mb-8 md:mb-12">
+        <div className="flex justify-start md:justify-center gap-2 md:gap-3 bg-white/5 backdrop-blur-xl p-1.5 md:p-2 rounded-full w-full max-w-full md:w-fit mx-auto border border-white/10 shadow-xl overflow-x-auto custom-scrollbar snap-x">
+          <button onClick={() => setFilter('all')} className={`px-4 py-1.5 md:px-6 md:py-2 rounded-full transition text-xs md:text-sm font-bold whitespace-nowrap snap-center shrink-0 ${filter === 'all' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}>الكل</button>
+          <button onClick={() => setFilter('tourist')} className={`px-4 py-1.5 md:px-6 md:py-2 rounded-full transition flex items-center gap-1.5 md:gap-2 text-xs md:text-sm font-bold whitespace-nowrap snap-center shrink-0 ${filter === 'tourist' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Mountain className="w-3.5 h-3.5 md:w-4 md:h-4" /> سياحي</button>
+          <button onClick={() => setFilter('natural')} className={`px-4 py-1.5 md:px-6 md:py-2 rounded-full transition flex items-center gap-1.5 md:gap-2 text-xs md:text-sm font-bold whitespace-nowrap snap-center shrink-0 ${filter === 'natural' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Trees className="w-3.5 h-3.5 md:w-4 md:h-4" /> طبيعي</button>
+          <button onClick={() => setFilter('heritage')} className={`px-4 py-1.5 md:px-6 md:py-2 rounded-full transition flex items-center gap-1.5 md:gap-2 text-xs md:text-sm font-bold whitespace-nowrap snap-center shrink-0 ${filter === 'heritage' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}><Landmark className="w-3.5 h-3.5 md:w-4 md:h-4" /> تراث</button>
         </div>
       </div>
 
       {/* GRID */}
-      <div className="container mx-auto px-4 pb-20">
+      <div className="container mx-auto px-4 pb-16 md:pb-20">
         {loading ? (
-          <div className="flex justify-center h-40 items-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div>
+          <div className="flex justify-center h-32 md:h-40 items-center"><Loader2 className="animate-spin text-[#C89B3C] w-8 h-8 md:w-10 md:h-10" /></div>
         ) : filteredPlaces.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-4">
-              <Search size={48} className="text-white/20" />
-              <p className="text-white/40">لا توجد نتائج تطابق بحثك.</p>
+          <div className="text-center py-16 md:py-20 bg-white/5 rounded-2xl md:rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-3 md:gap-4 px-4">
+              <Search className="text-white/20 w-10 h-10 md:w-12 md:h-12" />
+              <p className="text-white/40 text-sm md:text-base">لا توجد نتائج تطابق بحثك.</p>
               {searchQuery && (
-                  <button onClick={() => setSearchQuery("")} className="text-[#C89B3C] text-sm hover:underline">
+                  <button onClick={() => setSearchQuery("")} className="text-[#C89B3C] text-xs md:text-sm hover:underline mt-2">
                       مسح البحث وعرض الكل
                   </button>
               )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
             {filteredPlaces.map((place) => (
-                // ✅ تم التعديل: التوجيه لصفحة التفاصيل بدلاً من فتح نافذة
                 <Link key={place.id} href={`/place/${place.id}`} className="block transition-transform hover:-translate-y-2">
                     <LandmarkCard data={place} isVideo={isVideo} />
                 </Link>
@@ -150,8 +149,8 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
   const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   
   return (
-    <div className="group h-full relative bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
-        <div className="relative h-72 w-full overflow-hidden bg-black">
+    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
+        <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black">
           {mainMedia ? (
               isMainMediaVideo ? (
                   <video 
@@ -170,23 +169,26 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
           )}
           
           {/* شارة التصنيف */}
-          <div className="absolute top-4 left-4 backdrop-blur-md bg-black/30 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5">
-            {isHeritage ? <Landmark size={14} className="text-amber-400"/> : 
-             isNatural ? <Trees size={14} className="text-teal-400"/> : 
-             <Mountain size={14} className="text-emerald-400"/>}
-            <span className="text-xs font-bold text-white">
+          <div className="absolute top-3 left-3 md:top-4 md:left-4 backdrop-blur-md bg-black/30 px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border border-white/10 flex items-center gap-1 md:gap-1.5">
+            {isHeritage ? <Landmark className="text-amber-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
+             isNatural ? <Trees className="text-teal-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
+             <Mountain className="text-emerald-400 w-3 h-3 md:w-3.5 md:h-3.5"/>}
+            <span className="text-[10px] md:text-xs font-bold text-white">
                 {isHeritage ? 'تراثي' : isNatural ? 'طبيعي' : 'سياحي'}
             </span>
           </div>
 
-          <div className={`absolute bottom-4 right-4 backdrop-blur text-white text-[10px] px-2 py-1 rounded-lg font-bold shadow-lg ${data.price > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
+          <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg ${data.price > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
               {data.price > 0 ? `${data.price} ريال` : 'دخول مجاني'}
           </div>
         </div>
-        <div className="p-6 relative -mt-10">
-          <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-4 rounded-2xl shadow-xl">
-              <h3 className="text-xl font-bold text-white mb-2 group-hover:text-[#C89B3C] transition">{data.name}</h3>
-              <div className="flex items-center gap-1 text-white/50 text-xs mb-3"><MapPin size={14} /><span>{data.city || "عسير، السعودية"}</span></div>
+        <div className="p-4 md:p-6 relative -mt-8 md:-mt-10">
+          <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl">
+              <h3 className="text-lg md:text-xl font-bold text-white mb-1.5 md:mb-2 group-hover:text-[#C89B3C] transition line-clamp-1">{data.name}</h3>
+              <div className="flex items-center gap-1 text-white/50 text-[10px] md:text-xs mb-1 md:mb-3">
+                <MapPin className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                <span className="line-clamp-1">{data.city || "عسير، السعودية"}</span>
+              </div>
           </div>
         </div>
     </div>
