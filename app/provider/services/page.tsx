@@ -9,7 +9,8 @@ import {
   Wifi, Car, Waves, Sparkles, Box, 
   Tv, Wind, ShieldCheck, Coffee, Flame, HeartPulse,
   Mountain, Footprints, Compass, Map as MapIcon, Calendar,
-  UploadCloud, Image as ImageIcon, FileText, CheckSquare, PauseCircle, AlertTriangle, Info, Video
+  UploadCloud, Image as ImageIcon, FileText, CheckSquare, PauseCircle, AlertTriangle, Info, Video,
+  Ticket
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -21,7 +22,8 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 interface Shift { from: string; to: string; }
 interface WorkDay { day: string; active: boolean; shifts: Shift[]; }
 interface Item { id: string; name: string; price: number; image: string | null; qty?: number; file?: File | null; type: 'image' | 'video' } 
-interface Session { date: string; time: string; }
+// ✅ تعديل الـ Session ليقبل التواريخ المفردة (للتجارب) أو الممتدة (للفعاليات)
+interface Session { type: 'single' | 'range', date?: string, time?: string, startDate?: string, endDate?: string, startTime?: string, endTime?: string }
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
@@ -40,6 +42,45 @@ const AMENITIES_OPTIONS = [
     { id: 'view', label: 'إطلالة مميزة', icon: Mountain },
 ];
 
+// ✅ دالة ضغط الصور (تصغير الحجم قبل الرفع)
+const compressImage = async (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new window.Image() as HTMLImageElement; // تصحيح الخطأ المحتمل في الـ TypeScript
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                // أقصى عرض للصورة 1200 بكسل
+                const MAX_WIDTH = 1200; 
+                let width = img.width;
+                let height = img.height;
+
+                if (width > MAX_WIDTH) {
+                    height = height * (MAX_WIDTH / width);
+                    width = MAX_WIDTH;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, width, height);
+                
+                // ضغط الصورة بجودة 70%
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        const compressedFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+                        resolve(compressedFile);
+                    } else {
+                        resolve(file); // في حال فشل الضغط، نرفع الصورة الأصلية
+                    }
+                }, 'image/jpeg', 0.7);
+            };
+        };
+    });
+};
+
 export default function ProviderServicesPage() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,12 +94,12 @@ export default function ProviderServicesPage() {
 
   const [step, setStep] = useState(1); 
   const [selectedCategory, setSelectedCategory] = useState<'facility' | 'experience' | null>(null);
-  const [selectedSubCategory, setSelectedSubCategory] = useState<'food' | 'craft' | 'lodging' | null>(null);
+  const [selectedSubCategory, setSelectedSubCategory] = useState<'food' | 'craft' | 'lodging' | 'event' | 'general_experience' | null>(null);
 
   const [formData, setFormData] = useState({
     title: "", description: "", price: "", commercial_license: null as File | null,
-    capacity_type: "unlimited", max_capacity: 0, // ✅ تأكدنا أن القيمة الافتراضية رقم
-    room_count: 1, amenities: [] as string[], 
+    capacity_type: "unlimited", max_capacity: 0, 
+    room_count: 1, amenities: [] as string[], custom_amenities: "", // ✅ حقل الخيارات الإضافية للنزل
     activity_type: "", difficulty_level: "easy", duration: "", meeting_point: "", included_items: "", requirements: "",
     lat: 18.2164, lng: 42.5053,
     place_images: [] as File[],
@@ -67,9 +108,13 @@ export default function ProviderServicesPage() {
 
   const [durationVal, setDurationVal] = useState("");
   const [durationUnit, setDurationUnit] = useState("ساعة");
+  
   const [experienceSessions, setExperienceSessions] = useState<Session[]>([]);
+  // حالة للتجارب العامة
   const [newSessionDate, setNewSessionDate] = useState("");
   const [newSessionTime, setNewSessionTime] = useState("");
+  // ✅ حالة لتواريخ وأوقات الفعاليات
+  const [eventDates, setEventDates] = useState({ startDate: "", endDate: "", startTime: "", endTime: "" });
 
   const [placeImagePreviews, setPlaceImagePreviews] = useState<{url: string, type: 'image' | 'video'}[]>([]);
 
@@ -176,11 +221,26 @@ export default function ProviderServicesPage() {
     setItemImageFile(null);
   };
 
+  // ✅ تعديل إضافة المواعيد لتدعم الفعاليات والتجارب
   const handleAddSession = () => {
-      if (!newSessionDate || !newSessionTime) return alert("الرجاء تحديد التاريخ والوقت");
-      setExperienceSessions([...experienceSessions, { date: newSessionDate, time: newSessionTime }]);
-      setNewSessionDate("");
-      setNewSessionTime("");
+      if (selectedSubCategory === 'event') {
+          if (!eventDates.startDate || !eventDates.endDate || !eventDates.startTime || !eventDates.endTime) {
+              return alert("الرجاء تحديد جميع تواريخ وأوقات الفعالية");
+          }
+          setExperienceSessions([...experienceSessions, { 
+              type: 'range', 
+              startDate: eventDates.startDate, 
+              endDate: eventDates.endDate, 
+              startTime: eventDates.startTime, 
+              endTime: eventDates.endTime 
+          }]);
+          setEventDates({ startDate: "", endDate: "", startTime: "", endTime: "" });
+      } else {
+          if (!newSessionDate || !newSessionTime) return alert("الرجاء تحديد التاريخ والوقت");
+          setExperienceSessions([...experienceSessions, { type: 'single', date: newSessionDate, time: newSessionTime }]);
+          setNewSessionDate("");
+          setNewSessionTime("");
+      }
   };
 
   const removeSession = (index: number) => {
@@ -204,14 +264,32 @@ export default function ProviderServicesPage() {
 
         const uploadedPlaceImages: string[] = [];
         for (const file of formData.place_images) {
-            const url = await uploadSingleFile(file, 'places');
+            let fileToUpload = file;
+            
+            // ✅ تطبيق ضغط الصور والحد الأقصى للفيديو
+            if (file.type.startsWith('image/')) {
+                fileToUpload = await compressImage(file);
+            } else if (file.type.startsWith('video/')) {
+                // حد أقصى 30 ميجابايت للفيديو
+                if (file.size > 30 * 1024 * 1024) {
+                    alert(`حجم الفيديو (${file.name}) كبير جداً. أقصى حجم مسموح هو 30 ميجابايت.`);
+                    setSubmitting(false);
+                    return;
+                }
+            }
+
+            const url = await uploadSingleFile(fileToUpload, 'places');
             uploadedPlaceImages.push(url);
         }
 
         const processedItems = await Promise.all(itemsList.map(async (item) => {
             let publicUrl = item.image;
             if (item.file) {
-                publicUrl = await uploadSingleFile(item.file, 'menu-items');
+                let itemFileToUpload = item.file;
+                if (item.file.type.startsWith('image/')) {
+                    itemFileToUpload = await compressImage(item.file);
+                }
+                publicUrl = await uploadSingleFile(itemFileToUpload, 'menu-items');
             }
             return { 
                 id: item.id, name: item.name, price: item.price, qty: item.qty, image: publicUrl, type: item.type 
@@ -219,8 +297,6 @@ export default function ProviderServicesPage() {
         }));
 
         const finalDuration = selectedCategory === 'experience' ? `${durationVal} ${durationUnit}` : formData.duration;
-
-        // ✅ إصلاح مشكلة السعة: التأكد من إرسال قيمة رقمية صحيحة
         const finalCapacity = Number(formData.max_capacity) || 0;
 
         const { error } = await supabase.from('services').insert([{
@@ -228,16 +304,16 @@ export default function ProviderServicesPage() {
             service_category: selectedCategory, sub_category: selectedSubCategory,
             title: formData.title, description: formData.description, price: Number(formData.price),
             commercial_license: licenseUrl, work_schedule: schedule, blocked_dates: blockedDates,
-            capacity_type: finalCapacity > 0 ? 'limited' : 'unlimited', // تحديد النوع تلقائياً
-            max_capacity: finalCapacity, // ✅ إرسال السعة الصحيحة
+            capacity_type: finalCapacity > 0 ? 'limited' : 'unlimited', 
+            max_capacity: finalCapacity, 
             room_count: selectedSubCategory === 'lodging' ? Number(formData.room_count) : null,
             amenities: selectedSubCategory === 'lodging' ? formData.amenities : null,
-            activity_type: selectedCategory === 'experience' ? formData.activity_type : null,
-            difficulty_level: selectedCategory === 'experience' ? formData.difficulty_level : null,
+            activity_type: selectedSubCategory === 'general_experience' ? formData.activity_type : null,
+            difficulty_level: selectedSubCategory === 'general_experience' ? formData.difficulty_level : null,
             duration: finalDuration, 
-            meeting_point: selectedCategory === 'experience' ? formData.meeting_point : null,
-            included_items: selectedCategory === 'experience' ? formData.included_items : null,
-            requirements: selectedCategory === 'experience' ? formData.requirements : null,
+            meeting_point: selectedSubCategory === 'general_experience' ? formData.meeting_point : null,
+            included_items: selectedSubCategory === 'general_experience' ? formData.included_items : null,
+            requirements: selectedSubCategory === 'general_experience' ? formData.requirements : null,
             menu_items: processedItems, 
             location_lat: formData.lat, location_lng: formData.lng,
             status: 'pending', service_type: selectedCategory === 'experience' ? 'experience' : 'general',
@@ -246,8 +322,9 @@ export default function ProviderServicesPage() {
             details: {
                 images: uploadedPlaceImages, 
                 features: formData.amenities,
+                custom_amenities: formData.custom_amenities, // ✅ إرسال الخيارات الإضافية لقاعدة البيانات
                 policies: formData.policies,
-                sessions: experienceSessions 
+                sessions: experienceSessions // ✅ إرسال تواريخ الفعاليات أو التجارب
             }
         }]);
 
@@ -260,26 +337,106 @@ export default function ProviderServicesPage() {
 
   const resetForm = () => {
       setStep(1); setSelectedCategory(null); setSelectedSubCategory(null);
-      setFormData({ title: "", description: "", price: "", commercial_license: null, capacity_type: "unlimited", max_capacity: 0, room_count: 1, amenities: [], activity_type: "", difficulty_level: "easy", duration: "", meeting_point: "", included_items: "", requirements: "", lat: 18.2164, lng: 42.5053, place_images: [], policies: "" });
+      setFormData({ title: "", description: "", price: "", commercial_license: null, capacity_type: "unlimited", max_capacity: 0, room_count: 1, amenities: [], custom_amenities: "", activity_type: "", difficulty_level: "easy", duration: "", meeting_point: "", included_items: "", requirements: "", lat: 18.2164, lng: 42.5053, place_images: [], policies: "" });
       setItemsList([]);
       setPlaceImagePreviews([]);
       setExperienceSessions([]);
       setDurationVal("");
+      setEventDates({ startDate: "", endDate: "", startTime: "", endTime: "" });
   };
 
   const renderStepContent = () => {
-      if (step === 1) { return ( <div className="space-y-6 text-center py-10"> <h3 className="text-xl font-bold text-white mb-8">ما نوع الخدمة التي تود إضافتها؟</h3> <div className="grid grid-cols-2 gap-6 max-w-lg mx-auto"> <button type="button" onClick={() => { setSelectedCategory('facility'); setStep(2); }} className="flex flex-col items-center gap-4 p-8 bg-black/30 border border-white/10 rounded-2xl hover:bg-[#C89B3C] hover:text-black transition group"> <Home size={40} className="text-[#C89B3C] group-hover:text-black"/> <span className="text-lg font-bold">مرفق / مكان</span> </button> <button type="button" onClick={() => { setSelectedCategory('experience'); setStep(3); }} className="flex flex-col items-center gap-4 p-8 bg-black/30 border border-white/10 rounded-2xl hover:bg-[#C89B3C] hover:text-black transition group"> <Compass size={40} className="text-[#C89B3C] group-hover:text-black"/> <span className="text-lg font-bold">تجربة سياحية</span> </button> </div> </div> ); }
-      if (step === 2 && selectedCategory === 'facility') { return ( <div className="space-y-6 text-center py-10"> <h3 className="text-xl font-bold text-white mb-8">حدد نوع المرفق</h3> <div className="grid grid-cols-1 md:grid-cols-3 gap-4"> <button type="button" onClick={() => { setSelectedSubCategory('food'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> <Utensils size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">أكل ومشروبات</span> </button> <button type="button" onClick={() => { setSelectedSubCategory('craft'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> <Box size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">حرف ومنتجات</span> </button> <button type="button" onClick={() => { setSelectedSubCategory('lodging'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> <Home size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">نزل وتأجير</span> </button> </div> <button type="button" onClick={() => setStep(1)} className="text-sm text-white/50 underline">رجوع</button> </div> ); }
-      return ( <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in"> 
-        <div className="flex items-center gap-2 text-sm text-[#C89B3C] bg-[#C89B3C]/10 p-3 rounded-xl w-fit"> <span className="font-bold">{selectedCategory === 'experience' ? 'تجربة سياحية' : selectedSubCategory === 'food' ? 'مرفق: أكل ومشروبات' : selectedSubCategory === 'craft' ? 'مرفق: حرف ومنتجات' : 'مرفق: نزل وتأجير'}</span> <button type="button" onClick={resetForm} className="text-white hover:underline text-xs ml-2">(تغيير)</button> </div> 
+      if (step === 1) { 
+        return ( 
+            <div className="space-y-6 text-center py-10"> 
+                <h3 className="text-xl font-bold text-white mb-8">ما نوع الخدمة التي تود إضافتها؟</h3> 
+                <div className="grid grid-cols-2 gap-6 max-w-lg mx-auto"> 
+                    <button type="button" onClick={() => { setSelectedCategory('facility'); setStep(2); }} className="flex flex-col items-center gap-4 p-8 bg-black/30 border border-white/10 rounded-2xl hover:bg-[#C89B3C] hover:text-black transition group"> 
+                        <Home size={40} className="text-[#C89B3C] group-hover:text-black"/> 
+                        <span className="text-lg font-bold">مرفق أو فعالية</span> 
+                    </button> 
+                    <button type="button" onClick={() => { setSelectedCategory('experience'); setStep(2); }} className="flex flex-col items-center gap-4 p-8 bg-black/30 border border-white/10 rounded-2xl hover:bg-[#C89B3C] hover:text-black transition group"> 
+                        <Compass size={40} className="text-[#C89B3C] group-hover:text-black"/> 
+                        <span className="text-lg font-bold">تجربة سياحية</span> 
+                    </button> 
+                </div> 
+            </div> 
+        ); 
+      }
+      
+      if (step === 2 && selectedCategory === 'facility') { 
+        return ( 
+            <div className="space-y-6 text-center py-10 animate-in fade-in slide-in-from-right-4"> 
+                <h3 className="text-xl font-bold text-white mb-8">حدد نوع المرفق أو الفعالية</h3> 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg mx-auto"> 
+                    <button type="button" onClick={() => { setSelectedSubCategory('lodging'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> 
+                        <Home size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">نزل وتأجير</span> 
+                    </button> 
+                    <button type="button" onClick={() => { setSelectedSubCategory('event'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> 
+                        <Ticket size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">فعاليات</span> 
+                    </button> 
+                </div> 
+                <button type="button" onClick={() => setStep(1)} className="text-sm text-white/50 underline mt-4">رجوع</button> 
+            </div> 
+        ); 
+      }
+
+      if (step === 2 && selectedCategory === 'experience') { 
+        return ( 
+            <div className="space-y-6 text-center py-10 animate-in fade-in slide-in-from-left-4"> 
+                <h3 className="text-xl font-bold text-white mb-8">حدد نوع التجربة السياحية</h3> 
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4"> 
+                    <button type="button" onClick={() => { setSelectedSubCategory('general_experience'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> 
+                        <Compass size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">تجربة عامة</span> 
+                    </button> 
+                    <button type="button" onClick={() => { setSelectedSubCategory('food'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> 
+                        <Utensils size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">أكل ومشروبات</span> 
+                    </button> 
+                    <button type="button" onClick={() => { setSelectedSubCategory('craft'); setStep(3); }} className="p-6 bg-black/30 border border-white/10 rounded-2xl hover:border-[#C89B3C] transition"> 
+                        <Box size={32} className="mx-auto mb-3 text-[#C89B3C]"/> <span className="font-bold">حرف ومنتجات</span> 
+                    </button> 
+                </div> 
+                <button type="button" onClick={() => setStep(1)} className="text-sm text-white/50 underline mt-4">رجوع</button> 
+            </div> 
+        ); 
+      }
+
+      return ( 
+        <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in"> 
+        <div className="flex items-center gap-2 text-sm text-[#C89B3C] bg-[#C89B3C]/10 p-3 rounded-xl w-fit"> 
+            <span className="font-bold">
+                {selectedSubCategory === 'general_experience' ? 'تجربة سياحية' : 
+                 selectedSubCategory === 'food' ? 'تجربة: أكل ومشروبات' : 
+                 selectedSubCategory === 'craft' ? 'تجربة: حرف ومنتجات' : 
+                 selectedSubCategory === 'event' ? 'مرفق: فعالية' : 
+                 'مرفق: نزل وتأجير'}
+            </span> 
+            <button type="button" onClick={resetForm} className="text-white hover:underline text-xs ml-2">(تغيير)</button> 
+        </div> 
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> 
             <div className="space-y-4"> 
-                <div> <label className="block text-sm text-white/70 mb-1"> {selectedCategory === 'experience' ? 'عنوان التجربة' : 'اسم المكان/المتجر'} <span className="text-red-500">*</span> </label> <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> 
-                <div> <label className="block text-sm text-white/70 mb-1"> {selectedSubCategory === 'lodging' ? 'سعر الليلة (يبدأ من)' : selectedCategory === 'experience' ? 'سعر الشخص الواحد' : 'رسوم الدخول / الحد الأدنى'} <span className="text-red-500">*</span> </label> <input required type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]" placeholder="0 = دخول مجاني"/> </div> 
+                <div> 
+                    <label className="block text-sm text-white/70 mb-1"> 
+                        {selectedSubCategory === 'general_experience' ? 'عنوان التجربة' : 
+                         selectedSubCategory === 'event' ? 'اسم الفعالية' : 
+                         'اسم المكان/المنتج'} <span className="text-red-500">*</span> 
+                    </label> 
+                    <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> 
+                </div> 
+                <div> 
+                    <label className="block text-sm text-white/70 mb-1"> 
+                        {selectedSubCategory === 'lodging' ? 'سعر الليلة (يبدأ من)' : 
+                         selectedSubCategory === 'general_experience' ? 'سعر الشخص الواحد' : 
+                         selectedSubCategory === 'event' ? 'سعر التذكرة للفرد' : 
+                         'رسوم الدخول / الحد الأدنى'} <span className="text-red-500">*</span> 
+                    </label> 
+                    <input required type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]" placeholder="0 = مجاني"/> 
+                </div> 
                 
                 {selectedSubCategory === 'lodging' && ( <> <div> <label className="block text-sm text-white/70 mb-1">عدد الوحدات/الغرف المتاحة</label> <input type="number" min="1" value={formData.room_count} onChange={e => setFormData({...formData, room_count: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> <div> <label className="block text-sm text-white/70 mb-1">الطاقة الاستيعابية (أشخاص)</label> <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> </> )} 
-                {selectedCategory === 'experience' && ( 
+                
+                {selectedSubCategory === 'general_experience' && ( 
                     <> 
                         <div> <label className="block text-sm text-white/70 mb-1">نوع النشاط</label> <input placeholder="مثال: هايكنج، ركوب خيل، جولة..." value={formData.activity_type} onChange={e => setFormData({...formData, activity_type: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> 
                         
@@ -312,13 +469,13 @@ export default function ProviderServicesPage() {
                     <textarea rows={4} placeholder="اكتب هنا الشروط الخاصة بك (مثال: ممنوع التدخين، الحضور قبل الموعد بـ 15 دقيقة، سياسة الإلغاء...)" value={formData.policies} onChange={e => setFormData({...formData, policies: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> 
                 </div>
 
-                {selectedCategory === 'experience' && ( <> <div> <label className="block text-sm text-white/70 mb-1">ماذا تشمل التجربة؟ (العدة، الوجبات)</label> <textarea rows={2} placeholder="مثال: خوذة، ماء، وجبة غداء..." value={formData.included_items} onChange={e => setFormData({...formData, included_items: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> </div> <div> <label className="block text-sm text-white/70 mb-1">المتطلبات من العميل</label> <textarea rows={2} placeholder="مثال: لبس رياضي، لياقة متوسطة..." value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> </div> <div> <label className="block text-sm text-white/70 mb-1">نقطة التجمع</label> <input placeholder="وصف مكان اللقاء..." value={formData.meeting_point} onChange={e => setFormData({...formData, meeting_point: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> </> )} 
+                {selectedSubCategory === 'general_experience' && ( <> <div> <label className="block text-sm text-white/70 mb-1">ماذا تشمل التجربة؟ (العدة، الوجبات)</label> <textarea rows={2} placeholder="مثال: خوذة، ماء، وجبة غداء..." value={formData.included_items} onChange={e => setFormData({...formData, included_items: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> </div> <div> <label className="block text-sm text-white/70 mb-1">المتطلبات من العميل</label> <textarea rows={2} placeholder="مثال: لبس رياضي، لياقة متوسطة..." value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/> </div> <div> <label className="block text-sm text-white/70 mb-1">نقطة التجمع</label> <input placeholder="وصف مكان اللقاء..." value={formData.meeting_point} onChange={e => setFormData({...formData, meeting_point: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/> </div> </> )} 
             </div> 
         </div> 
 
         <div className="bg-[#1a1a1a] p-5 rounded-2xl border border-white/5">
             <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2">
-                <ImageIcon size={18}/> صور / فيديو المكان
+                <ImageIcon size={18}/> صور / فيديو {selectedSubCategory === 'event' ? 'الفعالية' : 'المكان'}
             </h4>
             <div className="border-2 border-dashed border-white/10 rounded-xl p-6 text-center hover:border-[#C89B3C]/50 transition bg-black/20 relative group">
                 <input 
@@ -349,36 +506,95 @@ export default function ProviderServicesPage() {
             )}
         </div>
 
-        {selectedSubCategory === 'lodging' && ( <div className="bg-black/20 p-5 rounded-2xl border border-white/5"> <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2"><Sparkles size={18}/> الخدمات والمميزات المتوفرة</h4> <div className="grid grid-cols-2 md:grid-cols-4 gap-3"> {AMENITIES_OPTIONS.map((am) => ( <label key={am.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${formData.amenities.includes(am.id) ? 'bg-[#C89B3C]/10 border-[#C89B3C] text-white' : 'bg-black/20 border-white/5 text-white/50'}`}> <input type="checkbox" checked={formData.amenities.includes(am.id)} onChange={() => toggleAmenity(am.id)} className="hidden"/> <am.icon size={18} className={formData.amenities.includes(am.id) ? "text-[#C89B3C]" : ""}/> <span className="text-sm font-bold">{am.label}</span> </label> ))} </div> </div> )} 
+        {selectedSubCategory === 'lodging' && ( 
+            <div className="bg-black/20 p-5 rounded-2xl border border-white/5 space-y-4"> 
+                <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><Sparkles size={18}/> الخدمات والمميزات المتوفرة</h4> 
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3"> 
+                    {AMENITIES_OPTIONS.map((am) => ( 
+                        <label key={am.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${formData.amenities.includes(am.id) ? 'bg-[#C89B3C]/10 border-[#C89B3C] text-white' : 'bg-black/20 border-white/5 text-white/50'}`}> 
+                            <input type="checkbox" checked={formData.amenities.includes(am.id)} onChange={() => toggleAmenity(am.id)} className="hidden"/> 
+                            <am.icon size={18} className={formData.amenities.includes(am.id) ? "text-[#C89B3C]" : ""}/> 
+                            <span className="text-sm font-bold">{am.label}</span> 
+                        </label> 
+                    ))} 
+                </div>
+                {/* ✅ حقل الخيارات الإضافية للمزود */}
+                <div className="pt-3 border-t border-white/10 mt-4">
+                    <label className="block text-sm text-white/70 mb-2">مميزات أخرى (غير موجودة في القائمة أعلاه)</label>
+                    <textarea 
+                        rows={2} 
+                        placeholder="مثال: قريب من المطار، ديكور تراثي، ألعاب أطفال..." 
+                        value={formData.custom_amenities} 
+                        onChange={e => setFormData({...formData, custom_amenities: e.target.value})} 
+                        className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] resize-none"
+                    />
+                </div>
+            </div> 
+        )} 
         
         {(selectedSubCategory === 'food' || selectedSubCategory === 'craft') && ( <div className="bg-black/20 p-5 rounded-2xl border border-white/5"> <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2"> {selectedSubCategory === 'food' ? <Utensils size={18}/> : <Box size={18}/>} {selectedSubCategory === 'food' ? 'قائمة الطعام (المنيو)' : 'المنتجات المعروضة (الحرف)'} </h4> <div className="flex flex-wrap gap-2 mb-4 items-end bg-white/5 p-3 rounded-xl"> <div className="flex-1 min-w-[150px]"> <label className="text-xs text-white/50 block mb-1">اسم المنتج</label> <input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> <div className="w-24"> <label className="text-xs text-white/50 block mb-1">السعر</label> <input type="number" value={newItem.price || ''} onChange={e => setNewItem({...newItem, price: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> {selectedSubCategory === 'craft' && ( <div className="w-24"> <label className="text-xs text-white/50 block mb-1">المخزون</label> <input type="number" value={newItem.qty || 1} onChange={e => setNewItem({...newItem, qty: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> )} <div className="w-10"> <label className="block w-full h-[38px] bg-white/5 border border-white/10 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/10"> <Camera size={16} className="text-white/50"/> <input type="file" accept="image/*,video/*" className="hidden" onChange={e => setItemImageFile(e.target.files?.[0] || null)}/> </label> </div> <button type="button" onClick={handleAddItem} className="bg-[#C89B3C] text-black px-4 h-[38px] rounded-lg text-sm font-bold">إضافة</button> </div> <div className="space-y-2"> {itemsList.map((item, i) => ( <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5"> <div className="flex items-center gap-3"> {item.image ? (item.type === 'video' ? <video src={item.image} className="w-10 h-10 rounded-lg object-cover" muted /> : <img src={item.image} className="w-10 h-10 rounded-lg object-cover"/>) : <div className="w-10 h-10 bg-white/10 rounded-lg"/>} <div> <p className="font-bold text-sm">{item.name}</p> {selectedSubCategory === 'craft' && <p className="text-xs text-white/40">متبقي: {item.qty} قطعة</p>} </div> </div> <div className="flex items-center gap-3"> <span className="text-[#C89B3C] font-mono">{item.price} ﷼</span> <button type="button" onClick={() => setItemsList(itemsList.filter(m => m.id !== item.id))} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button> </div> </div> ))} </div> </div> )} 
         
-        {selectedCategory === 'experience' ? (
+        {/* ✅ الجلسات/المواعيد (للتجربة العامة وللفعاليات - معدلة لتناسب الفعاليات) */}
+        {(selectedSubCategory === 'general_experience' || selectedSubCategory === 'event') ? (
             <div className="space-y-4">
-                <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><Calendar size={18}/> مواعيد التجربة المتاحة</h4>
+                <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><Calendar size={18}/> {selectedSubCategory === 'event' ? 'مواعيد الفعالية المتاحة' : 'مواعيد التجربة المتاحة'}</h4>
                 <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                    <p className="text-xs text-white/60 mb-4">أضف التواريخ والأوقات التي ستقام فيها التجربة بالتحديد.</p>
-                    <div className="flex flex-wrap gap-2 items-end mb-4">
-                        <div className="flex-1">
-                            <label className="text-xs text-white/50 block mb-1">التاريخ</label>
-                            <input type="date" value={newSessionDate} onChange={e => setNewSessionDate(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
-                        </div>
-                        <div className="w-32">
-                            <label className="text-xs text-white/50 block mb-1">وقت البدء</label>
-                            <input type="time" value={newSessionTime} onChange={e => setNewSessionTime(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
-                        </div>
-                        <button type="button" onClick={handleAddSession} className="bg-[#C89B3C] text-black px-4 h-[42px] rounded-lg text-sm font-bold hover:bg-[#b38a35]">إضافة موعد</button>
-                    </div>
+                    <p className="text-xs text-white/60 mb-4">أضف التواريخ والأوقات التي ستقام فيها {selectedSubCategory === 'event' ? 'الفعالية' : 'التجربة'} بالتحديد.</p>
                     
+                    {/* فورم الإضافة يختلف حسب النوع */}
+                    {selectedSubCategory === 'event' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-white/5 p-3 rounded-xl border border-white/10">
+                            <div>
+                                <label className="text-xs text-white/50 block mb-1">تاريخ البداية</label>
+                                <input type="date" value={eventDates.startDate} onChange={e => setEventDates({...eventDates, startDate: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                            </div>
+                            <div>
+                                <label className="text-xs text-white/50 block mb-1">تاريخ النهاية</label>
+                                <input type="date" value={eventDates.endDate} onChange={e => setEventDates({...eventDates, endDate: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                            </div>
+                            <div>
+                                <label className="text-xs text-white/50 block mb-1">من الساعة</label>
+                                <input type="time" value={eventDates.startTime} onChange={e => setEventDates({...eventDates, startTime: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                            </div>
+                            <div>
+                                <label className="text-xs text-white/50 block mb-1">إلى الساعة</label>
+                                <input type="time" value={eventDates.endTime} onChange={e => setEventDates({...eventDates, endTime: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                            </div>
+                            <div className="md:col-span-2">
+                                <button type="button" onClick={handleAddSession} className="w-full bg-[#C89B3C] text-black h-[42px] rounded-lg text-sm font-bold hover:bg-[#b38a35] transition">إضافة الموعد للفعالية</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-wrap gap-2 items-end mb-4">
+                            <div className="flex-1">
+                                <label className="text-xs text-white/50 block mb-1">التاريخ</label>
+                                <input type="date" value={newSessionDate} onChange={e => setNewSessionDate(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                            </div>
+                            <div className="w-32">
+                                <label className="text-xs text-white/50 block mb-1">وقت البدء</label>
+                                <input type="time" value={newSessionTime} onChange={e => setNewSessionTime(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                            </div>
+                            <button type="button" onClick={handleAddSession} className="bg-[#C89B3C] text-black px-4 h-[42px] rounded-lg text-sm font-bold hover:bg-[#b38a35]">إضافة موعد</button>
+                        </div>
+                    )}
+                    
+                    {/* عرض المواعيد المضافة */}
                     {experienceSessions.length > 0 ? (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {experienceSessions.map((session, i) => (
-                                <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5">
+                                <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
                                     <div className="flex items-center gap-2">
-                                        <Clock size={14} className="text-[#C89B3C]"/>
-                                        <span className="text-sm dir-ltr">{session.date} | {session.time}</span>
+                                        <Clock size={16} className="text-[#C89B3C] shrink-0"/>
+                                        {session.type === 'range' ? (
+                                            <div className="text-xs space-y-1">
+                                                <p><span className="text-white/50">من:</span> <span className="dir-ltr">{session.startDate} | {session.startTime}</span></p>
+                                                <p><span className="text-white/50">إلى:</span> <span className="dir-ltr">{session.endDate} | {session.endTime}</span></p>
+                                            </div>
+                                        ) : (
+                                            <span className="text-sm dir-ltr">{session.date} | {session.time}</span>
+                                        )}
                                     </div>
-                                    <button type="button" onClick={() => removeSession(i)} className="text-red-400 hover:text-white"><X size={14}/></button>
+                                    <button type="button" onClick={() => removeSession(i)} className="text-red-400 hover:text-white bg-red-500/10 p-2 rounded-lg transition"><X size={14}/></button>
                                 </div>
                             ))}
                         </div>
@@ -387,9 +603,8 @@ export default function ProviderServicesPage() {
                     )}
                 </div>
                 
-                {/* ✅ حقل العدد الأقصى للتجربة (مرتبط بنفس المتغير) */}
                 <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                    <label className="block text-sm text-white/70 mb-2">العدد الأقصى للمشتركين (لكل جلسة)</label>
+                    <label className="block text-sm text-white/70 mb-2">العدد الأقصى {selectedSubCategory === 'event' ? 'للتذاكر المتاحة' : 'للمشتركين'} (لكل جلسة/موعد)</label>
                     <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C]"/>
                 </div>
             </div>
@@ -409,12 +624,12 @@ export default function ProviderServicesPage() {
        <div className="flex justify-between items-center mb-8">
           <div>
              <h1 className="text-2xl font-bold text-white">إدارة خدماتي</h1>
-             <p className="text-white/50 text-sm">أضف خدماتك (أكل، حرف، نزل) أو تجاربك السياحية.</p>
+             <p className="text-white/50 text-sm">أضف خدماتك (أكل، حرف، نزل، فعاليات) أو تجاربك السياحية.</p>
           </div>
           <button onClick={() => { setIsModalOpen(true); setStep(1); }} className="bg-[#C89B3C] text-black px-4 py-2 rounded-xl font-bold hover:bg-[#b38a35] flex items-center gap-2"><Plus size={18}/> خدمة جديدة</button>
        </div>
 
-       {/* قائمة الخدمات - لم يتم لمسها */}
+       {/* قائمة الخدمات */}
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
            {services.length === 0 && !loading && (
                <div className="col-span-full text-center py-20 bg-white/5 rounded-3xl border border-white/5 text-white/30">
@@ -442,13 +657,17 @@ export default function ProviderServicesPage() {
 
                    <h3 className="font-bold mb-1 text-lg group-hover:text-[#C89B3C] transition">{s.title}</h3>
                    <span className="text-xs text-white/50 bg-white/5 px-2 py-1 rounded mb-3 inline-block">
-                       {s.service_category === 'experience' ? 'تجربة' : `مرفق: ${s.sub_category}`}
+                       {s.service_category === 'experience' ? 'تجربة' : `مرفق/فعالية: ${
+                         s.sub_category === 'event' ? 'فعالية' : 
+                         s.sub_category === 'lodging' ? 'نزل وتأجير' : 
+                         s.sub_category === 'food' ? 'أكل ومشروبات' : 'حرف ومنتجات'
+                       }`}
                    </span>
                    <p className="text-sm text-white/70 line-clamp-2 mb-4">{s.description}</p>
 
                    <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
                         <span className="font-bold text-[#C89B3C]">
-                            {s.price === 0 ? "دخول مجاني" : `${s.price} ﷼`}
+                            {s.price === 0 ? "مجاني" : `${s.price} ﷼`}
                         </span>
                         <span className="text-xs text-white/40 flex items-center gap-1 group-hover:text-white transition">عرض التفاصيل <Eye size={12}/></span>
                    </div>
@@ -456,7 +675,7 @@ export default function ProviderServicesPage() {
            ))}
        </div>
 
-       {/* ✅✅ نافذة عرض التفاصيل الكاملة للمزود */}
+       {/* نافذة عرض التفاصيل الكاملة للمزود */}
        {viewService && (
          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
@@ -468,20 +687,17 @@ export default function ProviderServicesPage() {
                </div>
                <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
                   
-                  {/* صور المكان */}
                   {viewService.details?.images && viewService.details.images.length > 0 && (
                       <div className="mb-8">
                           <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو المكان</h3>
                           <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
                               {viewService.details.images.map((url: string, i: number) => (
                                   <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition">
-                                      {/* ✅ دعم عرض الفيديو في المعرض */}
                                       {url.match(/mp4|webm|ogg/) ? (
                                           <video src={url} className="w-full h-full object-cover" muted />
                                       ) : (
                                           <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Place Image ${i}`}/>
                                       )}
-                                      {/* أيقونة تشغيل للفيديو */}
                                       {url.match(/mp4|webm|ogg/) && <div className="absolute inset-0 flex items-center justify-center bg-black/30"><div className="w-8 h-8 bg-white/80 rounded-full flex items-center justify-center pl-1"><div className="w-0 h-0 border-t-[6px] border-t-transparent border-l-[10px] border-l-black border-b-[6px] border-b-transparent"></div></div></div>}
                                   </div>
                               ))}
@@ -497,13 +713,12 @@ export default function ProviderServicesPage() {
                               <div>
                                   <p className="text-xs text-white/50">السعر</p>
                                   <p className="font-bold text-[#C89B3C] text-xl font-mono">
-                                      {viewService.price === 0 ? "دخول مجاني" : `${viewService.price} ﷼`}
+                                      {viewService.price === 0 ? "مجاني" : `${viewService.price} ﷼`}
                                   </p>
                               </div>
                               <div><p className="text-xs text-white/50">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{viewService.description}</p></div>
                               
-                              {/* عرض المدة للتجارب */}
-                              {viewService.service_category === 'experience' && (
+                              {viewService.service_category === 'experience' && viewService.sub_category === 'general_experience' && (
                                   <div>
                                       <p className="text-xs text-white/50">المدة</p>
                                       <p className="font-bold text-white">{viewService.duration}</p>
@@ -511,10 +726,9 @@ export default function ProviderServicesPage() {
                               )}
                           </div>
 
-                          {/* السياسات */}
                           {viewService.details?.policies && (
                               <div className="bg-red-500/5 p-4 rounded-xl border border-red-500/10 space-y-3">
-                                  <h3 className="text-red-400 font-bold text-sm flex items-center gap-2"><FileText size={16}/> سياسات المكان</h3>
+                                  <h3 className="text-red-400 font-bold text-sm flex items-center gap-2"><FileText size={16}/> سياسات المكان / الفعالية</h3>
                                   <div className="text-white/80 text-xs leading-relaxed whitespace-pre-line pl-2 border-r-2 border-red-500/20 pr-3">
                                       {viewService.details.policies}
                                   </div>
@@ -532,34 +746,47 @@ export default function ProviderServicesPage() {
                       </div>
                       
                       <div className="space-y-6">
-                          {/* المميزات (للسكن) */}
-                          {viewService.amenities && viewService.amenities.length > 0 && (
+                          {/* المميزات والخيارات الإضافية (للنزل) */}
+                          {(viewService.amenities?.length > 0 || viewService.details?.custom_amenities) && (
                               <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                   <h3 className="text-[#C89B3C] font-bold text-sm mb-3">المميزات</h3>
-                                  <div className="flex flex-wrap gap-2">
-                                      {viewService.amenities.map((am: any, i: number) => (
+                                  <div className="flex flex-wrap gap-2 mb-3">
+                                      {viewService.amenities?.map((am: any, i: number) => (
                                           <span key={i} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded border border-[#C89B3C]/20">{am}</span>
                                       ))}
                                   </div>
+                                  {/* ✅ عرض الخيارات الإضافية إذا كانت موجودة */}
+                                  {viewService.details?.custom_amenities && (
+                                      <div className="mt-3 pt-3 border-t border-white/10">
+                                          <p className="text-xs text-white/50 mb-1">مميزات إضافية:</p>
+                                          <p className="text-sm text-white/90 whitespace-pre-line">{viewService.details.custom_amenities}</p>
+                                      </div>
+                                  )}
                               </div>
                           )}
 
-                          {/* جلسات التجربة (للتجارب) */}
+                          {/* عرض مواعيد الفعاليات أو التجارب العامة */}
                           {viewService.details?.sessions && viewService.details.sessions.length > 0 && (
                               <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                   <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Calendar size={16}/> المواعيد المتاحة</h3>
-                                  <div className="grid grid-cols-2 gap-2">
+                                  <div className="grid grid-cols-1 gap-2">
                                       {viewService.details.sessions.map((session: any, i: number) => (
-                                          <div key={i} className="bg-white/5 p-2 rounded-lg text-xs flex items-center gap-2">
-                                              <Clock size={12} className="text-[#C89B3C]"/>
-                                              <span className="dir-ltr">{session.date} | {session.time}</span>
+                                          <div key={i} className="bg-white/5 p-3 rounded-lg text-xs flex items-center gap-3">
+                                              <Clock size={16} className="text-[#C89B3C] shrink-0"/>
+                                              {session.type === 'range' ? (
+                                                  <div className="space-y-1">
+                                                      <p><span className="text-white/50">بداية:</span> <span className="dir-ltr font-bold">{session.startDate} | {session.startTime}</span></p>
+                                                      <p><span className="text-white/50">نهاية:</span> <span className="dir-ltr font-bold">{session.endDate} | {session.endTime}</span></p>
+                                                  </div>
+                                              ) : (
+                                                  <span className="dir-ltr font-bold text-sm">{session.date} | {session.time}</span>
+                                              )}
                                           </div>
                                       ))}
                                   </div>
                               </div>
                           )}
 
-                          {/* ✅ المنيو / المنتجات (فقط للمرافق) */}
                           {viewService.service_category === 'facility' && viewService.menu_items && viewService.menu_items.length > 0 && (
                               <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                   <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2">المنتجات / المنيو</h3>
@@ -582,7 +809,6 @@ export default function ProviderServicesPage() {
                               </div>
                           )}
 
-                          {/* زر طلب الإيقاف */}
                           {viewService.status === 'approved' && (
                               <div className="bg-red-500/10 p-4 rounded-xl border border-red-500/20">
                                   <h3 className="text-red-400 font-bold mb-2 flex items-center gap-2"><PauseCircle size={20}/> إيقاف الخدمة</h3>
@@ -608,7 +834,6 @@ export default function ProviderServicesPage() {
          </div>
        )}
 
-       {/* Lightbox مع دعم الفيديو */}
        {zoomedImage && (
         <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition"><X size={32} /></button>
@@ -622,7 +847,6 @@ export default function ProviderServicesPage() {
         </div>
        )}
 
-       {/* MODAL الإضافة */}
        {isModalOpen && (
          <div className="fixed inset-0 z-50 flex justify-center items-start pt-10 sm:items-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
             <div className="bg-[#1a1a1a] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col relative my-auto max-h-[90vh]">

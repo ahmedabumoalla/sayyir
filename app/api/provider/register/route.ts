@@ -37,8 +37,8 @@ export async function POST(req: Request) {
 
     // 📩 إشعار للأدمن (أنت)
     // ضع رقم جوالك وإيميلك هنا لتستقبل التنبيهات
-    const adminEmail = process.env.ADMIN_EMAIL || 'ahmedabumoalla@gmail.com'; 
-    const adminPhone = process.env.ADMIN_PHONE || '+966500000000'; // استبدله برقمك
+    const adminEmail = process.env.ADMIN_EMAIL || 'info@sayyir.sa'; 
+    const adminPhone = process.env.ADMIN_PHONE || '+966508424401'; // استبدله برقمك
 
     // 1. إرسال إيميل للأدمن
     await resend.emails.send({

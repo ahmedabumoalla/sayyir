@@ -7,7 +7,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
-  Search, MapPin, Filter, Star, Loader2, Home, Utensils, Mountain, ArrowLeft 
+  Search, MapPin, Filter, Star, Loader2, Home, Utensils, Mountain, ArrowLeft, Clock, CalendarDays 
 } from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
@@ -56,8 +56,7 @@ function ServicesContent() {
                         (filterType === 'facilities' ? ['housing', 'food'].includes(service.service_type) : service.service_type === filterType) ||
                         (filterType === 'experiences' && service.service_type === 'experience');
     
-    // ملاحظة: تصفية المدينة تحتاج أن يكون عمود المدينة موجوداً في الخدمات أو يتم استخراجه من details
-    // سنفترض هنا وجود حقل city أو تجاهله مؤقتاً
+    // فلترة مؤقتة للمدينة بناء على النص إذا لم يكن هناك عمود مخصص
     const matchesCity = cityFilter === 'all' || JSON.stringify(service).includes(cityFilter);
 
     return matchesSearch && matchesType && matchesCity;
@@ -131,33 +130,53 @@ function ServicesContent() {
         ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {filteredServices.map((service) => {
-                    // صورة افتراضية أو من البيانات
-                    const image = service.details?.images?.[0] || "/logo.png";
+                    const image = service.details?.images?.[0] || "/placeholder.jpg";
+                    
+                    // ✅ التحقق الذكي من التوفر بناءً على المنطق الذي اتفقنا عليه
+                    const isLimitedCapacity = service?.service_category === 'experience' && service?.sub_category !== 'event';
+                    const isSoldOut = isLimitedCapacity ? (service.max_capacity === null || service.max_capacity <= 0) : false;
+
                     return (
-                        <Link href={`/service/${service.id}`} key={service.id} className="group bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/5 hover:border-[#C89B3C]/50 transition duration-500 hover:-translate-y-2 shadow-lg">
+                        <Link href={`/service/${service.id}`} key={service.id} className="group bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/5 hover:border-[#C89B3C]/50 transition duration-500 hover:-translate-y-2 shadow-lg flex flex-col">
                             <div className="relative h-64 overflow-hidden">
                                 <Image src={image} alt={service.title} fill className="object-cover group-hover:scale-110 transition duration-700" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-transparent opacity-80" />
                                 
-                                <div className="absolute top-4 left-4">
-                                    <span className="bg-black/60 backdrop-blur-md text-white text-xs px-3 py-1 rounded-full border border-white/10 flex items-center gap-1">
+                                <div className="absolute top-4 left-4 flex flex-col gap-2">
+                                    <span className="bg-black/60 backdrop-blur-md text-white text-xs px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-1 w-fit">
                                         <Star size={12} className="text-yellow-400 fill-yellow-400"/> 4.8
                                     </span>
                                 </div>
-                                <div className="absolute bottom-4 right-4">
-                                    <span className="bg-[#C89B3C] text-[#2B1F17] text-xs font-bold px-3 py-1 rounded-lg">
-                                        {service.price} ريال
-                                    </span>
+
+                                <div className="absolute top-4 right-4">
+                                    {isSoldOut ? (
+                                        <span className="bg-red-500/90 backdrop-blur-md text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg">نفذت المقاعد</span>
+                                    ) : (
+                                        <span className="bg-[#C89B3C]/90 backdrop-blur-md text-[#2B1F17] text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg">
+                                            {service.price === 0 ? 'مجاني' : `${service.price} ﷼`}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                             
-                            <div className="p-6">
+                            <div className="p-6 flex flex-col flex-1">
                                 <div className="flex items-center gap-2 mb-2 text-xs text-[#C89B3C] font-bold uppercase tracking-wider">
                                     {service.service_type === 'housing' ? <Home size={14}/> : service.service_type === 'food' ? <Utensils size={14}/> : <Mountain size={14}/>}
                                     {service.service_type === 'housing' ? 'سكن' : service.service_type === 'food' ? 'مطاعم' : 'تجارب'}
                                 </div>
+                                
                                 <h3 className="text-xl font-bold text-white mb-2 line-clamp-1 group-hover:text-[#C89B3C] transition">{service.title}</h3>
                                 <p className="text-white/50 text-sm mb-4 line-clamp-2 leading-relaxed">{service.description}</p>
+                                
+                                {/* ✅ إضافة أيقونات سريعة تخبر العميل بنوع الجدولة الموجودة دون زحمة */}
+                                <div className="flex items-center gap-3 mb-4 mt-auto">
+                                    {service.work_hours?.length > 0 && (
+                                        <span className="text-xs text-white/40 flex items-center gap-1 bg-white/5 px-2 py-1 rounded"><Clock size={12}/> أوقات عمل</span>
+                                    )}
+                                    {service.details?.sessions?.length > 0 && (
+                                        <span className="text-xs text-white/40 flex items-center gap-1 bg-white/5 px-2 py-1 rounded"><CalendarDays size={12}/> مواعيد متاحة</span>
+                                    )}
+                                </div>
                                 
                                 <div className="flex items-center justify-between pt-4 border-t border-white/5">
                                     <div className="flex items-center gap-2">
@@ -166,7 +185,7 @@ function ServicesContent() {
                                         </div>
                                         <span className="text-xs text-white/60">{service.profiles?.full_name}</span>
                                     </div>
-                                    <span className="text-xs text-white/40 flex items-center gap-1 group-hover:translate-x-[-5px] transition duration-300">
+                                    <span className="text-xs text-[#C89B3C] flex items-center gap-1 group-hover:translate-x-[-5px] transition duration-300 font-bold">
                                         التفاصيل <ArrowLeft size={12}/>
                                     </span>
                                 </div>
@@ -184,7 +203,7 @@ export default function ServicesPage() {
   return (
     <main dir="rtl" className={`min-h-screen bg-[#121212] text-white ${tajawal.className}`}>
       {/* Header بسيط للصفحة */}
-      <header className="sticky top-0 z-50 bg-[#121212]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
+      <header className="sticky top-0 z-50 bg-[#121212]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center shadow-lg">
          <Link href="/" className="flex items-center gap-2 text-white hover:text-[#C89B3C] transition">
             <ArrowLeft size={20} className="rotate-180" />
             <span className="font-bold">الرئيسية</span>

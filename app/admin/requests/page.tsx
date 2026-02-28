@@ -7,14 +7,38 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
   Search, CheckCircle, XCircle, Loader2, FileText, Briefcase, 
-  Menu, X, User, LogOut, Eye, MapPin, Phone, Mail, Calendar, ExternalLink
+  Menu, X, User, LogOut, Eye, MapPin, Phone, Mail, Calendar, ExternalLink,
+  Building, CreditCard, Hash, MapIcon, Link as LinkIcon, Percent, Save // ✅ تمت إضافة الأيقونات المطلوبة
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// تعريف شكل البيانات القادمة من نموذج التسجيل
+const LABELS_DICT: Record<string, string> = {
+    company_name: "اسم الشركة / المؤسسة",
+    commercial_register: "رقم السجل التجاري",
+    commercial_license: "الترخيص التجاري",
+    tax_number: "الرقم الضريبي",
+    id_number: "رقم الهوية / الإقامة",
+    city: "المدينة",
+    address: "العنوان التفصيلي",
+    bank_name: "اسم البنك",
+    iban: "رقم الآيبان (IBAN)",
+    description: "وصف الخدمة المقدمة",
+    website: "الموقع الإلكتروني / رابط",
+    social_media: "حسابات التواصل",
+    files: "المرفقات والمستندات",
+    images: "صور المكان / الخدمة",
+    location: "الإحداثيات الجغرافية",
+    "341194A4-EE4A-41B8-BAA7-5EA6A5B7DE58": "البريد الإلكتروني الإضافي",
+    "E90FC2FC-B69A-4CBA-98B6-DF134C836CBD": "رقم الجوال للتواصل",
+    "AA372A24-E6ED-4300-99B0-6E8E2F3792FB": "اسم المنشأة / الاسم التجاري",
+    "561C6D03-487C-46C0-AFFD-861EDB928C5D": "اسم مقدم الطلب",
+    "D06E380D-CAC2-4D54-8C2E-5919F6E2A112": "هل تمتلك رخصة تجارية؟ / موافقة", 
+    "F003760E-1516-4B9D-8635-89F6A01085A6": "نوع الخدمة أو الفعالية",
+};
+
 interface RequestData {
   id: string;
   name: string;
@@ -22,7 +46,7 @@ interface RequestData {
   phone: string;
   service_type: string;
   status: 'pending' | 'approved' | 'rejected';
-  dynamic_data: Record<string, any>; // البيانات المتغيرة (صور، خرائط، الخ)
+  dynamic_data: Record<string, any>;
   created_at: string;
 }
 
@@ -30,17 +54,20 @@ export default function JoinRequestsPage() {
   const router = useRouter();
   const pathname = usePathname();
   
-  // States
   const [requests, setRequests] = useState<RequestData[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
   
-  // UI States
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<RequestData | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+  // States الخاصة بالعمولة للمزود
+  const [useCustomCommission, setUseCustomCommission] = useState(false);
+  const [customCommission, setCustomCommission] = useState("");
+  const [savingCommission, setSavingCommission] = useState(false);
 
   useEffect(() => {
     checkRole();
@@ -59,7 +86,6 @@ export default function JoinRequestsPage() {
 
   const fetchRequests = async () => {
     setLoading(true);
-    // نفترض أن الجدول اسمه provider_requests أو نفس الجدول الذي يصب فيه النموذج
     const { data, error } = await supabase
       .from('provider_requests') 
       .select('*')
@@ -72,22 +98,80 @@ export default function JoinRequestsPage() {
     setLoading(false);
   };
 
-  // ✅ التعديل الرئيسي هنا:
+  // ✅ دالة لفتح المودال وجلب نسبة المزود الحالية إذا كان مقبولاً
+  const openModal = async (req: RequestData) => {
+      setSelectedRequest(req);
+      setRejectionReason("");
+      setUseCustomCommission(false);
+      setCustomCommission("");
+      setSavingCommission(false);
+
+      // إذا كان المزود مقبول، نبحث عن نسبته المحفوظة في جدول profiles لعرضها
+      if (req.status === 'approved') {
+          const { data } = await supabase.from('profiles').select('custom_commission').eq('email', req.email).single();
+          if (data && data.custom_commission !== null && data.custom_commission !== undefined) {
+              setUseCustomCommission(true);
+              setCustomCommission(data.custom_commission.toString());
+          }
+      }
+  };
+
+  // ✅ دالة جديدة تحديث عمولة المزود مباشرة (بدون التأثير على حالة الطلب)
+  const handleUpdateCommission = async () => {
+      if (!selectedRequest) return;
+      if (useCustomCommission && !customCommission) return alert("الرجاء إدخال النسبة.");
+
+      setSavingCommission(true);
+      try {
+          const newCommissionValue = useCustomCommission ? Number(customCommission) : null;
+          
+          // استخدام دالة المزامنة المباشرة لتجاوز مشكلة الـ Cache
+          const { error: rpcError } = await supabase.rpc('force_update_provider_commission', {
+              p_email: selectedRequest.email,
+              p_commission: newCommissionValue
+          });
+
+          if (rpcError && rpcError.message.includes('Could not find the function')) {
+             // Fallback للطريقة العادية في حال لم يتم تفعيل دالة SQL
+             const { data: prof } = await supabase.from('profiles').select('id').eq('email', selectedRequest.email).single();
+             if (prof) {
+                 const { error: normalError } = await supabase.from('profiles').update({ custom_commission: newCommissionValue }).eq('id', prof.id);
+                 if (normalError) throw normalError;
+             } else {
+                 throw new Error("لم يتم العثور على حساب المزود.");
+             }
+          } else if (rpcError) {
+              throw rpcError;
+          }
+
+          alert("تم تحديث نسبة العمولة للمزود بنجاح ✅");
+      } catch (err: any) {
+          console.error(err);
+          alert("حدث خطأ أثناء تحديث العمولة: " + err.message);
+      } finally {
+          setSavingCommission(false);
+      }
+  };
+
   const handleAction = async (action: 'approve' | 'reject') => {
     if (!selectedRequest) return;
+    
     if (action === 'reject' && !rejectionReason) return alert("الرجاء كتابة سبب الرفض");
+    
+    // التحقق من إدخال النسبة في حال الموافقة واختيار نسبة مخصصة
+    if (action === 'approve' && useCustomCommission && !customCommission) {
+        return alert("الرجاء إدخال نسبة العمولة المخصصة أو اختيار الاعتماد على النسبة العامة.");
+    }
 
     if (!confirm(action === 'approve' ? "هل أنت متأكد من قبول هذا المزود وإنشاء حساب له؟" : "هل أنت متأكد من رفض الطلب؟")) return;
 
     setActionLoading(true);
     try {
-        // 1. جلب معرف الأدمن الحالي (Requester ID)
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("جلسة العمل انتهت، يرجى تسجيل الدخول مرة أخرى");
 
         const adminId = session.user.id;
         
-        // 2. تحديد الرابط والبيانات بناءً على الإجراء
         let endpoint = '';
         let body = {};
 
@@ -95,7 +179,8 @@ export default function JoinRequestsPage() {
             endpoint = '/api/admin/approve';
             body = { 
                 requestId: selectedRequest.id, 
-                requesterId: adminId // ✅ ضروري جداً للتحقق الأمني في الباك إند
+                requesterId: adminId,
+                customCommission: useCustomCommission ? Number(customCommission) : null // ✅ نرسل النسبة للباك إند
             };
         } else {
             endpoint = '/api/admin/reject';
@@ -105,7 +190,6 @@ export default function JoinRequestsPage() {
             };
         }
 
-        // 3. إرسال الطلب
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -115,10 +199,12 @@ export default function JoinRequestsPage() {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "فشل المعالجة");
 
-        alert(`✅ تم ${action === 'approve' ? 'قبول' : 'رفض'} الطلب بنجاح`);
+        alert(`✅ تم ${action === 'approve' ? 'قبول' : 'رفض'} الطلب بنجاح. ${action === 'approve' ? '\nتم إرسال إيميل بكلمة المرور للمزود.' : ''}`);
         setSelectedRequest(null);
         setRejectionReason("");
-        fetchRequests(); // تحديث القائمة
+        setUseCustomCommission(false);
+        setCustomCommission("");
+        fetchRequests(); 
 
     } catch (error: any) {
         console.error(error);
@@ -130,46 +216,68 @@ export default function JoinRequestsPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
 
-  // Helper to render dynamic values smartly
-  const renderDynamicValue = (key: string, value: any) => {
-    // 1. إذا كان إحداثيات خريطة
-    if (value && typeof value === 'object' && 'lat' in value && 'lng' in value) {
+  const renderDynamicValue = (value: any) => {
+    if (!value) return <span className="text-white/30 text-xs">لا يوجد</span>;
+
+    if (typeof value === 'object' && 'lat' in value && 'lng' in value) {
         return (
-            <a 
-                href={`https://www.google.com/maps?q=${value.lat},${value.lng}`} 
-                target="_blank" 
-                rel="noreferrer"
-                className="flex items-center gap-2 text-blue-400 hover:underline bg-blue-500/10 p-2 rounded-lg w-fit"
-            >
+            <a href={`http://googleusercontent.com/maps.google.com/4{value.lat},${value.lng}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 px-4 py-2 rounded-lg w-fit transition text-sm">
                 <MapPin size={16}/> عرض الموقع على Google Maps
             </a>
         );
     }
-    // 2. إذا كان مصفوفة روابط (صور/ملفات)
-    if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string' && value[0].startsWith('http')) {
+    
+    if (Array.isArray(value)) {
+        if (value.length === 0) return <span className="text-white/30 text-xs">فارغ</span>;
+        
+        if (typeof value[0] === 'string' && (value[0].startsWith('http') || value[0].startsWith('/'))) {
+            return (
+                <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                    {value.map((url, i) => {
+                        const isVideo = url.match(/\.(mp4|webm|ogg)$/i);
+                        const isDoc = url.match(/\.(pdf|doc|docx)$/i);
+                        
+                        if (isDoc) {
+                            return <a key={i} href={url} target="_blank" rel="noreferrer" className="flex flex-col items-center justify-center w-24 h-24 bg-white/5 border border-white/10 rounded-xl hover:border-[#C89B3C] hover:text-[#C89B3C] transition gap-2"><FileText size={24}/><span className="text-[10px]">عرض الملف</span></a>
+                        }
+                        
+                        return (
+                            <a key={i} href={url} target="_blank" rel="noreferrer" className="block w-24 h-24 relative rounded-xl overflow-hidden border border-white/10 hover:border-[#C89B3C] transition group shrink-0 shadow-lg">
+                                {isVideo ? <video src={url} className="w-full h-full object-cover" muted /> : <img src={url} alt={`مرفق ${i}`} className="w-full h-full object-cover"/>}
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition backdrop-blur-sm"><ExternalLink className="text-white" size={20}/></div>
+                            </a>
+                        );
+                    })}
+                </div>
+            );
+        }
         return (
-            <div className="flex gap-2 overflow-x-auto pb-2">
-                {value.map((url, i) => (
-                    <a key={i} href={url} target="_blank" className="block w-24 h-24 relative rounded-lg overflow-hidden border border-white/20 hover:border-[#C89B3C] transition">
-                        <img src={url} alt="file" className="w-full h-full object-cover"/>
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition"><Eye className="text-white"/></div>
-                    </a>
-                ))}
+            <div className="flex flex-wrap gap-2">
+                {value.map((item, i) => <span key={i} className="bg-white/10 px-3 py-1 rounded-lg text-sm">{item}</span>)}
             </div>
         );
     }
-    // 3. إذا كان نص طويل
+    
     if (typeof value === 'string' && value.length > 50) {
-        return <p className="text-white/80 text-sm whitespace-pre-line bg-black/20 p-3 rounded-lg border border-white/5">{value}</p>;
+        if (value.startsWith('http')) {
+             return <a href={value} target="_blank" className="text-blue-400 hover:underline flex items-center gap-1 text-sm"><LinkIcon size={14}/> {value}</a>;
+        }
+        return <p className="text-white/80 text-sm whitespace-pre-line leading-relaxed bg-black/20 p-4 rounded-xl border border-white/5">{value}</p>;
     }
-    // 4. القيم العادية
-    return <span className="text-white font-medium">{String(value)}</span>;
+    
+    if (typeof value === 'boolean') {
+        return <span className={`px-3 py-1 rounded-lg text-sm font-bold ${value ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>{value ? 'نعم' : 'لا'}</span>
+    }
+
+    if (typeof value === 'string' && value.startsWith('http')) {
+         return <a href={value} target="_blank" className="text-blue-400 hover:underline flex items-center gap-1 text-sm"><LinkIcon size={14}/> {value}</a>;
+    }
+    return <span className="text-white font-bold text-sm bg-black/20 px-4 py-2 rounded-lg inline-block">{String(value)}</span>;
   };
 
-  // القائمة الجانبية (نفس باقي الصفحات لتوحيد التصميم)
   const menuItems = [
     { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
-    { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true }, // 👈 نحن هنا
+    { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true },
     { label: "إدارة المعالم", icon: Map, href: "/admin/landmarks", show: true },
     { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
     { label: "المالية والأرباح", icon: DollarSign, href: "/admin/finance", show: true },
@@ -180,7 +288,6 @@ export default function JoinRequestsPage() {
   return (
     <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className} relative`}>
       
-      {/* Mobile Header */}
       <div className="md:hidden fixed top-0 w-full z-50 bg-[#1a1a1a]/90 backdrop-blur-md border-b border-white/10 p-4 flex justify-between items-center">
         <button onClick={() => setSidebarOpen(true)} className="p-2 bg-white/5 rounded-lg text-[#C89B3C]"><Menu size={24} /></button>
         <Link href="/"><Image src="/logo.png" alt="Sayyir" width={80} height={30} className="opacity-90" /></Link>
@@ -211,7 +318,6 @@ export default function JoinRequestsPage() {
             </div>
         </header>
 
-        {/* Filters */}
         <div className="flex gap-4 mb-8 border-b border-white/10 pb-4">
             <button onClick={() => setFilter('pending')} className={`pb-2 px-4 transition ${filter === 'pending' ? 'text-[#C89B3C] border-b-2 border-[#C89B3C] font-bold' : 'text-white/50 hover:text-white'}`}>قيد الانتظار</button>
             <button onClick={() => setFilter('approved')} className={`pb-2 px-4 transition ${filter === 'approved' ? 'text-emerald-400 border-b-2 border-emerald-400 font-bold' : 'text-white/50 hover:text-white'}`}>المقبولة</button>
@@ -236,7 +342,7 @@ export default function JoinRequestsPage() {
                             </div>
                             <div>
                                 <h3 className="font-bold text-white line-clamp-1">{req.name}</h3>
-                                <p className="text-xs text-white/50">{req.service_type || 'خدمة عامة'}</p>
+                                <p className="text-xs text-[#C89B3C]">{req.service_type || 'خدمة عامة'}</p>
                             </div>
                         </div>
                         <span className={`text-[10px] px-2 py-1 rounded border ${
@@ -248,14 +354,14 @@ export default function JoinRequestsPage() {
                         </span>
                     </div>
                     
-                    <div className="space-y-2 mb-6 text-sm text-white/70 bg-black/20 p-3 rounded-xl">
-                        <div className="flex items-center gap-2"><Mail size={14} className="text-[#C89B3C]"/> {req.email}</div>
-                        <div className="flex items-center gap-2"><Phone size={14} className="text-[#C89B3C]"/> {req.phone}</div>
-                        <div className="flex items-center gap-2"><Calendar size={14} className="text-white/30"/> {new Date(req.created_at).toLocaleDateString('ar-SA')}</div>
+                    <div className="space-y-3 mb-6 text-sm text-white/70 bg-black/20 p-4 rounded-xl border border-white/5">
+                        <div className="flex items-center gap-2"><Mail size={14} className="text-white/40"/> {req.email}</div>
+                        <div className="flex items-center gap-2"><Phone size={14} className="text-white/40"/> <span className="dir-ltr">{req.phone}</span></div>
+                        <div className="flex items-center gap-2"><Calendar size={14} className="text-white/40"/> {new Date(req.created_at).toLocaleDateString('ar-SA')}</div>
                     </div>
 
-                    <button onClick={() => setSelectedRequest(req)} className="mt-auto w-full py-2.5 bg-white/10 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C]">
-                        <Eye size={18}/> معاينة التفاصيل
+                    <button onClick={() => openModal(req)} className="mt-auto w-full py-3 bg-white/10 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C]">
+                        <Eye size={18}/> معاينة تفاصيل الطلب
                     </button>
                 </div>
             ))}
@@ -266,63 +372,135 @@ export default function JoinRequestsPage() {
       {/* Modal: Request Details */}
       {selectedRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in zoom-in-95 duration-200">
-            <div className="bg-[#1e1e1e] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
                 
                 {/* Header */}
-                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-gradient-to-r from-[#C89B3C]/10 to-transparent">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl">
                     <div>
-                        <h2 className="text-2xl font-bold text-white mb-1">تفاصيل طلب الانضمام</h2>
-                        <p className="text-xs text-white/50">رقم الطلب: {selectedRequest.id}</p>
+                        <h2 className="text-2xl font-bold text-white mb-1 flex items-center gap-2"><FileText className="text-[#C89B3C]"/> تفاصيل طلب الانضمام</h2>
+                        <p className="text-xs text-white/50">المعرف: {selectedRequest.id}</p>
                     </div>
-                    <button onClick={() => setSelectedRequest(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition"><X size={20}/></button>
+                    <button onClick={() => setSelectedRequest(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition"><X size={20}/></button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                    {/* Basic Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    
+                    <h3 className="text-[#C89B3C] font-bold text-sm mb-3">البيانات الأساسية</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                         <div className="bg-black/30 p-4 rounded-xl border border-white/5">
-                            <span className="text-xs text-white/40 block mb-1">الاسم التجاري/الشخصي</span>
-                            <span className="font-bold">{selectedRequest.name}</span>
+                            <span className="text-xs text-white/50 block mb-1">الاسم التجاري / الشخصي</span>
+                            <span className="font-bold text-lg">{selectedRequest.name}</span>
                         </div>
                         <div className="bg-black/30 p-4 rounded-xl border border-white/5">
-                            <span className="text-xs text-white/40 block mb-1">البريد الإلكتروني</span>
+                            <span className="text-xs text-white/50 block mb-1">نوع الخدمة</span>
+                            <span className="font-bold text-[#C89B3C]">{selectedRequest.service_type}</span>
+                        </div>
+                        <div className="bg-black/30 p-4 rounded-xl border border-white/5">
+                            <span className="text-xs text-white/50 block mb-1">البريد الإلكتروني</span>
                             <span className="font-bold font-mono text-sm">{selectedRequest.email}</span>
                         </div>
                         <div className="bg-black/30 p-4 rounded-xl border border-white/5">
-                            <span className="text-xs text-white/40 block mb-1">رقم الجوال</span>
+                            <span className="text-xs text-white/50 block mb-1">رقم الجوال</span>
                             <span className="font-bold font-mono dir-ltr">{selectedRequest.phone}</span>
                         </div>
                     </div>
 
-                    {/* Dynamic Data Rendering */}
-                    <h3 className="text-[#C89B3C] font-bold text-lg mb-4 flex items-center gap-2"><FileText size={20}/> البيانات المرفقة</h3>
-                    <div className="space-y-4">
-                        {selectedRequest.dynamic_data && Object.entries(selectedRequest.dynamic_data).map(([key, value], idx) => {
-                            if(!value) return null;
-                            return (
-                                <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                                    <p className="text-xs text-[#C89B3C] font-bold mb-2 uppercase">بيانات إضافية (ID: {key})</p>
-                                    <div className="text-sm">
-                                        {renderDynamicValue(key, value)}
+                    <h3 className="text-[#C89B3C] font-bold text-sm mb-4 border-t border-white/10 pt-6">تفاصيل الاستمارة والمرفقات</h3>
+                    
+                    {(!selectedRequest.dynamic_data || Object.keys(selectedRequest.dynamic_data).length === 0) ? (
+                        <div className="bg-black/20 p-8 rounded-xl border border-white/5 text-center text-white/40">
+                            لا توجد بيانات إضافية مرفقة مع هذا الطلب.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {Object.entries(selectedRequest.dynamic_data).map(([key, value], idx) => {
+                                if(value === null || value === undefined || value === '') return null;
+                                
+                                const label = LABELS_DICT[key] || key.replace(/_/g, ' ').toUpperCase();
+                                const isFullWidth = Array.isArray(value) || (typeof value === 'string' && value.length > 50) || (typeof value === 'object' && 'lat' in value);
+
+                                return (
+                                    <div key={idx} className={`bg-white/5 border border-white/5 p-4 rounded-xl hover:border-white/10 transition ${isFullWidth ? 'md:col-span-2' : ''}`}>
+                                        <p className="text-xs text-white/50 mb-2">{label}</p>
+                                        <div>
+                                            {renderDynamicValue(value)}
+                                        </div>
                                     </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* ✅ قسم إعدادات العمولة المضاف بنفس تصميم صفحة الخدمات المظلم */}
+                    {(selectedRequest.status === 'pending' || selectedRequest.status === 'approved') && (
+                        <div className="mt-8 bg-black/40 border border-white/10 p-5 rounded-xl mb-4">
+                            <div className="flex justify-between items-start mb-4">
+                                <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Percent size={18}/> إعدادات عمولة المنصة (لهذا المزود تحديداً)</h3>
+                                
+                                {/* زر الحفظ يظهر فقط للمزودين المقبولين لتحديث النسبة فقط دون تغيير الحالة */}
+                                {selectedRequest.status === 'approved' && (
+                                    <button 
+                                        onClick={handleUpdateCommission} 
+                                        disabled={savingCommission}
+                                        className="bg-[#C89B3C] hover:bg-white text-black font-bold text-xs px-4 py-2 rounded-lg transition flex items-center gap-2"
+                                    >
+                                        {savingCommission ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
+                                        تحديث النسبة فقط
+                                    </button>
+                                )}
+                            </div>
+                            
+                            <div className="flex flex-col sm:flex-row gap-6">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="provider_commission" 
+                                        checked={!useCustomCommission} 
+                                        onChange={() => setUseCustomCommission(false)}
+                                        className="accent-[#C89B3C] w-4 h-4"
+                                    />
+                                    <span className="text-sm text-white/90">اعتماد النسبة العامة (حسب قسم المالية)</span>
+                                </label>
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="provider_commission" 
+                                        checked={useCustomCommission} 
+                                        onChange={() => setUseCustomCommission(true)}
+                                        className="accent-[#C89B3C] w-4 h-4"
+                                    />
+                                    <span className="text-sm text-white/90">تحديد نسبة مخصصة لهذا المزود</span>
+                                </label>
+                            </div>
+                            
+                            {useCustomCommission && (
+                                <div className="mt-4 flex items-center gap-3 animate-in fade-in zoom-in-95">
+                                    <input 
+                                        type="number" 
+                                        min="0"
+                                        max="100"
+                                        placeholder="اكتب النسبة (مثال: 15)" 
+                                        className="w-48 bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[#C89B3C] outline-none text-white"
+                                        value={customCommission}
+                                        onChange={(e) => setCustomCommission(e.target.value)}
+                                    />
+                                    <span className="text-white/50 text-sm font-bold">% خصم من الإيراد</span>
                                 </div>
-                            );
-                        })}
-                        {(!selectedRequest.dynamic_data || Object.keys(selectedRequest.dynamic_data).length === 0) && (
-                            <p className="text-white/40 text-sm">لا توجد بيانات إضافية.</p>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    )}
+
                 </div>
 
                 {/* Footer Actions */}
-                <div className="p-6 border-t border-white/10 bg-[#151515] flex flex-col md:flex-row gap-4 justify-end">
+                <div className="p-6 border-t border-white/10 bg-[#151515] rounded-b-3xl flex flex-col md:flex-row gap-4 justify-end items-center">
                     {selectedRequest.status === 'pending' ? (
-                        <>
-                            <div className="flex-1">
+                        <div className="w-full flex flex-col md:flex-row gap-3">
+                            <div className="flex-1 relative">
                                 <input 
                                     type="text" 
-                                    placeholder="سبب الرفض (إلزامي في حال الرفض)..." 
-                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-red-500 outline-none"
+                                    placeholder="اكتب سبب الرفض هنا (مطلوب فقط في حالة الرفض)..." 
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-sm focus:border-red-500 outline-none"
                                     value={rejectionReason}
                                     onChange={(e) => setRejectionReason(e.target.value)}
                                 />
@@ -330,21 +508,21 @@ export default function JoinRequestsPage() {
                             <button 
                                 onClick={() => handleAction('reject')} 
                                 disabled={actionLoading}
-                                className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-6 py-3 rounded-xl font-bold transition disabled:opacity-50"
+                                className="bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white px-6 py-3.5 rounded-xl font-bold transition disabled:opacity-50 shrink-0"
                             >
                                 رفض الطلب
                             </button>
                             <button 
                                 onClick={() => handleAction('approve')} 
                                 disabled={actionLoading}
-                                className="bg-emerald-500 text-white hover:bg-emerald-600 px-8 py-3 rounded-xl font-bold transition flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                                className="bg-emerald-500 text-black hover:bg-emerald-400 px-8 py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 shrink-0"
                             >
-                                {actionLoading ? <Loader2 className="animate-spin"/> : <><CheckCircle size={20}/> قبول وإنشاء حساب</>}
+                                {actionLoading ? <Loader2 className="animate-spin text-black"/> : <><CheckCircle size={20}/> قبول وإنشاء حساب</>}
                             </button>
-                        </>
+                        </div>
                     ) : (
-                        <div className="w-full text-center text-white/50 text-sm py-2">
-                            تم {selectedRequest.status === 'approved' ? 'قبول' : 'رفض'} هذا الطلب سابقاً.
+                        <div className="w-full text-center text-white/50 text-sm py-2 bg-black/40 rounded-xl border border-white/5">
+                            تم {selectedRequest.status === 'approved' ? 'قبول' : 'رفض'} هذا الطلب مسبقاً، لا يمكنك تغيير حالته من هنا.
                         </div>
                     )}
                 </div>

@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, Users, Map, DollarSign, Settings, ShieldAlert,
   Search, Ban, CheckCircle, Loader2, Mail, Phone, Calendar, LogOut, Briefcase, UserCheck,
-  Menu, X, User, Home, Trash2, KeyRound, Eye, XCircle, Clock, Filter
+  Menu, X, User, Home, Trash2, KeyRound, Eye, XCircle, Clock, Filter, Send
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { useRouter, usePathname } from "next/navigation";
@@ -130,7 +130,6 @@ export default function CustomersPage() {
     setDisplayedUsers(result);
   };
 
-  // ✅ استعادة دوال الإجراءات (كانت فارغة سابقاً)
   const handleToggleBan = async (id: string, currentStatus: boolean, userName: string) => {
     const actionText = currentStatus ? "فك الحظر عن" : "حظر";
     if (!confirm(`هل أنت متأكد من ${actionText} المستخدم "${userName}"؟`)) return;
@@ -214,6 +213,16 @@ export default function CustomersPage() {
 
     if (error) alert("خطأ: " + error.message);
     else alert("تم إرسال رابط إعادة التعيين إلى بريد المستخدم.");
+  };
+
+  // ✅ دالة جديدة لفتح المراسلة المباشرة عبر الإيميل
+  const handleDirectEmail = (clientEmail: string, clientName: string) => {
+      // إعدادات الرسالة التلقائية لتسهيل عمل الإدارة
+      const subject = encodeURIComponent("تواصل من إدارة منصة سيّر");
+      const body = encodeURIComponent(`مرحباً ${clientName}،\n\nنحن فريق الدعم في منصة سيّر، ونتواصل معك بخصوص...\n\n`);
+      
+      // توجيه المتصفح لفتح تطبيق الإيميل الافتراضي في جهاز الإدارة
+      window.location.href = `mailto:${clientEmail}?subject=${subject}&body=${body}`;
   };
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.replace("/login"); };
@@ -392,9 +401,17 @@ export default function CustomersPage() {
                             </span>
                         )}
                       </td>
-                      {/* ✅ إعادة تفعيل الأزرار هنا */}
                       <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
+                            {/* ✅ زر التواصل عبر الإيميل */}
+                            <button 
+                                onClick={() => handleDirectEmail(user.email, user.full_name)} 
+                                title="مراسلة عبر الإيميل" 
+                                className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg transition"
+                            >
+                                <Send size={16} />
+                            </button>
+
                             <button onClick={() => setSelectedUser(user)} title="عرض التفاصيل" className="p-2 bg-white/5 hover:bg-white/10 text-blue-400 rounded-lg transition"><Eye size={16} /></button>
                             <button onClick={() => handleResetPassword(user.email)} title="إرسال رابط استعادة كلمة المرور" className="p-2 bg-white/5 hover:bg-white/10 text-yellow-400 rounded-lg transition"><KeyRound size={16} /></button>
                             <button 
@@ -456,7 +473,10 @@ export default function CustomersPage() {
                 </div>
                 <div className="p-4 bg-white/5 border-t border-white/10 flex justify-end gap-2">
                     <button onClick={() => setSelectedUser(null)} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition">إغلاق</button>
-                    {/* أزرار إضافية داخل المودال */}
+                    {/* ✅ زر المراسلة داخل المودال أيضاً للسهولة */}
+                    <button onClick={() => handleDirectEmail(selectedUser.email, selectedUser.full_name)} className="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg text-sm transition border border-indigo-500/20 flex items-center gap-1">
+                        <Send size={14}/> مراسلة
+                    </button>
                     <button onClick={() => handleDeleteUser(selectedUser.id, selectedUser.full_name)} className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg text-sm transition border border-red-500/20">حذف الحساب</button>
                 </div>
             </div>

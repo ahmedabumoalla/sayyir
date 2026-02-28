@@ -142,6 +142,8 @@ export default function LandmarksPage() {
   );
 }
 
+// ... (باقي الكود في الأعلى كما هو بدون تغيير)
+
 function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => boolean }) {
   const isHeritage = data.type === 'heritage';
   const isNatural = data.type === 'natural';
@@ -150,7 +152,7 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
   
   return (
     <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
-        <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black">
+        <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black flex items-center justify-center">
           {mainMedia ? (
               isMainMediaVideo ? (
                   <video 
@@ -162,14 +164,24 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
                     playsInline 
                   />
               ) : (
-                  <Image src={mainMedia} alt={data.name} fill className="object-cover transition-transform duration-700 group-hover:scale-110"/>
+                  <Image 
+                    src={mainMedia} 
+                    alt={data.name} 
+                    fill 
+                    className="object-cover transition-transform duration-700 group-hover:scale-110"
+                    // 👇 ✅ هذا هو التعديل السحري: إذا فشلت الصورة، ضع الصورة الافتراضية
+                    onError={(e) => {
+                      e.currentTarget.src = "/placeholder.jpg"; 
+                      // يمكنك تغيير الصورة الافتراضية إلى لوجو المنصة مثلاً: "/logo.png"
+                    }}
+                  />
               )
           ) : (
               <Image src="/placeholder.jpg" alt={data.name} fill className="object-cover"/>
           )}
           
           {/* شارة التصنيف */}
-          <div className="absolute top-3 left-3 md:top-4 md:left-4 backdrop-blur-md bg-black/30 px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border border-white/10 flex items-center gap-1 md:gap-1.5">
+          <div className="absolute top-3 left-3 md:top-4 md:left-4 backdrop-blur-md bg-black/30 px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border border-white/10 flex items-center gap-1 md:gap-1.5 z-10">
             {isHeritage ? <Landmark className="text-amber-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
              isNatural ? <Trees className="text-teal-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
              <Mountain className="text-emerald-400 w-3 h-3 md:w-3.5 md:h-3.5"/>}
@@ -178,15 +190,15 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
             </span>
           </div>
 
-          <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg ${data.price > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
+          <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10 ${data.price > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
               {data.price > 0 ? `${data.price} ريال` : 'دخول مجاني'}
           </div>
         </div>
-        <div className="p-4 md:p-6 relative -mt-8 md:-mt-10">
+        <div className="p-4 md:p-6 relative -mt-8 md:-mt-10 z-20">
           <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl">
               <h3 className="text-lg md:text-xl font-bold text-white mb-1.5 md:mb-2 group-hover:text-[#C89B3C] transition line-clamp-1">{data.name}</h3>
               <div className="flex items-center gap-1 text-white/50 text-[10px] md:text-xs mb-1 md:mb-3">
-                <MapPin className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                <MapPin className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0" />
                 <span className="line-clamp-1">{data.city || "عسير، السعودية"}</span>
               </div>
           </div>

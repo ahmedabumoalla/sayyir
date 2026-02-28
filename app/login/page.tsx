@@ -14,6 +14,32 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // 👇 تمت إضافة هذه الدالة الخاصة بنسيان كلمة المرور 👇
+  const handleForgotPassword = async () => {
+    const email = (document.getElementById("email") as HTMLInputElement)?.value?.trim();
+    
+    if (!email) {
+      alert("الرجاء إدخال البريد الإلكتروني في الخانة المخصصة أولاً لإرسال الرابط.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (error) {
+        alert("حدث خطأ أثناء إرسال الرابط: " + error.message);
+      } else {
+        alert("تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني بنجاح ✅");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("حدث خطأ غير متوقع، حاول مرة أخرى.");
+    }
+  };
+  // 👆 نهاية التعديل 👆
+
   const handleLogin = async () => {
     if (loading) return;
     setLoading(true);
@@ -108,6 +134,19 @@ export default function LoginPage() {
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
+
+            {/* 👇 تمت إضافة زر نسيان كلمة المرور هنا 👇 */}
+            <div className="flex justify-start">
+              <button 
+                type="button" 
+                onClick={handleForgotPassword}
+                className="text-xs text-white/60 hover:text-[#C89B3C] transition-colors"
+              >
+                نسيت كلمة المرور؟
+              </button>
+            </div>
+            {/* 👆 نهاية التعديل 👆 */}
+
             <button onClick={handleLogin} disabled={loading} className="w-full rounded-xl bg-white text-black py-3.5 font-bold hover:bg-gray-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               {loading ? <Loader2 className="animate-spin" /> : "تسجيل الدخول"}
             </button>

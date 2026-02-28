@@ -6,9 +6,21 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   CreditCard, Tag, ArrowRight, ShieldCheck, Loader2, 
   FileText, CheckCircle, AlertCircle, MapPin, Clock, 
-  Info, PlayCircle, Star, Box 
+  Info, PlayCircle, Star, Box, X, CalendarDays, CalendarOff, Calendar
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link"; // ✅ تم إضافة استدعاء Link للزر
+
+// ✅ دالة ذكية لضمان قراءة بيانات الجداول (JSON) وعرضها دائماً
+const safeArray = (data: any) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+        try { return JSON.parse(data); } catch { return []; }
+    }
+    if (typeof data === 'object') return Object.values(data);
+    return [];
+};
 
 function CheckoutContent() {
   const router = useRouter();
@@ -36,9 +48,9 @@ function CheckoutContent() {
   // تفاصيل الفاتورة
   const [totals, setTotals] = useState({
     subtotal: 0,
-    generalDiscountAmount: 0, // مبلغ خصم المنصة
-    couponDiscountAmount: 0,  // مبلغ خصم الكوبون
-    totalDiscount: 0,         // المجموع
+    generalDiscountAmount: 0, 
+    couponDiscountAmount: 0,  
+    totalDiscount: 0,         
     vat: 0,
     total: 0
   });
@@ -69,8 +81,7 @@ function CheckoutContent() {
             return;
           }
 
-          // ب) جلب تفاصيل الخدمة (كل شيء: وصف، صور، متطلبات...)
-          // نستخدم select('*') لضمان جلب كل الأعمدة المتاحة
+          // ب) جلب تفاصيل الخدمة
           const { data: serviceData, error: serviceError } = await supabase
             .from("services")
             .select("*") 
@@ -81,11 +92,11 @@ function CheckoutContent() {
              console.error("Service Fetch Error:", serviceError);
           }
 
-          // ج) جلب إعدادات المنصة (للخصم العام)
+          // ج) جلب إعدادات المنصة
           const { data: settingsData } = await supabase
             .from("platform_settings")
             .select("*")
-            .single(); // مفترض أنه صف واحد
+            .single();
 
           if (settingsData) setSettings(settingsData);
 
@@ -125,16 +136,9 @@ function CheckoutContent() {
         couponDisc = (subtotal * appliedCoupon.discount_percent) / 100;
     }
 
-    // مجموع الخصومات
     const totalDisc = generalDisc + couponDisc;
-
-    // المبلغ الخاضع للضريبة
     const taxableAmount = Math.max(0, subtotal - totalDisc);
-    
-    // الضريبة (15%)
     const vat = taxableAmount * 0.15;
-
-    // الإجمالي النهائي
     const finalTotal = taxableAmount + vat;
 
     setTotals({
@@ -169,57 +173,43 @@ function CheckoutContent() {
     alert(`تم تطبيق خصم الكوبون ${data.discount_percent}% بنجاح!`);
   };
 
-  // 4. تنفيذ الدفع
+  // ✅ 4. تنفيذ الدفع (الربط مع بي موب)
   const handlePayment = async () => {
     setProcessing(true);
 
     try {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // محاكاة البنك
+        const response = await fetch('/api/paymob/initiate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                bookingId: bookingId,
+                couponCode: appliedCoupon ? appliedCoupon.code : null
+            })
+        });
 
-        // تحديد نسبة العمولة حسب النوع
-        let commissionRate = 0;
-        if (booking.services?.service_category === 'experience') {
-            commissionRate = Number(settings.commission_tourist);
-        } else if (booking.services?.sub_category === 'lodging') {
-            commissionRate = Number(settings.commission_housing);
-        } else {
-            commissionRate = Number(settings.commission_food);
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || "فشل في إنشاء رابط الدفع");
         }
 
-        const taxableIncome = totals.subtotal - totals.totalDiscount;
-        const platformFee = (taxableIncome * commissionRate) / 100;
-        const providerEarnings = totals.total - platformFee;
+        // إذا كان المبلغ 0 ريال، يتم تجاوز الدفع وتأكيد الحجز فوراً
+        if (data.skipPayment) {
+            await supabase.from("bookings").update({ status: "confirmed", payment_status: "paid" }).eq("id", bookingId);
+            alert("✅ تم تأكيد الحجز بنجاح (مجاني)!");
+            router.replace("/my-bookings");
+            return;
+        }
 
-        // تحديث الحجز
-        const { error } = await supabase
-            .from("bookings")
-            .update({
-                status: "confirmed",
-                payment_status: "paid",
-                payment_method: "Credit Card",
-                
-                subtotal: totals.subtotal,
-                discount_amount: totals.totalDiscount,
-                tax_amount: totals.vat,
-                final_price: totals.total,
-                total_price: totals.total, 
-                
-                coupon_code: appliedCoupon ? appliedCoupon.code : (settings.is_general_discount_active ? 'GENERAL_OFFER' : null),
-                platform_fee: platformFee,
-                provider_earnings: providerEarnings
-            })
-            .eq("id", bookingId);
-
-        if (error) throw error;
-
-        router.replace("/my-bookings");
-        alert("✅ تم الدفع وتأكيد الحجز بنجاح!");
+        // توجيه العميل لصفحة الدفع الخاصة بـ Paymob
+        if (data.iframeUrl) {
+            window.location.href = data.iframeUrl;
+        }
 
     } catch (err: any) {
         console.error(err);
-        alert("حدث خطأ أثناء معالجة الدفع.");
-    } finally {
-        setProcessing(false);
+        alert("حدث خطأ أثناء الاتصال ببوابة الدفع: " + err.message);
+        setProcessing(false); 
     }
   };
 
@@ -227,18 +217,34 @@ function CheckoutContent() {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white">
         <Loader2 className="animate-spin mb-4 text-[#C89B3C]" size={40} />
-        <p className="animate-pulse">جاري جلب تفاصيل الفاتورة...</p>
+        <p className="animate-pulse">جاري تحضير صفحة الدفع...</p>
       </div>
     );
   }
 
   if (!booking) return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">لا يوجد بيانات للعرض.</div>;
 
-  // تحضير الصورة الرئيسية
   const mainImage = booking.services?.image_url || (booking.services?.details?.images?.[0]) || "/placeholder.jpg";
+  
+  const workHours = safeArray(booking.services?.work_hours);
+  const blockedDates = safeArray(booking.services?.blocked_dates);
+  const sessions = safeArray(booking.services?.details?.sessions);
+  const hasScheduleData = workHours.length > 0 || blockedDates.length > 0 || sessions.length > 0;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white py-12 px-4 md:px-8 font-tajawal" dir="rtl">
+      
+      {/* ✅ زر الرجوع للصفحة الرئيسية */}
+      <div className="max-w-6xl mx-auto mb-6">
+        <Link 
+            href="/" 
+            className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-[#C89B3C] border border-white/10 px-5 py-2.5 rounded-xl transition duration-300 w-fit font-bold text-sm"
+        >
+            <ArrowRight size={18} />
+            العودة للرئيسية
+        </Link>
+      </div>
+
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* --- القسم الأيمن: تفاصيل الخدمة الكاملة --- */}
@@ -269,6 +275,7 @@ function CheckoutContent() {
 
             {/* تفاصيل الحجز الدقيقة */}
             <div className="p-6">
+                
                 {/* 1. الوصف */}
                 <div className="mb-6">
                     <h3 className="text-lg font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Info size={18}/> تفاصيل الخدمة</h3>
@@ -276,6 +283,81 @@ function CheckoutContent() {
                         {booking.services?.description || "لا يوجد وصف متاح."}
                     </p>
                 </div>
+
+                {/* ✅ جدول الأوقات والمواعيد والأيام المستثناة */}
+                {hasScheduleData && (
+                    <div className="mb-6 bg-black/20 p-5 rounded-xl border border-white/5 space-y-5">
+                        {/* أوقات العمل */}
+                        {workHours.length > 0 && (
+                            <div>
+                                <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-white">
+                                    <Clock size={16} className="text-[#C89B3C]"/> أوقات العمل الرسمية
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {workHours.map((day: any, i: number) => (
+                                        <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded-lg text-xs">
+                                            <span className="text-white/80 font-bold">{day.day}</span>
+                                            {day.active ? (
+                                                <div className="flex flex-col items-end gap-1">
+                                                    {safeArray(day.shifts).map((s:any, idx:number) => (
+                                                        <span key={idx} className="bg-black/40 px-2 py-0.5 rounded font-mono dir-ltr">{s.from} - {s.to}</span>
+                                                    ))}
+                                                </div>
+                                            ) : <span className="bg-red-500/10 text-red-400 px-2 py-0.5 rounded font-bold">مغلق</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* الجلسات والمواعيد المحددة */}
+                        {sessions.length > 0 && (
+                            <div className={workHours.length > 0 ? "pt-4 border-t border-white/10" : ""}>
+                                <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-white">
+                                    <CalendarDays size={16} className="text-[#C89B3C]"/> الجلسات المتاحة
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {sessions.map((session: any, i: number) => (
+                                        <div key={i} className="bg-white/5 p-3 rounded-lg border border-[#C89B3C]/10 text-xs flex items-start gap-3">
+                                            <Calendar size={16} className="text-[#C89B3C] mt-0.5 shrink-0"/>
+                                            {session.type === 'range' ? (
+                                                <div className="space-y-1.5 w-full">
+                                                    <div className="flex justify-between border-b border-white/5 pb-1">
+                                                        <span className="text-white/50">بدء:</span> 
+                                                        <span className="dir-ltr font-bold text-white font-mono">{session.startDate} | {session.startTime}</span>
+                                                    </div>
+                                                    <div className="flex justify-between pt-0.5">
+                                                        <span className="text-white/50">انتهاء:</span> 
+                                                        <span className="dir-ltr font-bold text-white font-mono">{session.endDate} | {session.endTime}</span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex justify-between items-center w-full">
+                                                    <span className="text-white/50">موعد الجلسة:</span>
+                                                    <span className="dir-ltr font-bold text-[#C89B3C] font-mono">{session.date} | {session.time}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* الأيام المستثناة */}
+                        {blockedDates.length > 0 && (
+                            <div className={(workHours.length > 0 || sessions.length > 0) ? "pt-4 border-t border-white/10" : ""}>
+                                <h3 className="text-sm font-bold mb-2 flex items-center gap-2 text-red-400">
+                                    <CalendarOff size={16}/> أيام مغلقة
+                                </h3>
+                                <div className="flex flex-wrap gap-2">
+                                    {blockedDates.map((date: string, idx: number) => (
+                                        <span key={idx} className="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-1 rounded text-xs font-mono dir-ltr">{date}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* 2. ماذا تشمل التجربة؟ (إذا وجدت) */}
                 {booking.services?.included_items && (
@@ -302,11 +384,11 @@ function CheckoutContent() {
                     <div>
                         <span className="text-gray-500 block text-xs mb-1">الموعد المحدد</span>
                         <span className="font-mono text-[#C89B3C]">
-                            {booking.execution_date ? new Date(booking.execution_date).toLocaleDateString('ar-SA') : (booking.booking_date || 'غير محدد')}
+                            {booking.execution_date ? new Date(booking.execution_date).toLocaleDateString('ar-SA') : (booking.booking_date ? new Date(booking.booking_date).toLocaleDateString('ar-SA') : 'غير محدد')}
                         </span>
                     </div>
                     <div>
-                        <span className="text-gray-500 block text-xs mb-1">عدد الأشخاص</span>
+                        <span className="text-gray-500 block text-xs mb-1">الكمية / العدد</span>
                         <span className="text-white font-bold">{booking.quantity}</span>
                     </div>
                     <div>

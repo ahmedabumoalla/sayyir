@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation"; // ✅ إضافة useRouter للتوجيه
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Image from "next/image";
 import { 
   MapPin, Clock, Users, CheckCircle, X, 
   Info, Star, ShieldCheck, Image as ImageIcon, 
-  ChevronLeft, Loader2, FileText, PlayCircle, Calendar, Box, Utensils, AlertCircle, Briefcase, Minus, Plus, Send
+  ChevronLeft, Loader2, FileText, PlayCircle, Calendar, Box, Utensils, AlertCircle, Briefcase, Minus, Plus, Send,
+  Wifi, Car, Waves, Sparkles, Wind, Tv, Flame, Coffee, HeartPulse, Mountain, CalendarDays, CalendarOff
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -16,17 +17,42 @@ import { Tajawal } from "next/font/google";
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
+const AMENITIES_DICT: Record<string, any> = {
+    'wifi': { label: 'واي فاي (Wi-Fi)', icon: Wifi },
+    'parking': { label: 'مواقف خاصة', icon: Car },
+    'pool': { label: 'مسبح خاص', icon: Waves },
+    'cleaning': { label: 'خدمة تنظيف', icon: Sparkles },
+    'ac': { label: 'تكييف', icon: Wind },
+    'tv': { label: 'تلفزيون / ستالايت', icon: Tv },
+    'kitchen': { label: 'مطبخ مجهز', icon: Utensils },
+    'bbq': { label: 'منطقة شواء', icon: Flame },
+    'breakfast': { label: 'إفطار مشمول', icon: Coffee },
+    'security': { label: 'حراسة / أمان', icon: ShieldCheck },
+    'firstaid': { label: 'إسعافات أولية', icon: HeartPulse },
+    'view': { label: 'إطلالة مميزة', icon: Mountain },
+};
+
+// ✅ دالة ذكية لضمان قراءة بيانات قاعدة البيانات (JSON) وعرضها دائماً
+const safeArray = (data: any) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+        try { return JSON.parse(data); } catch { return []; }
+    }
+    if (typeof data === 'object') return Object.values(data);
+    return [];
+};
+
 export default function ServiceDetailsPage() {
   const { id } = useParams();
-  const router = useRouter(); // ✅ تفعيل الراوتر
+  const router = useRouter(); 
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [bookingLoading, setBookingLoading] = useState(false); // حالة تحميل الطلب
+  const [bookingLoading, setBookingLoading] = useState(false); 
   
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [agreedToPolicies, setAgreedToPolicies] = useState(false);
 
-  // ✅ متغيرات الحجز الجديدة
   const [guestCount, setGuestCount] = useState(1);
   const [totalPrice, setTotalPrice] = useState(0);
 
@@ -34,7 +60,6 @@ export default function ServiceDetailsPage() {
     fetchServiceDetails();
   }, []);
 
-  // تحديث السعر تلقائياً عند تغيير العدد
   useEffect(() => {
       if (service) {
           setTotalPrice(service.price * guestCount);
@@ -50,8 +75,11 @@ export default function ServiceDetailsPage() {
 
     if (data) {
         setService(data);
-        // إذا كان المخزون 0، نصفر العداد
-        if (data.max_capacity === 0) setGuestCount(0);
+        
+        const isLimited = data.service_category === 'experience' && data.sub_category !== 'event';
+        if (isLimited && (data.max_capacity === 0 || data.max_capacity === null)) {
+            setGuestCount(0);
+        }
     }
     setLoading(false);
   };
@@ -61,66 +89,77 @@ export default function ServiceDetailsPage() {
       return url.match(/\.(mp4|webm|ogg)$/i) || url.includes('video');
   };
 
-  // ✅ دالة زيادة العدد (لا تتجاوز المكس)
+  const isLimitedCapacity = service?.service_category === 'experience' && service?.sub_category !== 'event';
+  const isSoldOut = isLimitedCapacity ? (service.max_capacity === null || service.max_capacity <= 0) : false;
+  const quantityLabel = service?.sub_category === 'lodging' ? 'عدد الليالي / الوحدات' : 
+                        service?.sub_category === 'event' ? 'عدد التذاكر' : 'عدد الأشخاص';
+
   const incrementGuests = () => {
-      if (service.max_capacity && guestCount < service.max_capacity) {
-          setGuestCount(prev => prev + 1);
+      if (isLimitedCapacity) {
+          if (service.max_capacity && guestCount < service.max_capacity) {
+              setGuestCount(prev => prev + 1);
+          } else {
+              alert(`عذراً، المقاعد المتبقية لهذه التجربة هي ${service.max_capacity} فقط.`);
+          }
       } else {
-          alert(`عذراً، المقاعد المتبقية لهذه التجربة هي ${service.max_capacity} فقط.`);
+          if (guestCount < 50) {
+              setGuestCount(prev => prev + 1);
+          } else {
+              alert("تم الوصول للحد الأقصى المسموح للحجز الواحد.");
+          }
       }
   };
 
-  // ✅ دالة تنقيص العدد
   const decrementGuests = () => {
       if (guestCount > 1) {
           setGuestCount(prev => prev - 1);
       }
   };
 
-  // ✅✅ دالة إرسال طلب الحجز (المنطق الجديد)
   const handleBookingRequest = async () => {
       if (!agreedToPolicies && service.details?.policies) return alert("الرجاء الموافقة على سياسات المزود أولاً.");
       
       setBookingLoading(true);
       try {
-          // 1. التحقق من تسجيل الدخول
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {
               alert("يجب تسجيل الدخول لإرسال طلب حجز.");
               return; 
           }
 
-          // 2. التحقق النهائي من التوفر (في حال حجز شخص آخر في نفس اللحظة)
-          const { data: refreshService } = await supabase.from('services').select('max_capacity').eq('id', service.id).single();
-          if (!refreshService || refreshService.max_capacity < guestCount) {
-              throw new Error("عذراً، المقاعد نفذت قبل إتمام طلبك.");
+          let newCapacity = null;
+
+          if (isLimitedCapacity) {
+              const { data: refreshService } = await supabase.from('services').select('max_capacity').eq('id', service.id).single();
+              if (!refreshService || refreshService.max_capacity < guestCount) {
+                  throw new Error("عذراً، المقاعد نفذت قبل إتمام طلبك.");
+              }
+              newCapacity = refreshService.max_capacity - guestCount;
           }
 
-          // 3. إرسال الطلب (Pending) لجدول الحجوزات
           const { error: bookingError } = await supabase.from('bookings').insert([{
               user_id: session.user.id,
               service_id: service.id,
               provider_id: service.provider_id,
               quantity: guestCount,
               total_price: totalPrice,
-              status: 'pending', // ✅ الطلب معلق بانتظار المزود
-              booking_date: new Date() // تاريخ اليوم كمثال
+              status: 'pending', 
+              booking_date: new Date()
           }]);
 
           if (bookingError) throw bookingError;
 
-          // 4. خصم المخزون فوراً (عشان ما أحد يحجز نفس المقاعد والمزود يراجع الطلب)
-          const newCapacity = refreshService.max_capacity - guestCount;
-          const { error: updateError } = await supabase
-              .from('services')
-              .update({ max_capacity: newCapacity })
-              .eq('id', service.id);
+          if (isLimitedCapacity && newCapacity !== null) {
+              const { error: updateError } = await supabase
+                  .from('services')
+                  .update({ max_capacity: newCapacity })
+                  .eq('id', service.id);
 
-          if (updateError) throw updateError;
+              if (updateError) throw updateError;
+          }
 
-          // 5. نجاح وتوجيه
-          alert(`✅ تم إرسال طلب الحجز بنجاح!\n\nعدد الأشخاص: ${guestCount}\nالسعر المتوقع: ${totalPrice} ريال\n\nسيقوم المزود بمراجعة طلبك وقبوله أو رفضه.`);
-          router.push('/'); // ✅ العودة للصفحة الرئيسية
+          alert(`✅ تم إرسال طلب الحجز بنجاح!\n\n${quantityLabel}: ${guestCount}\nالسعر المتوقع: ${totalPrice} ريال\n\nسيقوم المزود بمراجعة طلبك وإشعارك.`);
+          router.push('/'); 
 
       } catch (error: any) {
           console.error(error);
@@ -134,7 +173,12 @@ export default function ServiceDetailsPage() {
   if (!service) return <div className="h-screen flex items-center justify-center bg-[#0a0a0a] text-white">الخدمة غير موجودة أو تم إيقافها.</div>;
 
   const galleryImages = service.details?.images || (service.image_url ? [service.image_url] : []);
-  const isSoldOut = service.max_capacity === 0; // ✅ هل نفذت الكمية؟
+  
+  // ✅ استخراج جداول الأوقات بشكل آمن لضمان ظهورها
+  const workHours = safeArray(service.work_hours);
+  const blockedDates = safeArray(service.blocked_dates);
+  const sessions = safeArray(service.details?.sessions);
+  const hasScheduleData = workHours.length > 0 || blockedDates.length > 0 || sessions.length > 0;
 
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white pb-20 ${tajawal.className}`}>
@@ -179,7 +223,7 @@ export default function ServiceDetailsPage() {
                         <p className="text-3xl font-bold text-[#C89B3C] font-mono">
                             {service.price === 0 ? "دخول مجاني" : <>{service.price} <span className="text-sm text-white">ريال</span></>}
                         </p>
-                        {service.price > 0 && <p className="text-xs text-white/50">{service.service_type === 'lodging' ? 'لليلة الواحدة' : 'للشخص الواحد'}</p>}
+                        {service.price > 0 && <p className="text-xs text-white/50">{service.service_type === 'lodging' ? 'لليلة الواحدة' : ''}</p>}
                     </div>
                 </div>
             </div>
@@ -218,7 +262,91 @@ export default function ServiceDetailsPage() {
                 <p className="text-gray-300 leading-loose whitespace-pre-line text-lg">{service.description}</p>
             </div>
 
-            {/* تفاصيل ومتطلبات التجربة (هام جداً) */}
+            {/* ✅ جدول الأوقات والمواعيد والأيام المستثناة (الإضافة القوية والآمنة) */}
+            {hasScheduleData && (
+                <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#C89B3C]/20 space-y-6 relative overflow-hidden">
+                    {/* شريط زينة علوي */}
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#C89B3C] to-transparent opacity-50"></div>
+
+                    {/* 1. أوقات العمل المنتظمة */}
+                    {workHours.length > 0 && (
+                        <div>
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white">
+                                <Clock size={20} className="text-[#C89B3C]"/> أوقات العمل الرسمية
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {workHours.map((day: any, i: number) => (
+                                    <div key={i} className="flex justify-between items-center bg-black/40 p-3.5 rounded-xl border border-white/5 text-sm hover:border-white/10 transition">
+                                        <span className="text-white/80 font-bold">{day.day}</span>
+                                        {day.active ? (
+                                            <div className="flex flex-col items-end gap-1">
+                                                {safeArray(day.shifts).map((s:any, idx:number) => (
+                                                    <span key={idx} className="bg-white/10 text-white px-2 py-0.5 rounded text-xs font-mono dir-ltr">
+                                                        {s.from} - {s.to}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : <span className="bg-red-500/10 text-red-400 px-3 py-1 rounded-lg text-xs font-bold">مغلق</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 2. الجلسات والمواعيد المحددة (للتجارب والفعاليات) */}
+                    {sessions.length > 0 && (
+                        <div className={workHours.length > 0 ? "pt-6 border-t border-white/10 mt-2" : ""}>
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white">
+                                <CalendarDays size={20} className="text-[#C89B3C]"/> المواعيد أو الجلسات المتاحة
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {sessions.map((session: any, i: number) => (
+                                    <div key={i} className="bg-gradient-to-br from-white/5 to-black/40 p-4 rounded-xl border border-[#C89B3C]/10 text-sm flex items-start gap-4 hover:border-[#C89B3C]/30 transition">
+                                        <div className="bg-[#C89B3C]/10 p-2 rounded-lg text-[#C89B3C]">
+                                            <Calendar size={20}/>
+                                        </div>
+                                        {session.type === 'range' ? (
+                                            <div className="space-y-2 w-full">
+                                                <div className="flex justify-between border-b border-white/5 pb-2">
+                                                    <span className="text-white/50 text-xs">يبدأ في:</span> 
+                                                    <span className="dir-ltr font-bold text-white font-mono text-xs">{session.startDate} | {session.startTime}</span>
+                                                </div>
+                                                <div className="flex justify-between pt-1">
+                                                    <span className="text-white/50 text-xs">ينتهي في:</span> 
+                                                    <span className="dir-ltr font-bold text-white font-mono text-xs">{session.endDate} | {session.endTime}</span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col w-full justify-center h-full gap-1">
+                                                <span className="text-white/50 text-xs">موعد الجلسة المحددة:</span>
+                                                <span className="dir-ltr font-bold text-[#C89B3C] font-mono text-base">{session.date} | {session.time}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 3. الأيام المستثناة / المغلقة */}
+                    {blockedDates.length > 0 && (
+                        <div className={(workHours.length > 0 || sessions.length > 0) ? "pt-6 border-t border-white/10 mt-2" : ""}>
+                            <h3 className="text-lg font-bold mb-3 flex items-center gap-2 text-red-400">
+                                <CalendarOff size={20}/> أيام مغلقة (لا يمكن الحجز فيها)
+                            </h3>
+                            <div className="flex flex-wrap gap-2">
+                                {blockedDates.map((date: string, idx: number) => (
+                                    <span key={idx} className="bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2 rounded-lg text-sm font-mono dir-ltr flex items-center gap-2">
+                                        <X size={14}/> {date}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* تفاصيل ومتطلبات التجربة */}
             {(service.requirements || service.included_items || service.meeting_point) && (
                 <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-white/5 space-y-6">
                     {service.requirements && (
@@ -254,29 +382,34 @@ export default function ServiceDetailsPage() {
                 </div>
             )}
 
-            {/* المميزات (للسكن) */}
+            {/* المميزات */}
             {service.amenities && service.amenities.length > 0 && (
                 <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-white/5">
                     <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Star size={20} className="text-[#C89B3C]"/> المميزات</h3>
                     <div className="flex flex-wrap gap-3">
-                        {service.amenities.map((am: any, i: number) => (
-                            <span key={i} className="px-4 py-2 bg-white/5 rounded-full text-sm border border-white/10 flex items-center gap-2">
-                                <CheckCircle size={14} className="text-[#C89B3C]"/> {am}
-                            </span>
-                        ))}
+                        {safeArray(service.amenities).map((am: any, i: number) => {
+                            const amenityObj = AMENITIES_DICT[am];
+                            const IconComponent = amenityObj?.icon || CheckCircle;
+                            return (
+                                <span key={i} className="px-4 py-2 bg-white/5 rounded-full text-sm border border-white/10 flex items-center gap-2 text-white/90">
+                                    <IconComponent size={16} className="text-[#C89B3C]" />
+                                    {amenityObj ? amenityObj.label : am}
+                                </span>
+                            );
+                        })}
                     </div>
                 </div>
             )}
 
             {/* المنيو / المنتجات */}
-            {service.menu_items && service.menu_items.length > 0 && (
+            {service.menu_items && safeArray(service.menu_items).length > 0 && (
                 <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-white/5">
                     <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                         {service.sub_category === 'food' ? <Utensils size={20} className="text-[#C89B3C]"/> : <Box size={20} className="text-[#C89B3C]"/>}
                         {service.sub_category === 'food' ? 'قائمة الطعام' : 'المنتجات'}
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {service.menu_items.map((item: any, i: number) => (
+                        {safeArray(service.menu_items).map((item: any, i: number) => (
                             <div key={i} className="flex items-center gap-4 bg-white/5 p-3 rounded-xl border border-white/10 hover:border-[#C89B3C]/30 transition">
                                 <div 
                                     className="relative w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-black cursor-pointer"
@@ -344,9 +477,10 @@ export default function ServiceDetailsPage() {
                     
                     <div className="flex justify-between items-center bg-black/30 p-3 rounded-xl border border-white/5">
                         <div className="text-center flex-1 border-l border-white/10">
-                            <p className="text-xs text-white/50 mb-1">المتبقي</p>
-                            <div className={`flex items-center justify-center gap-1 font-bold ${service.max_capacity < 5 ? 'text-red-400' : 'text-emerald-400'}`}>
-                                <Users size={14}/> {service.max_capacity || "مفتوح"}
+                            <p className="text-xs text-white/50 mb-1">{isLimitedCapacity ? 'المقاعد المتبقية' : 'التوافر'}</p>
+                            <div className={`flex items-center justify-center gap-1 font-bold ${isLimitedCapacity && service.max_capacity < 5 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                <Users size={14}/> 
+                                {isLimitedCapacity ? (service.max_capacity || "0") : "بالطلب / متاح"}
                             </div>
                         </div>
                         <div className="text-center flex-1">
@@ -356,11 +490,10 @@ export default function ServiceDetailsPage() {
                     </div>
                 </div>
 
-                {/* ✅ قسم اختيار العدد والسعر (يختفي إذا نفذت الكمية) */}
                 {!isSoldOut ? (
                     <div className="mb-6 bg-white/5 p-4 rounded-xl border border-white/5">
                         <div className="flex justify-between items-center mb-4">
-                            <span className="text-sm font-bold">عدد الأشخاص</span>
+                            <span className="text-sm font-bold">{quantityLabel}</span>
                             <div className="flex items-center gap-3 bg-black/40 rounded-lg p-1 border border-white/10">
                                 <button onClick={decrementGuests} className="p-1 hover:bg-white/10 rounded transition text-white"><Minus size={16}/></button>
                                 <span className="font-mono text-lg font-bold w-6 text-center">{guestCount}</span>
@@ -374,12 +507,11 @@ export default function ServiceDetailsPage() {
                     </div>
                 ) : (
                     <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-center">
-                        <p className="text-red-400 font-bold">❌ نفذت الكمية بالكامل</p>
+                        <p className="text-red-400 font-bold">❌ نفذت المقاعد بالكامل</p>
                         <p className="text-xs text-red-300 mt-1">تابعنا للحصول على مواعيد جديدة أو تواصل مع المزود.</p>
                     </div>
                 )}
 
-                {/* السياسات */}
                 {service.details?.policies && (
                     <div className="mb-6">
                         <h4 className="text-white font-bold mb-3 flex items-center gap-2 text-sm"><ShieldCheck size={16} className="text-red-400"/> سياسات المكان</h4>
@@ -396,7 +528,6 @@ export default function ServiceDetailsPage() {
                     </div>
                 )}
 
-                {/* ✅ زر إرسال الطلب (بدل الحجز المباشر) */}
                 <button 
                     onClick={handleBookingRequest}
                     disabled={isSoldOut || (service.details?.policies && !agreedToPolicies) || bookingLoading}
