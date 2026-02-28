@@ -33,7 +33,6 @@ export default function ProviderBookingsPage() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
-    // ✅ تم تعديل الاستعلام لجلب *كل* تفاصيل الخدمة ورقم جوال العميل
     let query = supabase
       .from('bookings')
       .select(`
@@ -57,7 +56,7 @@ export default function ProviderBookingsPage() {
     setLoading(false);
   };
 
-  // ✅ 1. منطق الموافقة وإصدار الفاتورة
+  // 1. منطق الموافقة وإصدار الفاتورة
   const handleApprove = async () => {
     if (!selectedBooking) return;
     setActionLoading(true);
@@ -95,7 +94,7 @@ export default function ProviderBookingsPage() {
                 type: 'booking_approved_invoice',
                 email: selectedBooking.profiles?.email,
                 clientName: selectedBooking.profiles?.full_name,
-                clientPhone: selectedBooking.profiles?.phone, // إرسال رسالة SMS إذا وجد الرقم
+                clientPhone: selectedBooking.profiles?.phone,
                 serviceTitle: selectedBooking.services?.title,
                 amount: selectedBooking.total_price,
                 expiryTime: expiresAt.toLocaleString('ar-SA'),
@@ -114,7 +113,7 @@ export default function ProviderBookingsPage() {
     }
   };
 
-  // ✅ 2. منطق الرفض
+  // 2. منطق الرفض
   const handleReject = async () => {
     if (!selectedBooking || !rejectReason) return alert("الرجاء كتابة سبب الرفض");
     setActionLoading(true);
@@ -163,6 +162,35 @@ export default function ProviderBookingsPage() {
         setRejectReason("");
         fetchBookings();
 
+    } catch (err: any) {
+        alert("خطأ: " + err.message);
+    } finally {
+        setActionLoading(false);
+    }
+  };
+
+  // ✅ 3. التأكيد اليدوي للحجوزات المعلقة/القديمة المدفوعة في Paymob
+  const handleManualConfirm = async () => {
+    if (!confirm("هل تأكدت من وصول المبلغ في Paymob؟ سيتم تحويل الحجز إلى (مؤكد ومدفوع).")) return;
+    setActionLoading(true);
+    try {
+        // توليد كود تذكرة في حال كان الحجز قديماً ولا يملك كود
+        const ticketCode = selectedBooking.ticket_qr_code || (typeof window !== 'undefined' && window.crypto?.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2));
+
+        const { error } = await supabase
+            .from('bookings')
+            .update({
+                status: 'confirmed',
+                payment_status: 'paid',
+                ticket_qr_code: ticketCode
+            })
+            .eq('id', selectedBooking.id);
+
+        if (error) throw error;
+
+        alert("✅ تم تأكيد الدفع يدوياً بنجاح.");
+        setSelectedBooking(null);
+        fetchBookings();
     } catch (err: any) {
         alert("خطأ: " + err.message);
     } finally {
@@ -262,7 +290,6 @@ export default function ProviderBookingsPage() {
           </div>
       )}
 
-      {/* --- Full Details Modal (النافذة التفصيلية الشاملة) --- */}
       {selectedBooking && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
               <div className="bg-[#1e1e1e] w-full max-w-4xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
@@ -303,7 +330,6 @@ export default function ProviderBookingsPage() {
                       <div>
                           <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Briefcase size={18}/> الخدمة المحجوزة</h3>
                           <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4 relative overflow-hidden">
-                              {/* شريط زينة جانبي بناءً على نوع الخدمة */}
                               <div className={`absolute top-0 right-0 bottom-0 w-1 ${
                                   selectedBooking.services?.service_category === 'experience' ? 'bg-emerald-500' :
                                   selectedBooking.services?.sub_category === 'lodging' ? 'bg-blue-500' : 'bg-orange-500'
@@ -338,7 +364,6 @@ export default function ProviderBookingsPage() {
                                   </div>
                               </div>
                               
-                              {/* إذا كان هناك متطلبات للخدمة */}
                               {(selectedBooking.services?.requirements || selectedBooking.services?.meeting_point) && (
                                   <div className="pt-4 border-t border-white/5 grid grid-cols-1 md:grid-cols-2 gap-4">
                                       {selectedBooking.services?.requirements && (
@@ -383,7 +408,6 @@ export default function ProviderBookingsPage() {
                           </div>
                       </div>
 
-                      {/* ملاحظات العميل */}
                       {selectedBooking.notes && (
                           <div className="bg-yellow-500/10 p-5 rounded-xl border border-yellow-500/20">
                               <p className="text-yellow-500 text-sm font-bold mb-2 flex items-center gap-2"><Info size={16}/> ملاحظات من العميل:</p>
@@ -391,7 +415,6 @@ export default function ProviderBookingsPage() {
                           </div>
                       )}
 
-                      {/* تنبيهات الحالة */}
                       {selectedBooking.status === 'approved_unpaid' && selectedBooking.expires_at && (
                           <div className="bg-blue-500/10 p-4 rounded-xl border border-blue-500/20 flex items-center gap-3">
                               <Clock className="text-blue-400"/>
@@ -415,48 +438,59 @@ export default function ProviderBookingsPage() {
                   </div>
 
                   {/* Actions Footer */}
-                  {selectedBooking.status === 'pending' && (
-                      <div className="p-6 border-t border-white/10 bg-[#151515] rounded-b-3xl mt-auto">
-                          {!showRejectModal ? (
-                              <div className="flex flex-col sm:flex-row gap-4">
-                                  <button 
-                                    onClick={handleApprove} 
-                                    disabled={actionLoading}
-                                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition shadow-lg shadow-emerald-600/20"
-                                  >
-                                      {actionLoading ? <Loader2 className="animate-spin"/> : <><CheckCircle size={20}/> قبول الطلب وإصدار الفاتورة</>}
-                                  </button>
-                                  <button 
-                                    onClick={() => setShowRejectModal(true)} 
-                                    className="sm:w-1/3 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-600/50 font-bold py-4 rounded-xl transition"
-                                  >
-                                      رفض الطلب
-                                  </button>
-                              </div>
-                          ) : (
-                              <div className="animate-in fade-in slide-in-from-bottom-2 bg-red-500/5 p-5 rounded-2xl border border-red-500/20">
-                                  <label className="text-sm text-red-400 font-bold mb-3 flex items-center gap-2"><ShieldAlert size={16}/> سبب الرفض (سيتم إرساله للعميل):</label>
-                                  <textarea 
-                                    rows={3} 
-                                    className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm outline-none focus:border-red-500 mb-4 transition"
-                                    placeholder="نعتذر لعدم التوفر في هذا الوقت..."
-                                    value={rejectReason}
-                                    onChange={e => setRejectReason(e.target.value)}
-                                  />
-                                  <div className="flex gap-3">
-                                      <button 
-                                        onClick={handleReject} 
-                                        disabled={actionLoading || !rejectReason}
-                                        className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3.5 rounded-xl transition flex justify-center items-center gap-2 disabled:opacity-50"
-                                      >
-                                          {actionLoading ? <Loader2 className="animate-spin"/> : <><Send size={18}/> إرسال الرفض</>}
-                                      </button>
-                                      <button onClick={() => setShowRejectModal(false)} className="px-8 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition">إلغاء</button>
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-                  )}
+                  <div className="p-6 border-t border-white/10 bg-[#151515] rounded-b-3xl mt-auto">
+                    {selectedBooking.status === 'pending' && (
+                        !showRejectModal ? (
+                            <div className="flex flex-col sm:flex-row gap-4">
+                                <button 
+                                onClick={handleApprove} 
+                                disabled={actionLoading}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition shadow-lg shadow-emerald-600/20"
+                                >
+                                    {actionLoading ? <Loader2 className="animate-spin"/> : <><CheckCircle size={20}/> قبول الطلب وإصدار الفاتورة</>}
+                                </button>
+                                <button 
+                                onClick={() => setShowRejectModal(true)} 
+                                className="sm:w-1/3 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-600/50 font-bold py-4 rounded-xl transition"
+                                >
+                                    رفض الطلب
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="animate-in fade-in slide-in-from-bottom-2 bg-red-500/5 p-5 rounded-2xl border border-red-500/20">
+                                <label className="text-sm text-red-400 font-bold mb-3 flex items-center gap-2"><ShieldAlert size={16}/> سبب الرفض (سيتم إرساله للعميل):</label>
+                                <textarea 
+                                rows={3} 
+                                className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm outline-none focus:border-red-500 mb-4 transition"
+                                placeholder="نعتذر لعدم التوفر في هذا الوقت..."
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                                />
+                                <div className="flex gap-3">
+                                    <button 
+                                    onClick={handleReject} 
+                                    disabled={actionLoading || !rejectReason}
+                                    className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3.5 rounded-xl transition flex justify-center items-center gap-2 disabled:opacity-50"
+                                    >
+                                        {actionLoading ? <Loader2 className="animate-spin"/> : <><Send size={18}/> إرسال الرفض</>}
+                                    </button>
+                                    <button onClick={() => setShowRejectModal(false)} className="px-8 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition">إلغاء</button>
+                                </div>
+                            </div>
+                        )
+                    )}
+
+                    {/* ✅ الزر الجديد للتأكيد اليدوي للحجوزات القديمة */}
+                    {selectedBooking.status === 'approved_unpaid' && (
+                        <button 
+                            onClick={handleManualConfirm} 
+                            disabled={actionLoading}
+                            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition shadow-lg shadow-blue-600/20"
+                        >
+                            {actionLoading ? <Loader2 className="animate-spin"/> : <><CheckCircle size={20}/> تأكيد الدفع يدوياً (للحجوزات القديمة)</>}
+                        </button>
+                    )}
+                  </div>
               </div>
           </div>
       )}

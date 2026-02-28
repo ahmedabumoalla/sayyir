@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const { 
         type, email, name, serviceTitle, reason, providerName, 
         amount, expiryTime, clientEmail, clientName, bookingId, clientPhone,
-        password // ✅ تم إضافة استخراج كلمة المرور هنا
+        password, ticketCode, zatcaCode, totalPrice, quantity // ✅ تم إضافة متغيرات الفاتورة والدفع
     } = body;
 
     // إعدادات الإيميل
@@ -50,7 +50,54 @@ export async function POST(request: Request) {
             break;
 
         // ==========================================
-        // 2. إشعارات مراجعة الخدمات (للشركاء والمزودين)
+        // 🌟 2. إشعارات ما بعد الدفع (جديد) 🌟
+        // ==========================================
+        case 'booking_ticket_invoice':
+            subject = `🎫 تذكرة الدخول والفاتورة الضريبية - حجز مؤكد`;
+            html = `
+                <div dir="rtl" style="font-family: sans-serif; color: #333; max-w-lg; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                    <h2 style="color: #C89B3C;">مرحباً ${clientName}،</h2>
+                    <p>تم تأكيد دفعك بنجاح لخدمة: <strong>${serviceTitle}</strong></p>
+                    <p>المبلغ المدفوع: <strong>${totalPrice} ريال</strong></p>
+                    
+                    <div style="background-color: #f9f9f9; padding: 20px; text-align: center; border-radius: 10px; margin: 20px 0;">
+                        <p style="margin: 0 0 10px 0; font-weight: bold;">تذكرة الدخول الخاصة بك (للمزود):</p>
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${ticketCode}" alt="Ticket QR Code" style="border-radius: 8px;" />
+                        <p style="margin: 10px 0 0 0; font-family: monospace; font-size: 18px; letter-spacing: 2px;">${ticketCode.split('-')[0].toUpperCase()}</p>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 20px;">
+                        <p style="font-size: 12px; color: #666;">الفاتورة الضريبية (هيئة الزكاة والدخل):</p>
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${zatcaCode}" alt="ZATCA QR Code" />
+                    </div>
+                    
+                    <p style="color: red; font-size: 12px; text-align: center; margin-top: 20px;">* يرجى إبراز الباركود الأول لمزود الخدمة عند وصولك. التذكرة صالحة للاستخدام مرة واحدة.</p>
+                </div>
+            `;
+            smsBody = `تم تأكيد دفعك بنجاح لخدمة (${serviceTitle})! ✅\nتم إرسال تذكرة الدخول والفاتورة إلى بريدك الإلكتروني. نتمنى لك رحلة ممتعة.`;
+            break;
+
+        case 'provider_payment_received':
+            subject = `💰 تم تأكيد دفع عميل لحجز جديد`;
+            html = `
+                <div dir="rtl" style="font-family: sans-serif; color: #333;">
+                    <h2>مرحباً ${providerName}،</h2>
+                    <p>نود إعلامك بأن العميل <strong>${clientName}</strong> قام بالدفع وتأكيد الحجز بنجاح.</p>
+                    <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px solid #bbf7d0; margin: 15px 0;">
+                        <ul style="list-style: none; padding: 0; margin: 0;">
+                            <li style="margin-bottom: 8px;">الخدمة: <strong>${serviceTitle}</strong></li>
+                            <li style="margin-bottom: 8px;">العدد/الكمية: <strong>${quantity}</strong></li>
+                            <li>قيمة الحجز: <strong style="color: #16a34a;">${totalPrice} ريال</strong></li>
+                        </ul>
+                    </div>
+                    <p>يرجى مسح باركود تذكرة العميل عند وصوله لتسجيل حضوره وإتمام الخدمة.</p>
+                </div>
+            `;
+            smsBody = `تنبيه للمزود: قام العميل ${clientName} بالدفع وتأكيد حجزه لخدمة (${serviceTitle}). يرجى الاستعداد لاستقباله ومسح تذكرته عند الوصول.`;
+            break;
+
+        // ==========================================
+        // 3. إشعارات مراجعة الخدمات (للشركاء والمزودين)
         // ==========================================
         case 'service_approved':
             subject = `🎉 تمت الموافقة على خدمتك في منصة سيّر!`;
@@ -84,10 +131,10 @@ export async function POST(request: Request) {
             break;
 
         // ==========================================
-        // 3. إشعارات للإدارة (عند إضافة خدمة جديدة)
+        // 4. إشعارات للإدارة (عند إضافة خدمة جديدة)
         // ==========================================
         case 'new_service_notification':
-            recipientEmail = 'info@sayyir.sa'; // ضع إيميل الإدارة الحقيقي هنا
+            recipientEmail = 'info@sayyir.sa'; // إيميل الإدارة الحقيقي
             subject = `🔔 خدمة جديدة بانتظار المراجعة`;
             html = `
                 <div dir="rtl" style="font-family: sans-serif; color: #333; line-height: 1.6;">
@@ -100,7 +147,7 @@ export async function POST(request: Request) {
             break;
             
         // ==========================================
-        // 4. إشعار الموافقة على طلب الانضمام (للمزود الجديد) ✅
+        // 5. إشعار الموافقة على طلب الانضمام (للمزود الجديد)
         // ==========================================
         case 'provider_approved':
             subject = `🎉 تمت الموافقة على طلبك وتفعيل حسابك في منصة سيّر`;
@@ -125,7 +172,6 @@ export async function POST(request: Request) {
                 </div>
             `;
             
-            // إضافة رسالة جوال في حال كان الرقم متوفر
             smsBody = `مرحباً ${name}،\nتمت الموافقة على انضمامك لمنصة سيّر!\nبيانات الدخول أرسلت لبريدك الإلكتروني.`;
             break;
 
@@ -149,7 +195,7 @@ export async function POST(request: Request) {
         await sendSMS({
             to: smsTo,
             body: smsBody
-        });
+        }).catch(err => console.error("Twilio SMS failed:", err));
     }
 
     return NextResponse.json({ success: true });
