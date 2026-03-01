@@ -7,7 +7,7 @@ import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, List, CalendarCheck, Wallet, UserCog, LogOut,
-  Menu, X, User, Home // إضافة Home
+  Menu, X, User, Home, QrCode // ✅ تم إضافة أيقونة QrCode
 } from "lucide-react"; 
 import { useState } from "react";
 
@@ -17,6 +17,7 @@ const providerMenu = [
   { label: "لوحة المعلومات", icon: LayoutDashboard, href: "/provider/dashboard" },
   { label: "خدماتي", icon: List, href: "/provider/services" }, 
   { label: "الحجوزات والطلبات", icon: CalendarCheck, href: "/provider/bookings" },
+  { label: "قارئ التذاكر", icon: QrCode, href: "/provider/scanner" }, // ✅ تم إضافة صفحة قارئ التذاكر هنا
   { label: "المحفظة والأرباح", icon: Wallet, href: "/provider/finance" },
   { label: "إعدادات الحساب", icon: UserCog, href: "/provider/profile" },
 ];
