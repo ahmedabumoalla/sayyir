@@ -377,7 +377,7 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-6xl pb-20 px-4">
             <Link href="/landmarks" className="block h-full"><GlassCard title="المعالم السياحية والتراثية" desc="جولة عبر التاريخ والطبيعة في أبرز معالم المنطقة" icon={<Landmark size={32} className="text-[#C89B3C]" />} /></Link>
-            <Link href="/facilities" className="block h-full"><GlassCard title="المرافق والخدمات" desc="نزل تراثية، مطاعم شعبية، ومقاهي ريفية" icon={<Coffee size={32} className="text-blue-400" />} /></Link>
+            <Link href="/facilities" className="block h-full"><GlassCard title="المرافق والفعاليات" desc="نزل تراثية، مطاعم شعبية، ومقاهي ريفية" icon={<Coffee size={32} className="text-blue-400" />} /></Link>
             <Link href="/experiences" className="block h-full"><GlassCard title="التجارب السياحية" desc="هايكنج، تخييم، وورش عمل تراثية مع أهل المنطقة" icon={<Tent size={32} className="text-emerald-400" />} /></Link>
           </div>
         </section>

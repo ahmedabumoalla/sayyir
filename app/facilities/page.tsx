@@ -6,7 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
-  ArrowRight, Loader2, BedDouble, Utensils, Box, MapPin, Store, Search, X // 👈 تمت إضافة أيقونات البحث
+  ArrowRight, Loader2, BedDouble, Utensils, Box, MapPin, Store, Search, X 
 } from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
@@ -15,7 +15,7 @@ export default function FacilitiesPage() {
   const [facilities, setFacilities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // ✅ حالة البحث الجديدة
+  // حالة البحث الجديدة
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -26,12 +26,11 @@ export default function FacilitiesPage() {
     try {
       setLoading(true);
 
-      // ✅ استعلام مباشر من جدول services (شغل المزودين فقط)
       const { data, error } = await supabase
         .from('services')
         .select('*')
-        .neq('service_category', 'experience') // نستبعد التجارب لأن لها صفحة خاصة
-        .eq('status', 'approved') // فقط الموافق عليها
+        .neq('service_category', 'experience') 
+        .eq('status', 'approved') 
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -46,15 +45,15 @@ export default function FacilitiesPage() {
     }
   };
 
-  // ✅ منطق الفلترة بناءً على البحث
+  // منطق الفلترة بناءً على البحث
   const filteredFacilities = facilities.filter(item => 
-    item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.title && item.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (item.sub_category && item.sub_category.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (
-    <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
+    <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`} dir="rtl">
       
       {/* HEADER */}
       <div className="relative h-[40vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
@@ -68,7 +67,7 @@ export default function FacilitiesPage() {
           </p>
         </div>
         
-        <Link href="/" className="absolute top-8 right-8 z-20 p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition group">
+        <Link href="/" className="absolute top-8 right-8 z-20 p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition group border border-white/10">
            <ArrowRight className="text-white group-hover:-translate-x-1 transition-transform" />
         </Link>
       </div>
@@ -132,12 +131,19 @@ export default function FacilitiesPage() {
 }
 
 function FacilityCard({ data }: { data: any }) {
-  // 1. تحديد الصورة (من المنيو أو صورة افتراضية)
-  const imageUrl = data.menu_items && data.menu_items.length > 0 && data.menu_items[0].image 
-    ? data.menu_items[0].image 
-    : "/placeholder-facility.jpg";
+  
+  // 👇 التعديل الجوهري لحل مشكلة الصورة 👇
+  let imageUrl = "/placeholder-facility.jpg";
+  
+  if (data.details?.images && data.details.images.length > 0) {
+      imageUrl = data.details.images[0];
+  } else if (data.image_url) {
+      imageUrl = data.image_url;
+  } else if (data.menu_items && data.menu_items.length > 0 && data.menu_items[0].image) {
+      imageUrl = data.menu_items[0].image;
+  }
 
-  // 2. تحديد النوع (بناءً على sub_category الخاص بالمزود)
+  // تحديد النوع
   let typeLabel = 'خدمة عامة';
   let TypeIcon = Store;
   let badgeColor = 'bg-gray-500/20 text-gray-400 border-gray-500/30';
@@ -170,13 +176,11 @@ function FacilityCard({ data }: { data: any }) {
           }}
         />
         
-        {/* شارة التصنيف */}
         <div className={`absolute top-4 left-4 backdrop-blur-md px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold border ${badgeColor}`}>
            <TypeIcon size={14} />
            <span>{typeLabel}</span>
         </div>
 
-        {/* السعر */}
         <div className="absolute bottom-4 right-4 bg-[#C89B3C] text-black px-3 py-1.5 rounded-lg text-sm font-bold shadow-lg">
             {data.price} ﷼
         </div>
@@ -187,7 +191,6 @@ function FacilityCard({ data }: { data: any }) {
            <h3 className="text-xl font-bold group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3>
         </div>
         
-        {/* نستخدم إحداثيات المزود لتدل على الموقع */}
         <div className="flex items-center gap-1 text-xs text-white/50 mb-3">
             <MapPin size={14} /> موقع الخدمة
         </div>

@@ -22,7 +22,6 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 interface Shift { from: string; to: string; }
 interface WorkDay { day: string; active: boolean; shifts: Shift[]; }
 interface Item { id: string; name: string; price: number; image: string | null; qty?: number; file?: File | null; type: 'image' | 'video' } 
-// ✅ تعديل الـ Session ليقبل التواريخ المفردة (للتجارب) أو الممتدة (للفعاليات)
 interface Session { type: 'single' | 'range', date?: string, time?: string, startDate?: string, endDate?: string, startTime?: string, endTime?: string }
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -42,17 +41,15 @@ const AMENITIES_OPTIONS = [
     { id: 'view', label: 'إطلالة مميزة', icon: Mountain },
 ];
 
-// ✅ دالة ضغط الصور (تصغير الحجم قبل الرفع)
 const compressImage = async (file: File): Promise<File> => {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = (event) => {
-            const img = new window.Image() as HTMLImageElement; // تصحيح الخطأ المحتمل في الـ TypeScript
+            const img = new window.Image() as HTMLImageElement;
             img.src = event.target?.result as string;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                // أقصى عرض للصورة 1200 بكسل
                 const MAX_WIDTH = 1200; 
                 let width = img.width;
                 let height = img.height;
@@ -67,13 +64,12 @@ const compressImage = async (file: File): Promise<File> => {
                 const ctx = canvas.getContext('2d');
                 ctx?.drawImage(img, 0, 0, width, height);
                 
-                // ضغط الصورة بجودة 70%
                 canvas.toBlob((blob) => {
                     if (blob) {
                         const compressedFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
                         resolve(compressedFile);
                     } else {
-                        resolve(file); // في حال فشل الضغط، نرفع الصورة الأصلية
+                        resolve(file); 
                     }
                 }, 'image/jpeg', 0.7);
             };
@@ -81,6 +77,86 @@ const compressImage = async (file: File): Promise<File> => {
     });
 };
 
+// ✅ دالة مساعدة لتحويل الوقت من نظام 12 ساعة (للعرض) إلى 24 ساعة (للحفظ في قاعدة البيانات)
+const convertTo24Hour = (hour: string, minute: string, period: 'AM' | 'PM') => {
+    let h = parseInt(hour, 10);
+    if (period === 'PM' && h < 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    return `${h.toString().padStart(2, '0')}:${minute.padStart(2, '0')}`;
+};
+
+// ✅ مكون اختيار الوقت بنظام 12 ساعة
+const TimePicker12H = ({ value, onChange }: { value: string, onChange: (val: string) => void }) => {
+    // value format expected: "HH:mm" (24h)
+    let initialHour = "12";
+    let initialMinute = "00";
+    let initialPeriod: 'AM' | 'PM' = "AM";
+
+    if (value) {
+        const [hStr, mStr] = value.split(':');
+        let h = parseInt(hStr, 10);
+        initialPeriod = h >= 12 ? 'PM' : 'AM';
+        if (h > 12) h -= 12;
+        if (h === 0) h = 12;
+        initialHour = h.toString().padStart(2, '0');
+        initialMinute = mStr;
+    }
+
+    const [hour, setHour] = useState(initialHour);
+    const [minute, setMinute] = useState(initialMinute);
+    const [period, setPeriod] = useState<'AM' | 'PM'>(initialPeriod);
+
+    const updateValue = (h: string, m: string, p: 'AM' | 'PM') => {
+        onChange(convertTo24Hour(h, m, p));
+    };
+
+    return (
+        <div className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-lg p-1">
+            <select 
+                value={hour} 
+                onChange={(e) => { setHour(e.target.value); updateValue(e.target.value, minute, period); }}
+                className="bg-transparent text-white text-xs outline-none cursor-pointer appearance-none text-center"
+            >
+                {Array.from({length: 12}, (_, i) => i + 1).map(h => (
+                    <option key={h} value={h.toString().padStart(2, '0')} className="bg-[#1a1a1a]">{h.toString().padStart(2, '0')}</option>
+                ))}
+            </select>
+            <span className="text-white/50">:</span>
+            <select 
+                value={minute} 
+                onChange={(e) => { setMinute(e.target.value); updateValue(hour, e.target.value, period); }}
+                className="bg-transparent text-white text-xs outline-none cursor-pointer appearance-none text-center"
+            >
+                {["00", "15", "30", "45"].map(m => (
+                    <option key={m} value={m} className="bg-[#1a1a1a]">{m}</option>
+                ))}
+            </select>
+            <select 
+                value={period} 
+                onChange={(e) => { 
+                    const p = e.target.value as 'AM' | 'PM';
+                    setPeriod(p); 
+                    updateValue(hour, minute, p); 
+                }}
+                className="bg-white/10 text-white text-xs outline-none cursor-pointer rounded px-1 ml-1"
+            >
+                <option value="AM" className="bg-[#1a1a1a]">صباحاً</option>
+                <option value="PM" className="bg-[#1a1a1a]">مساءً</option>
+            </select>
+        </div>
+    );
+};
+
+// ✅ دالة ذكية لضمان قراءة بيانات قاعدة البيانات (JSON) وعرضها دائماً
+const safeArray = (data: any) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+        try { return JSON.parse(data); } catch { return []; }
+    }
+    if (typeof data === 'object') return Object.values(data);
+    return [];
+};
 export default function ProviderServicesPage() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,7 +175,7 @@ export default function ProviderServicesPage() {
   const [formData, setFormData] = useState({
     title: "", description: "", price: "", commercial_license: null as File | null,
     capacity_type: "unlimited", max_capacity: 0, 
-    room_count: 1, amenities: [] as string[], custom_amenities: "", // ✅ حقل الخيارات الإضافية للنزل
+    room_count: 1, amenities: [] as string[], custom_amenities: "", 
     activity_type: "", difficulty_level: "easy", duration: "", meeting_point: "", included_items: "", requirements: "",
     lat: 18.2164, lng: 42.5053,
     place_images: [] as File[],
@@ -110,14 +186,13 @@ export default function ProviderServicesPage() {
   const [durationUnit, setDurationUnit] = useState("ساعة");
   
   const [experienceSessions, setExperienceSessions] = useState<Session[]>([]);
-  // حالة للتجارب العامة
   const [newSessionDate, setNewSessionDate] = useState("");
-  const [newSessionTime, setNewSessionTime] = useState("");
-  // ✅ حالة لتواريخ وأوقات الفعاليات
-  const [eventDates, setEventDates] = useState({ startDate: "", endDate: "", startTime: "", endTime: "" });
+  const [newSessionTime, setNewSessionTime] = useState("09:00");
+  const [eventDates, setEventDates] = useState({ startDate: "", endDate: "", startTime: "16:00", endTime: "22:00" });
 
   const [placeImagePreviews, setPlaceImagePreviews] = useState<{url: string, type: 'image' | 'video'}[]>([]);
 
+  // الجدولة مع أوقات افتراضية 09:00 ص إلى 10:00 م (22:00)
   const [schedule, setSchedule] = useState<WorkDay[]>(
     DAYS.map(d => ({ day: d, active: true, shifts: [{ from: "09:00", to: "22:00" }] }))
   );
@@ -127,7 +202,7 @@ export default function ProviderServicesPage() {
   const [itemsList, setItemsList] = useState<Item[]>([]);
   const [newItem, setNewItem] = useState<Item>({ id: "", name: "", price: 0, image: null, qty: 1, type: 'image' });
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
-
+const todayDate = new Date().toISOString().split('T')[0];
   useEffect(() => {
     fetchInitialData();
   }, []);
@@ -221,7 +296,6 @@ export default function ProviderServicesPage() {
     setItemImageFile(null);
   };
 
-  // ✅ تعديل إضافة المواعيد لتدعم الفعاليات والتجارب
   const handleAddSession = () => {
       if (selectedSubCategory === 'event') {
           if (!eventDates.startDate || !eventDates.endDate || !eventDates.startTime || !eventDates.endTime) {
@@ -234,12 +308,12 @@ export default function ProviderServicesPage() {
               startTime: eventDates.startTime, 
               endTime: eventDates.endTime 
           }]);
-          setEventDates({ startDate: "", endDate: "", startTime: "", endTime: "" });
+          setEventDates({ startDate: "", endDate: "", startTime: "16:00", endTime: "22:00" });
       } else {
           if (!newSessionDate || !newSessionTime) return alert("الرجاء تحديد التاريخ والوقت");
           setExperienceSessions([...experienceSessions, { type: 'single', date: newSessionDate, time: newSessionTime }]);
           setNewSessionDate("");
-          setNewSessionTime("");
+          setNewSessionTime("09:00");
       }
   };
 
@@ -266,11 +340,9 @@ export default function ProviderServicesPage() {
         for (const file of formData.place_images) {
             let fileToUpload = file;
             
-            // ✅ تطبيق ضغط الصور والحد الأقصى للفيديو
             if (file.type.startsWith('image/')) {
                 fileToUpload = await compressImage(file);
             } else if (file.type.startsWith('video/')) {
-                // حد أقصى 30 ميجابايت للفيديو
                 if (file.size > 30 * 1024 * 1024) {
                     alert(`حجم الفيديو (${file.name}) كبير جداً. أقصى حجم مسموح هو 30 ميجابايت.`);
                     setSubmitting(false);
@@ -303,7 +375,9 @@ export default function ProviderServicesPage() {
             provider_id: session.user.id,
             service_category: selectedCategory, sub_category: selectedSubCategory,
             title: formData.title, description: formData.description, price: Number(formData.price),
-            commercial_license: licenseUrl, work_schedule: schedule, blocked_dates: blockedDates,
+            commercial_license: licenseUrl, 
+            work_schedule: schedule, // ✅ يتم إرساله هنا بصيغة 24 ساعة جاهزة للمقارنة
+            blocked_dates: blockedDates,
             capacity_type: finalCapacity > 0 ? 'limited' : 'unlimited', 
             max_capacity: finalCapacity, 
             room_count: selectedSubCategory === 'lodging' ? Number(formData.room_count) : null,
@@ -322,9 +396,9 @@ export default function ProviderServicesPage() {
             details: {
                 images: uploadedPlaceImages, 
                 features: formData.amenities,
-                custom_amenities: formData.custom_amenities, // ✅ إرسال الخيارات الإضافية لقاعدة البيانات
+                custom_amenities: formData.custom_amenities, 
                 policies: formData.policies,
-                sessions: experienceSessions // ✅ إرسال تواريخ الفعاليات أو التجارب
+                sessions: experienceSessions 
             }
         }]);
 
@@ -342,7 +416,7 @@ export default function ProviderServicesPage() {
       setPlaceImagePreviews([]);
       setExperienceSessions([]);
       setDurationVal("");
-      setEventDates({ startDate: "", endDate: "", startTime: "", endTime: "" });
+      setEventDates({ startDate: "", endDate: "", startTime: "16:00", endTime: "22:00" });
   };
 
   const renderStepContent = () => {
@@ -518,7 +592,6 @@ export default function ProviderServicesPage() {
                         </label> 
                     ))} 
                 </div>
-                {/* ✅ حقل الخيارات الإضافية للمزود */}
                 <div className="pt-3 border-t border-white/10 mt-4">
                     <label className="block text-sm text-white/70 mb-2">مميزات أخرى (غير موجودة في القائمة أعلاه)</label>
                     <textarea 
@@ -534,14 +607,13 @@ export default function ProviderServicesPage() {
         
         {(selectedSubCategory === 'food' || selectedSubCategory === 'craft') && ( <div className="bg-black/20 p-5 rounded-2xl border border-white/5"> <h4 className="text-[#C89B3C] font-bold mb-4 flex items-center gap-2"> {selectedSubCategory === 'food' ? <Utensils size={18}/> : <Box size={18}/>} {selectedSubCategory === 'food' ? 'قائمة الطعام (المنيو)' : 'المنتجات المعروضة (الحرف)'} </h4> <div className="flex flex-wrap gap-2 mb-4 items-end bg-white/5 p-3 rounded-xl"> <div className="flex-1 min-w-[150px]"> <label className="text-xs text-white/50 block mb-1">اسم المنتج</label> <input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> <div className="w-24"> <label className="text-xs text-white/50 block mb-1">السعر</label> <input type="number" value={newItem.price || ''} onChange={e => setNewItem({...newItem, price: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> {selectedSubCategory === 'craft' && ( <div className="w-24"> <label className="text-xs text-white/50 block mb-1">المخزون</label> <input type="number" value={newItem.qty || 1} onChange={e => setNewItem({...newItem, qty: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/> </div> )} <div className="w-10"> <label className="block w-full h-[38px] bg-white/5 border border-white/10 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/10"> <Camera size={16} className="text-white/50"/> <input type="file" accept="image/*,video/*" className="hidden" onChange={e => setItemImageFile(e.target.files?.[0] || null)}/> </label> </div> <button type="button" onClick={handleAddItem} className="bg-[#C89B3C] text-black px-4 h-[38px] rounded-lg text-sm font-bold">إضافة</button> </div> <div className="space-y-2"> {itemsList.map((item, i) => ( <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5"> <div className="flex items-center gap-3"> {item.image ? (item.type === 'video' ? <video src={item.image} className="w-10 h-10 rounded-lg object-cover" muted /> : <img src={item.image} className="w-10 h-10 rounded-lg object-cover"/>) : <div className="w-10 h-10 bg-white/10 rounded-lg"/>} <div> <p className="font-bold text-sm">{item.name}</p> {selectedSubCategory === 'craft' && <p className="text-xs text-white/40">متبقي: {item.qty} قطعة</p>} </div> </div> <div className="flex items-center gap-3"> <span className="text-[#C89B3C] font-mono">{item.price} ﷼</span> <button type="button" onClick={() => setItemsList(itemsList.filter(m => m.id !== item.id))} className="text-red-400 hover:text-red-300"><Trash2 size={16}/></button> </div> </div> ))} </div> </div> )} 
         
-        {/* ✅ الجلسات/المواعيد (للتجربة العامة وللفعاليات - معدلة لتناسب الفعاليات) */}
+        {/* ✅ الجلسات/المواعيد (للتجربة العامة وللفعاليات) مع نظام وقت 12 ساعة */}
         {(selectedSubCategory === 'general_experience' || selectedSubCategory === 'event') ? (
             <div className="space-y-4">
                 <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><Calendar size={18}/> {selectedSubCategory === 'event' ? 'مواعيد الفعالية المتاحة' : 'مواعيد التجربة المتاحة'}</h4>
                 <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                     <p className="text-xs text-white/60 mb-4">أضف التواريخ والأوقات التي ستقام فيها {selectedSubCategory === 'event' ? 'الفعالية' : 'التجربة'} بالتحديد.</p>
                     
-                    {/* فورم الإضافة يختلف حسب النوع */}
                     {selectedSubCategory === 'event' ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-white/5 p-3 rounded-xl border border-white/10">
                             <div>
@@ -554,33 +626,32 @@ export default function ProviderServicesPage() {
                             </div>
                             <div>
                                 <label className="text-xs text-white/50 block mb-1">من الساعة</label>
-                                <input type="time" value={eventDates.startTime} onChange={e => setEventDates({...eventDates, startTime: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                                <TimePicker12H value={eventDates.startTime} onChange={(val) => setEventDates({...eventDates, startTime: val})} />
                             </div>
                             <div>
                                 <label className="text-xs text-white/50 block mb-1">إلى الساعة</label>
-                                <input type="time" value={eventDates.endTime} onChange={e => setEventDates({...eventDates, endTime: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                                <TimePicker12H value={eventDates.endTime} onChange={(val) => setEventDates({...eventDates, endTime: val})} />
                             </div>
                             <div className="md:col-span-2">
                                 <button type="button" onClick={handleAddSession} className="w-full bg-[#C89B3C] text-black h-[42px] rounded-lg text-sm font-bold hover:bg-[#b38a35] transition">إضافة الموعد للفعالية</button>
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-wrap gap-2 items-end mb-4">
-                            <div className="flex-1">
+                        <div className="flex flex-wrap gap-4 items-end mb-4 bg-white/5 p-3 rounded-xl border border-white/10">
+                            <div className="flex-1 min-w-[150px]">
                                 <label className="text-xs text-white/50 block mb-1">التاريخ</label>
                                 <input type="date" value={newSessionDate} onChange={e => setNewSessionDate(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
                             </div>
-                            <div className="w-32">
+                            <div>
                                 <label className="text-xs text-white/50 block mb-1">وقت البدء</label>
-                                <input type="time" value={newSessionTime} onChange={e => setNewSessionTime(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-white outline-none [color-scheme:dark]"/>
+                                <TimePicker12H value={newSessionTime} onChange={setNewSessionTime} />
                             </div>
                             <button type="button" onClick={handleAddSession} className="bg-[#C89B3C] text-black px-4 h-[42px] rounded-lg text-sm font-bold hover:bg-[#b38a35]">إضافة موعد</button>
                         </div>
                     )}
                     
-                    {/* عرض المواعيد المضافة */}
                     {experienceSessions.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/10">
                             {experienceSessions.map((session, i) => (
                                 <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
                                     <div className="flex items-center gap-2">
@@ -599,7 +670,7 @@ export default function ProviderServicesPage() {
                             ))}
                         </div>
                     ) : (
-                        <p className="text-center text-xs text-white/30 py-4 border border-dashed border-white/10 rounded-lg">لم تتم إضافة أي مواعيد بعد.</p>
+                        <p className="text-center text-xs text-white/30 py-4 mt-4 border border-dashed border-white/10 rounded-lg">لم تتم إضافة أي مواعيد بعد.</p>
                     )}
                 </div>
                 
@@ -611,8 +682,40 @@ export default function ProviderServicesPage() {
         ) : (
             <div className="space-y-4"> 
                 <h4 className="text-[#C89B3C] font-bold flex items-center gap-2"><Clock size={18}/> {selectedSubCategory === 'lodging' ? 'أيام استقبال النزلاء' : 'أوقات العمل والدوام'} </h4> 
-                <div className="grid grid-cols-1 gap-2 bg-black/20 p-4 rounded-xl border border-white/5"> {schedule.map((day, dIdx) => ( <div key={dIdx} className={`flex flex-wrap items-center gap-3 p-2 rounded-lg border ${day.active ? 'border-white/10' : 'border-red-500/10 bg-red-500/5'}`}> <div className="flex items-center gap-2 w-24"> <input type="checkbox" checked={day.active} onChange={() => { const newSched = [...schedule]; newSched[dIdx].active = !newSched[dIdx].active; setSchedule(newSched); }} className="accent-[#C89B3C] w-4 h-4"/> <span className="text-sm font-bold">{day.day}</span> </div> {day.active ? ( <div className="flex flex-wrap gap-2 flex-1"> {day.shifts.map((shift, sIdx) => ( <div key={sIdx} className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/10"> <input type="time" value={shift.from} onChange={e => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].from = e.target.value; setSchedule(newSched); }} className="bg-transparent text-white text-xs outline-none"/> <span>-</span> <input type="time" value={shift.to} onChange={e => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].to = e.target.value; setSchedule(newSched); }} className="bg-transparent text-white text-xs outline-none"/> </div> ))} </div> ) : <span className="text-xs text-red-400/50">مغلق</span>} </div> ))} </div> 
-                <div className="flex gap-4 items-center pt-2"> <label className="text-sm text-white/70">حجب تاريخ معين:</label> <input type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-lg p-2 text-white text-xs outline-none [color-scheme:dark]"/> <button type="button" onClick={() => {if(newBlockedDate) { setBlockedDates([...blockedDates, newBlockedDate]); setNewBlockedDate(""); }}} className="bg-red-500/20 text-red-400 px-3 py-1 rounded text-xs font-bold">حجب</button> </div> <div className="flex flex-wrap gap-2"> {blockedDates.map((date, i) => ( <span key={i} className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/20 flex items-center gap-1"> {date} <button type="button" onClick={() => setBlockedDates(blockedDates.filter(d => d !== date))}><X size={10}/></button> </span> ))} </div> 
+                {/* ✅ جدول أوقات العمل مع نظام 12 ساعة */}
+                <div className="grid grid-cols-1 gap-2 bg-black/20 p-4 rounded-xl border border-white/5"> 
+                    {schedule.map((day, dIdx) => ( 
+                        <div key={dIdx} className={`flex flex-wrap items-center gap-3 p-3 rounded-lg border ${day.active ? 'border-white/10 bg-white/5' : 'border-red-500/10 bg-red-500/5'}`}> 
+                            <div className="flex items-center gap-2 w-24"> 
+                                <input type="checkbox" checked={day.active} onChange={() => { const newSched = [...schedule]; newSched[dIdx].active = !newSched[dIdx].active; setSchedule(newSched); }} className="accent-[#C89B3C] w-4 h-4"/> 
+                                <span className="text-sm font-bold">{day.day}</span> 
+                            </div> 
+                            {day.active ? ( 
+                                <div className="flex flex-wrap gap-2 flex-1"> 
+                                    {day.shifts.map((shift, sIdx) => ( 
+                                        <div key={sIdx} className="flex items-center gap-2 bg-black/40 p-1.5 rounded-lg border border-white/10"> 
+                                            <TimePicker12H value={shift.from} onChange={(val) => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].from = val; setSchedule(newSched); }} />
+                                            <span className="text-white/50 text-xs">إلى</span> 
+                                            <TimePicker12H value={shift.to} onChange={(val) => { const newSched = [...schedule]; newSched[dIdx].shifts[sIdx].to = val; setSchedule(newSched); }} />
+                                        </div> 
+                                    ))} 
+                                </div> 
+                            ) : <span className="text-xs text-red-400/50">مغلق</span>} 
+                        </div> 
+                    ))} 
+                </div> 
+                <div className="flex gap-4 items-center pt-2"> 
+                    <label className="text-sm text-white/70">حجب تاريخ معين:</label> 
+                    <input type="date" min={todayDate} value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-lg p-2 text-white text-xs outline-none [color-scheme:dark]"/> 
+                    <button type="button" onClick={() => {if(newBlockedDate) { setBlockedDates([...blockedDates, newBlockedDate]); setNewBlockedDate(""); }}} className="bg-red-500/20 text-red-400 px-3 py-1 rounded text-xs font-bold hover:bg-red-500/30">حجب</button> 
+                </div> 
+                <div className="flex flex-wrap gap-2"> 
+                    {blockedDates.map((date, i) => ( 
+                        <span key={i} className="text-xs bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/20 flex items-center gap-1"> 
+                            {date} <button type="button" onClick={() => setBlockedDates(blockedDates.filter(d => d !== date))} className="hover:text-white"><X size={10}/></button> 
+                        </span> 
+                    ))} 
+                </div> 
             </div> 
         )}
 
@@ -637,7 +740,7 @@ export default function ProviderServicesPage() {
                </div>
            )}
            {services.map(s => (
-               <div key={s.id} onClick={() => setViewService(s)} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg relative group hover:border-[#C89B3C]/50 transition cursor-pointer">
+               <div key={s.id} onClick={() => setViewService(s)} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg relative group hover:border-[#C89B3C]/50 transition cursor-pointer flex flex-col h-full">
                    
                    <div className="absolute top-4 left-4">
                        <span className={`px-2 py-1 rounded text-[10px] font-bold shadow-lg ${
@@ -655,9 +758,9 @@ export default function ProviderServicesPage() {
                        </span>
                    </div>
 
-                   <h3 className="font-bold mb-1 text-lg group-hover:text-[#C89B3C] transition">{s.title}</h3>
-                   <span className="text-xs text-white/50 bg-white/5 px-2 py-1 rounded mb-3 inline-block">
-                       {s.service_category === 'experience' ? 'تجربة' : `مرفق/فعالية: ${
+                   <h3 className="font-bold mb-1 text-lg group-hover:text-[#C89B3C] transition pr-16 line-clamp-1">{s.title}</h3>
+                   <span className="text-xs text-white/50 bg-white/5 px-2 py-1 rounded mb-3 inline-block w-fit">
+                       {s.service_category === 'experience' ? 'تجربة سياحية' : `مرفق/فعالية: ${
                          s.sub_category === 'event' ? 'فعالية' : 
                          s.sub_category === 'lodging' ? 'نزل وتأجير' : 
                          s.sub_category === 'food' ? 'أكل ومشروبات' : 'حرف ومنتجات'
@@ -755,7 +858,6 @@ export default function ProviderServicesPage() {
                                           <span key={i} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded border border-[#C89B3C]/20">{am}</span>
                                       ))}
                                   </div>
-                                  {/* ✅ عرض الخيارات الإضافية إذا كانت موجودة */}
                                   {viewService.details?.custom_amenities && (
                                       <div className="mt-3 pt-3 border-t border-white/10">
                                           <p className="text-xs text-white/50 mb-1">مميزات إضافية:</p>
@@ -765,22 +867,40 @@ export default function ProviderServicesPage() {
                               </div>
                           )}
 
-                          {/* عرض مواعيد الفعاليات أو التجارب العامة */}
-                          {viewService.details?.sessions && viewService.details.sessions.length > 0 && (
+                          {/* عرض المواعيد أو أوقات العمل بذكاء */}
+                          {safeArray(viewService.details?.sessions).length > 0 ? (
                               <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                   <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Calendar size={16}/> المواعيد المتاحة</h3>
                                   <div className="grid grid-cols-1 gap-2">
-                                      {viewService.details.sessions.map((session: any, i: number) => (
-                                          <div key={i} className="bg-white/5 p-3 rounded-lg text-xs flex items-center gap-3">
+                                      {safeArray(viewService.details.sessions).map((session: any, i: number) => (
+                                          <div key={i} className="bg-white/5 p-3 rounded-lg text-xs flex items-center gap-3 border border-white/10">
                                               <Clock size={16} className="text-[#C89B3C] shrink-0"/>
                                               {session.type === 'range' ? (
                                                   <div className="space-y-1">
-                                                      <p><span className="text-white/50">بداية:</span> <span className="dir-ltr font-bold">{session.startDate} | {session.startTime}</span></p>
-                                                      <p><span className="text-white/50">نهاية:</span> <span className="dir-ltr font-bold">{session.endDate} | {session.endTime}</span></p>
+                                                      <p><span className="text-white/50">بداية:</span> <span className="dir-ltr font-bold text-[#C89B3C]">{session.startDate} | {session.startTime}</span></p>
+                                                      <p><span className="text-white/50">نهاية:</span> <span className="dir-ltr font-bold text-[#C89B3C]">{session.endDate} | {session.endTime}</span></p>
                                                   </div>
                                               ) : (
-                                                  <span className="dir-ltr font-bold text-sm">{session.date} | {session.time}</span>
+                                                  <span className="dir-ltr font-bold text-sm text-[#C89B3C]">{session.date} | {session.time}</span>
                                               )}
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          ) : safeArray(viewService.work_schedule).length > 0 && (
+                              <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                                  <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Clock size={16}/> أوقات العمل</h3>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      {safeArray(viewService.work_schedule).map((day: any, i: number) => (
+                                          <div key={i} className={`flex justify-between items-center p-2 rounded-lg border text-xs ${day.active ? 'border-white/10 bg-white/5' : 'border-red-500/10 bg-red-500/5'}`}>
+                                              <span className={day.active ? "text-white/80 font-bold" : "text-red-400 font-bold"}>{day.day}</span>
+                                              {day.active ? (
+                                                  <div className="flex flex-col items-end gap-1">
+                                                      {safeArray(day.shifts).map((s:any, idx:number) => (
+                                                          <span key={idx} className="text-white/70 font-mono dir-ltr">{s.from} - {s.to}</span>
+                                                      ))}
+                                                  </div>
+                                              ) : <span className="text-red-400">مغلق</span>}
                                           </div>
                                       ))}
                                   </div>
@@ -836,10 +956,10 @@ export default function ProviderServicesPage() {
 
        {zoomedImage && (
         <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
-            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition"><X size={32} /></button>
-            <div className="relative w-full max-w-5xl h-[85vh] flex items-center justify-center">
+            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><X size={32} /></button>
+            <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
                 {zoomedImage.match(/mp4|webm|ogg/) ? (
-                    <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl" />
+                    <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} />
                 ) : (
                     <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/>
                 )}

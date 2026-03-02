@@ -7,7 +7,8 @@ import {
   CheckCircle, XCircle, Eye, Edit, Trash2, 
   MapPin, Clock, FileText, ChevronLeft, Save, Loader2, Filter, User, 
   Sparkles, Box, Utensils, Mountain, Compass, Info, PauseCircle, AlertTriangle, CheckSquare, Image as ImageIcon, Video,
-  Calendar, Map as MapIcon, ShieldAlert, Home, Send, HeartPulse, Waves, Car, Wind, Tv, Flame, Coffee, ShieldCheck, Ticket , Wifi, Percent
+  Calendar, Map as MapIcon, ShieldAlert, Home, Send, HeartPulse, Waves, Car, Wind, Tv, Flame, Coffee, ShieldCheck, Ticket , Wifi, Percent,
+  Activity, Briefcase, CalendarDays, CalendarOff
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import Link from "next/link";
@@ -40,6 +41,17 @@ const AMENITIES_DICT: Record<string, any> = {
     'view': { label: 'إطلالة مميزة', icon: Mountain },
 };
 
+// ✅ دالة ذكية لمعالجة المصفوفات
+const safeArray = (data: any) => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+        try { return JSON.parse(data); } catch { return []; }
+    }
+    if (typeof data === 'object') return Object.values(data);
+    return [];
+};
+
 interface Service {
   id: string;
   title: string;
@@ -63,7 +75,7 @@ interface Service {
   location_lng?: number;
   created_at: string;
   rejection_reason?: string; 
-  work_hours?: any[];
+  work_schedule?: any[]; // ✅ تعديل الاسم ليتوافق مع قاعدة البيانات
   blocked_dates?: string[];
   menu_items?: any[]; 
   details?: Record<string, any>; 
@@ -93,7 +105,7 @@ export default function ReviewServicesPage() {
   // States العمولة للخدمة
   const [useCustomCommission, setUseCustomCommission] = useState(false);
   const [customCommission, setCustomCommission] = useState("");
-  const [savingCommission, setSavingCommission] = useState(false); // ✅ State جديد لزر حفظ العمولة فقط
+  const [savingCommission, setSavingCommission] = useState(false);
 
   useEffect(() => {
     fetchServices();
@@ -142,7 +154,6 @@ export default function ReviewServicesPage() {
     setRejectionReason("");
     setActionToConfirm(null);
     
-    // ضبط إعدادات العمولة بناءً على الخدمة المحددة
     setUseCustomCommission(service.platform_commission !== null && service.platform_commission !== undefined);
     setCustomCommission(service.platform_commission ? service.platform_commission.toString() : "");
   };
@@ -151,7 +162,6 @@ export default function ReviewServicesPage() {
       return url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes('video');
   };
 
-  // ✅ دالة جديدة مخصصة فقط لتحديث العمولة مباشرة بدون تغيير حالة الخدمة
   const handleUpdateCommission = async () => {
       if (!selectedService) return;
       if (useCustomCommission && !customCommission) return alert("الرجاء إدخال النسبة.");
@@ -162,12 +172,11 @@ export default function ReviewServicesPage() {
           
           const { error } = await supabase.rpc('force_update_service_approval', {
               p_id: selectedService.id,
-              p_status: selectedService.status, // نبقي الحالة كما هي
+              p_status: selectedService.status, 
               p_reason: selectedService.rejection_reason || null,
               p_commission: newCommissionValue
           });
 
-          // Fallback if RPC fails
           if (error && error.message.includes('Could not find the function')) {
              const { error: normalError } = await supabase.from('services').update({ platform_commission: newCommissionValue }).eq('id', selectedService.id);
              if (normalError) throw normalError;
@@ -176,9 +185,7 @@ export default function ReviewServicesPage() {
           }
 
           alert("تم تحديث نسبة العمولة بنجاح ✅");
-          fetchServices(); // تحديث القائمة
-          
-          // تحديث الخدمة المحددة في الـ Modal لتعكس القيمة الجديدة
+          fetchServices(); 
           setSelectedService({ ...selectedService, platform_commission: newCommissionValue });
 
       } catch (err: any) {
@@ -251,7 +258,6 @@ export default function ReviewServicesPage() {
           updates.price = Number(editData.price);
       }
 
-      // الحل الجذري لتجاوز كاش Supabase (استخدام RPC للموافقة وتحديث العمولة)
       let updateError;
       
       if (action === 'approve') {
@@ -429,7 +435,7 @@ export default function ReviewServicesPage() {
                     </div>
                 )}
 
-                {/* ✅ معرض الصور والفيديو (في الأعلى ليعطي نظرة عامة) */}
+                {/* ✅ معرض الصور والفيديو */}
                 {selectedService.details?.images && selectedService.details.images.length > 0 && (
                     <div className="mb-8">
                         <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو المكان</h3>
@@ -450,7 +456,6 @@ export default function ReviewServicesPage() {
                     </div>
                 )}
 
-                {/* باقي التفاصيل (الشبكة) */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     
                     {/* ========= العمود الأول (اليمين) ========= */}
@@ -498,7 +503,7 @@ export default function ReviewServicesPage() {
                              </div>
                         )}
 
-                        {/* تفاصيل التجربة والفعاليات (مهم جداً) */}
+                        {/* ✅ تفاصيل التجربة والفعاليات */}
                         {(selectedService.service_category === 'experience' || selectedService.sub_category === 'event' || selectedService.sub_category === 'general_experience') && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                                 <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Compass size={16}/> تفاصيل التجربة / الفعالية</h3>
@@ -552,14 +557,14 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* المميزات والخيارات الإضافية */}
-                        {(selectedService.amenities?.length ? selectedService.amenities.length > 0 : false || selectedService.details?.custom_amenities) && (
+                        {/* ✅ المميزات والخيارات الإضافية */}
+                        {(safeArray(selectedService.amenities).length > 0 || selectedService.details?.custom_amenities) && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Sparkles size={16}/> المميزات والخدمات</h3>
                                 
-                                {selectedService.amenities && selectedService.amenities.length > 0 && (
+                                {safeArray(selectedService.amenities).length > 0 && (
                                     <div className="flex flex-wrap gap-2 mb-3">
-                                        {selectedService.amenities.map((am: string, i: number) => {
+                                        {safeArray(selectedService.amenities).map((am: string, i: number) => {
                                             const amenityObj = AMENITIES_DICT[am];
                                             const IconComponent = amenityObj?.icon || CheckSquare;
                                             return (
@@ -581,17 +586,17 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* أوقات الدوام (للمرافق والمطاعم والنزل) */}
-                        {selectedService.work_hours && selectedService.work_hours.length > 0 && (
+                        {/* ✅ أوقات الدوام (للمرافق والمطاعم والنزل) */}
+                        {safeArray(selectedService.work_schedule).length > 0 && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Clock size={16}/> أوقات العمل والدوام</h3>
                                 <div className="space-y-2">
-                                    {selectedService.work_hours.map((day: any, i: number) => (
+                                    {safeArray(selectedService.work_schedule).map((day: any, i: number) => (
                                         <div key={i} className="flex justify-between items-center text-sm border-b border-white/5 pb-2 last:border-0 last:pb-0">
                                             <span className="text-white/70 font-bold">{day.day}</span>
                                             {day.active ? (
                                                 <div className="flex flex-wrap justify-end gap-1.5">
-                                                    {day.shifts?.map((s:any, idx:number) => (
+                                                    {safeArray(day.shifts).map((s:any, idx:number) => (
                                                         <span key={idx} className="bg-white/10 px-2 py-0.5 rounded text-xs dir-ltr">{s.from} - {s.to}</span>
                                                     ))}
                                                 </div>
@@ -601,11 +606,11 @@ export default function ReviewServicesPage() {
                                 </div>
                                 
                                 {/* الأيام المحجوبة إن وجدت */}
-                                {selectedService.blocked_dates && selectedService.blocked_dates.length > 0 && (
+                                {safeArray(selectedService.blocked_dates).length > 0 && (
                                     <div className="mt-4 pt-3 border-t border-white/10">
                                         <p className="text-xs text-red-400 mb-2 font-bold">أيام مغلقة / مستثناة:</p>
                                         <div className="flex flex-wrap gap-1.5">
-                                            {selectedService.blocked_dates.map((date, idx) => (
+                                            {safeArray(selectedService.blocked_dates).map((date: string, idx: number) => (
                                                 <span key={idx} className="bg-red-500/10 text-red-300 border border-red-500/20 px-2 py-1 rounded text-xs dir-ltr">{date}</span>
                                             ))}
                                         </div>
@@ -614,12 +619,12 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* مواعيد الجلسات والفعاليات */}
-                        {selectedService.details?.sessions && selectedService.details.sessions.length > 0 && (
+                        {/* ✅ مواعيد الجلسات والفعاليات */}
+                        {safeArray(selectedService.details?.sessions).length > 0 && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Calendar size={16}/> المواعيد والجلسات المتاحة</h3>
                                 <div className="grid grid-cols-1 gap-2">
-                                    {selectedService.details.sessions.map((session: any, i: number) => (
+                                    {safeArray(selectedService.details?.sessions).map((session: any, i: number) => (
                                         <div key={i} className="bg-white/5 p-3 rounded-lg text-sm border border-white/5 flex items-start gap-3">
                                             <Calendar size={16} className="text-[#C89B3C] mt-0.5 shrink-0"/>
                                             {session.type === 'range' ? (
@@ -645,12 +650,12 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* المنيو / المنتجات */}
-                        {selectedService.menu_items && selectedService.menu_items.length > 0 && (
+                        {/* ✅ المنيو / المنتجات */}
+                        {safeArray(selectedService.menu_items).length > 0 && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Box size={16}/> المنتجات / المنيو</h3>
                                 <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
-                                    {selectedService.menu_items.map((item: any, i: number) => (
+                                    {safeArray(selectedService.menu_items).map((item: any, i: number) => (
                                         <div key={i} className="flex justify-between items-center bg-white/5 p-2 rounded-lg text-sm border border-white/5">
                                             <div className="flex items-center gap-3">
                                                 {item.image ? (
@@ -676,13 +681,12 @@ export default function ReviewServicesPage() {
                     </div>
                 </div>
 
-                {/* ✅ قسم إعدادات العمولة للخدمة (يظهر للخدمات النشطة وقيد المراجعة) */}
+                {/* ✅ قسم إعدادات العمولة للخدمة */}
                 {(selectedService.status === 'pending' || selectedService.status === 'approved') && (
                     <div className="mt-8 bg-black/40 border border-white/10 p-5 rounded-xl mx-8 mb-4">
                         <div className="flex justify-between items-start mb-4">
                             <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Percent size={18}/> إعدادات عمولة المنصة (لهذه الخدمة تحديداً)</h3>
                             
-                            {/* زر الحفظ يظهر فقط للخدمات المعتمدة أصلاً، لتحديث النسبة فقط دون تغيير الحالة */}
                             {selectedService.status === 'approved' && (
                                 <button 
                                     onClick={handleUpdateCommission} 
