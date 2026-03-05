@@ -103,6 +103,7 @@ export default function UsersManagement() {
       .from('profiles')
       .select('*')
       .eq('is_admin', true) 
+      .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
     if (profiles) {

@@ -92,16 +92,19 @@ function ServicesContent() {
                         { id: 'housing', label: 'سكن', icon: Home },
                         { id: 'food', label: 'مأكولات', icon: Utensils },
                         { id: 'experience', label: 'تجارب', icon: Mountain },
-                    ].map((type) => (
+                    ].map((type) => {
+                        const Icon = type.icon;
+                        return (
                         <button 
                             key={type.id}
                             onClick={() => setFilterType(type.id)}
                             className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${filterType === type.id ? 'bg-[#C89B3C] text-[#2B1F17]' : 'bg-white/5 text-white/70 hover:bg-white/10'}`}
                         >
-                            {type.icon && <type.icon size={16}/>}
+                            {Icon && <Icon size={16}/>}
                             {type.label}
                         </button>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {/* فلتر المدينة */}
@@ -140,7 +143,7 @@ function ServicesContent() {
                         <Link href={`/service/${service.id}`} key={service.id} className="group bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/5 hover:border-[#C89B3C]/50 transition duration-500 hover:-translate-y-2 shadow-lg flex flex-col">
                             <div className="relative h-64 overflow-hidden">
                                 <Image src={image} alt={service.title} fill className="object-cover group-hover:scale-110 transition duration-700" />
-                                <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-transparent opacity-80" />
+                                <div className="absolute inset-0 bg-linear-to-t from-[#1a1a1a] via-transparent to-transparent opacity-80" />
                                 
                                 <div className="absolute top-4 left-4 flex flex-col gap-2">
                                     <span className="bg-black/60 backdrop-blur-md text-white text-xs px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-1 w-fit">

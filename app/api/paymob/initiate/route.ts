@@ -6,14 +6,20 @@ export async function POST(request: Request) {
     console.log("🟢 1. بدأ طلب الدفع (النسخة السعودية KSA)");
 
     const body = await request.json();
-    const { bookingId, couponCode } = body;
+    const { bookingId, couponCode, paymentMethod } = body;
 
     if (!bookingId) {
       return NextResponse.json({ error: "رقم الحجز مفقود" }, { status: 400 });
     }
 
+    const isApplePay = paymentMethod === 'applepay';
+
     if (!process.env.PAYMOB_API_KEY || !process.env.PAYMOB_INTEGRATION_ID || !process.env.PAYMOB_IFRAME_ID) {
         throw new Error("مفاتيح Paymob مفقودة في السيرفر");
+    }
+
+    if (isApplePay && !process.env.PAYMOB_APPLEPAY_INTEGRATION_ID) {
+        throw new Error("مفتاح Apple Pay Integration ID مفقود في السيرفر");
     }
 
     // 1. جلب البيانات
@@ -156,7 +162,9 @@ export async function POST(request: Request) {
                 state: "NA"
             },
             currency: "SAR",
-            integration_id: Number(process.env.PAYMOB_INTEGRATION_ID)
+            integration_id: isApplePay
+                ? Number(process.env.PAYMOB_APPLEPAY_INTEGRATION_ID)
+                : Number(process.env.PAYMOB_INTEGRATION_ID)
         })
     });
     
@@ -172,7 +180,10 @@ export async function POST(request: Request) {
     console.log("🟢 5. تم تجهيز رابط الدفع بنجاح!");
     
     // 4. بناء الرابط النهائي لـ Iframe (استخدام رابط ksa)
-    const iframeUrl = `https://ksa.paymob.com/api/acceptance/iframes/${process.env.PAYMOB_IFRAME_ID}?payment_token=${paymentToken}`;
+    const iframeId = isApplePay
+        ? (process.env.PAYMOB_APPLEPAY_IFRAME_ID || process.env.PAYMOB_IFRAME_ID)
+        : process.env.PAYMOB_IFRAME_ID;
+    const iframeUrl = `https://ksa.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentToken}`;
 
     return NextResponse.json({ iframeUrl });
 

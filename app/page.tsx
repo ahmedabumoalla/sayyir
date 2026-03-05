@@ -9,16 +9,12 @@ import DynamicShowcase from "@/components/DynamicShowcase";
 import { 
   Briefcase, Map as MapIcon, Sparkles, Tent, Coffee, Landmark, 
   User, LayoutDashboard, Eye, Target, Phone, Mail, 
-  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin, TrendingUp, Users, Search, Handshake, X, Loader2, Mountain
+  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin, TrendingUp, Users, Search, Handshake, X, Loader2, Mountain, Ticket
 } from "lucide-react";
 import Link from "next/link";
 
-const tajawal = Tajawal({
-  subsets: ["arabic"],
-  weight: ["400", "500", "700"],
-});
+const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// مكون العداد الرقمي المتحرك
 const AnimatedCounter = ({ end }: { end: number }) => {
   const [count, setCount] = useState(0);
   
@@ -30,10 +26,7 @@ const AnimatedCounter = ({ end }: { end: number }) => {
       if (!startTime) startTime = timestamp;
       const progress = Math.min((timestamp - startTime) / duration, 1);
       setCount(Math.floor(progress * end));
-      
-      if (progress < 1) {
-        window.requestAnimationFrame(step);
-      }
+      if (progress < 1) window.requestAnimationFrame(step);
     };
     
     window.requestAnimationFrame(step);
@@ -56,7 +49,6 @@ export default function HomePage() {
   
   const [stats, setStats] = useState({ places: 0, services: 0, providers: 0 });
   
-  // ✅ متغيرات البحث الذكي
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -69,65 +61,32 @@ export default function HomePage() {
   const [index, setIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
   
-  // ✅ دالة البحث الذكي (Live Search)
   useEffect(() => {
     const fetchSearchResults = async () => {
       if (searchQuery.trim().length < 2) {
-        setSearchResults([]);
-        return;
+        setSearchResults([]); return;
       }
-
       setIsSearching(true);
       const searchTerm = `%${searchQuery}%`;
 
       try {
-        // 1. بحث في المعالم (Places)
-        const { data: places } = await supabase
-          .from('places')
-          .select('id, name, type, media_urls, city')
-          .ilike('name', searchTerm)
-          .eq('is_active', true)
-          .limit(4);
+        const { data: places } = await supabase.from('places').select('id, name, type, media_urls, city').ilike('name', searchTerm).eq('is_active', true).limit(4);
+        const { data: services } = await supabase.from('services').select('id, title, service_category, image_url, city').ilike('title', searchTerm).eq('status', 'approved').limit(4);
 
-        // 2. بحث في الخدمات (Services)
-        const { data: services } = await supabase
-          .from('services')
-          .select('id, title, service_category, image_url, city')
-          .ilike('title', searchTerm)
-          .eq('status', 'approved')
-          .limit(4);
-
-        // تنسيق النتائج لتوحيد الشكل
         const formattedPlaces = (places || []).map((p: any) => ({
-            id: p.id,
-            title: p.name,
-            type: p.type === 'heritage' ? 'موقع تراثي' : (p.type === 'natural' ? 'معلم طبيعي' : 'معلم سياحي'),
-            image: p.media_urls?.[0] || "/placeholder.jpg",
-            link: `/place/${p.id}`,
-            icon: <Landmark size={14}/>
+            id: p.id, title: p.name, type: p.type === 'heritage' ? 'موقع تراثي' : (p.type === 'natural' ? 'معلم طبيعي' : 'معلم سياحي'),
+            image: p.media_urls?.[0] || "/placeholder.jpg", link: `/place/${p.id}`, icon: <Landmark size={14}/>
         }));
-
         const formattedServices = (services || []).map((s: any) => ({
-            id: s.id,
-            title: s.title,
-            type: s.service_category === 'experience' ? 'تجربة سياحية' : 'خدمة / مرفق',
-            image: s.image_url || "/placeholder.jpg",
-            link: `/service/${s.id}`,
-            icon: s.service_category === 'experience' ? <Tent size={14}/> : <Coffee size={14}/>
+            id: s.id, title: s.title, type: s.service_category === 'experience' ? 'تجربة سياحية' : 'خدمة / مرفق',
+            image: s.image_url || "/placeholder.jpg", link: `/service/${s.id}`, icon: s.service_category === 'experience' ? <Tent size={14}/> : <Coffee size={14}/>
         }));
 
         setSearchResults([...formattedPlaces, ...formattedServices]);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsSearching(false);
-      }
+      } catch (error) { console.error(error); } finally { setIsSearching(false); }
     };
 
-    const delayDebounceFn = setTimeout(() => {
-      fetchSearchResults();
-    }, 300);
-
+    const delayDebounceFn = setTimeout(() => { fetchSearchResults(); }, 300);
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
@@ -144,17 +103,10 @@ export default function HomePage() {
   useEffect(() => {
     const speed = deleting ? 45 : 90;
     const timeout = setTimeout(() => {
-      if (!deleting && index < text.length) {
-        setDisplayedText(text.slice(0, index + 1));
-        setIndex(index + 1);
-      } else if (deleting && index > 0) {
-        setDisplayedText(text.slice(0, index - 1));
-        setIndex(index - 1);
-      } else if (!deleting && index === text.length) {
-        setTimeout(() => setDeleting(true), 2200);
-      } else if (deleting && index === 0) {
-        setDeleting(false);
-      }
+      if (!deleting && index < text.length) { setDisplayedText(text.slice(0, index + 1)); setIndex(index + 1); } 
+      else if (deleting && index > 0) { setDisplayedText(text.slice(0, index - 1)); setIndex(index - 1); } 
+      else if (!deleting && index === text.length) { setTimeout(() => setDeleting(true), 2200); } 
+      else if (deleting && index === 0) { setDeleting(false); }
     }, speed);
     return () => clearTimeout(timeout);
   }, [index, deleting]);
@@ -164,12 +116,7 @@ export default function HomePage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setUserSession(session);
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name, is_admin, is_super_admin, is_provider')
-          .eq('id', session.user.id)
-          .single();
-        
+        const { data: profile } = await supabase.from('profiles').select('full_name, is_admin, is_super_admin, is_provider').eq('id', session.user.id).single();
         if (profile) {
           setUserName(profile.full_name);
           if (profile.is_super_admin || profile.is_admin) setDashboardLink("/admin/dashboard");
@@ -183,65 +130,39 @@ export default function HomePage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      console.log("Fetching Homepage Data...");
-
-      // 1. المعالم
       const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
       if (places) setLandmarksData(places);
 
-      // 2. المرافق
-      const { data: facilities } = await supabase.from('services').select('*').in('service_type', ['accommodation', 'food']).eq('status', 'approved').limit(6);
+      const { data: facilities } = await supabase.from('services').select('*').in('service_category', ['facility', 'lodging']).eq('status', 'approved').limit(6);
       if (facilities) setFacilitiesData(facilities);
 
-      // 3. التجارب
       const { data: providerExp } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('status', 'approved');
       const { data: adminExp } = await supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);
 
       const formattedProvider = (providerExp || []).map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        price: item.price,
-        image: item.image_url ? item.image_url : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop"),
-        activity_type: item.activity_type || 'تجربة مميزة',
-        duration: item.duration,
-        difficulty_level: item.difficulty_level,
-        meeting_point: item.meeting_point,
-        source: 'service'
+        id: item.id, title: item.title, description: item.description, price: item.price,
+        image: item.image_url ? item.image_url : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder.jpg"),
+        activity_type: item.activity_type || 'تجربة مميزة', duration: item.duration, difficulty_level: item.difficulty_level, meeting_point: item.meeting_point, source: 'service'
       }));
 
       const formattedAdmin = (adminExp || []).map((item: any) => ({
-        id: item.id,
-        title: item.name,
-        description: item.description,
-        price: item.price || 0,
-        image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800&auto=format&fit=crop",
-        activity_type: item.category || 'تجربة سياحية',
-        duration: item.duration,
-        difficulty_level: item.difficulty,
-        meeting_point: item.city || 'عسير',
-        source: 'place'
+        id: item.id, title: item.name, description: item.description, price: item.price || 0,
+        image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "/placeholder.jpg",
+        activity_type: item.category || 'تجربة سياحية', duration: item.duration, difficulty_level: item.difficulty, meeting_point: item.city || 'عسير', source: 'place'
       }));
 
       const allExperiences = [...formattedProvider, ...formattedAdmin];
       setExperiencesData(allExperiences.slice(0, 6));
 
-      // 4. إعدادات المنصة
       const { data: info } = await supabase.from('platform_settings').select('*').single();
       if (info) setPlatformInfo(info);
 
-      // 5. جلب الإحصائيات
       const { count: placesCount } = await supabase.from('places').select('*', { count: 'exact', head: true }).eq('is_active', true);
       const { count: servicesCount } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('status', 'approved');
       const { count: providersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_provider', true);
 
-      setStats({
-        places: placesCount || 0,
-        services: servicesCount || 0,
-        providers: providersCount || 0
-      });
+      setStats({ places: placesCount || 0, services: servicesCount || 0, providers: providersCount || 0 });
 
-      // 6. شركاء النجاح
       const { data: partnersData } = await supabase.from('partners').select('*').order('created_at', { ascending: false });
       if (partnersData) setPartners(partnersData);
     };
@@ -251,34 +172,21 @@ export default function HomePage() {
   return (
     <main className={`relative min-h-screen ${tajawal.className} bg-black text-white`} dir="rtl">
       
-      {/* ستايل خاص للأنيميشن لتجنب أي تعارضات */}
       <style jsx global>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(50%); } /* تحريك 50% لليمين (لأن القائمة مكررة) */
-        }
-        .animate-marquee {
-          animation: marquee 30s linear infinite;
-        }
-        .animate-marquee:hover {
-          animation-play-state: paused;
-        }
+        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(50%); } }
+        .animate-marquee { animation: marquee 30s linear infinite; }
+        .animate-marquee:hover { animation-play-state: paused; }
       `}</style>
 
       {/* HEADER SECTION */}
       <header className="fixed top-0 left-0 right-0 z-50 p-6 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent transition-all duration-300">
         <div className="w-28 md:w-32 hover:scale-105 transition duration-300">
-          <Link href="/">
-              <Image src="/logo.png" alt="Sayyir" width={120} height={50} priority className="drop-shadow-lg" />
-          </Link>
+          <Link href="/"><Image src="/logo.png" alt="Sayyir" width={120} height={50} priority className="drop-shadow-lg" /></Link>
         </div>
-
         <div className="flex items-center gap-3 md:gap-4">
           {userSession ? (
             <div className="flex items-center gap-2 md:gap-3 bg-white/10 backdrop-blur-md px-3 md:px-5 py-2 rounded-full border border-white/10 shadow-lg">
-              <div className="w-8 h-8 rounded-full bg-[#C89B3C] flex items-center justify-center text-[#2B1F17] font-bold shadow-md">
-                <User size={16} />
-              </div>
+              <div className="w-8 h-8 rounded-full bg-[#C89B3C] flex items-center justify-center text-[#2B1F17] font-bold shadow-md"><User size={16} /></div>
               <div className="hidden md:block text-xs md:text-sm">
                 <span className="text-white/60 block text-[10px]">مرحباً،</span>
                 <span className="font-bold text-white">{userName || "العميل"}</span>
@@ -291,11 +199,9 @@ export default function HomePage() {
             </div>
           ) : (
             <Link href="/login" className="bg-white text-black px-5 py-2.5 rounded-full text-sm font-bold hover:bg-[#C89B3C] transition flex items-center gap-2 shadow-lg">
-              <User size={16} />
-              <span>دخول</span>
+              <User size={16} /> <span>دخول</span>
             </Link>
           )}
-
           <Link href="/ai-guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-tr from-[#C89B3C] to-[#dcb45e] flex items-center justify-center shadow-lg animate-pulse hover:animate-none hover:scale-110 transition border border-[#C89B3C]/50" title="المرشد الذكي">
               <Sparkles size={20} className="text-[#2B1F17]" />
           </Link>
@@ -320,33 +226,20 @@ export default function HomePage() {
             دليلك الذكي لاستكشاف المعالم، حجز التجارب، والعثور على أفضل أماكن الإقامة في عسير.
           </p>
 
-          {/* ✅ نظام البحث الذكي (YouTube Style) */}
+          {/* ✅ نظام البحث الذكي */}
           <div ref={searchContainerRef} className="w-full max-w-2xl mt-8 mb-4 relative z-50 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
             <div className={`relative flex items-center bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-2 transition-all duration-300 focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50 shadow-2xl ${searchResults.length > 0 ? 'rounded-b-none border-b-0 bg-[#1a1a1a]' : ''}`}>
                 <Search className="text-white/50 mr-4 ml-2" size={24} />
-                <input
-                    type="text"
-                    placeholder="ابحث عن وجهتك، معلم سياحي، أو تجربة..."
-                    className="w-full bg-transparent border-none outline-none text-white placeholder-white/50 text-lg font-medium h-12 px-2"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
+                <input type="text" placeholder="ابحث عن وجهتك، معلم سياحي، أو تجربة..." className="w-full bg-transparent border-none outline-none text-white placeholder-white/50 text-lg font-medium h-12 px-2" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                 <div className="px-3">
-                    {isSearching ? <Loader2 className="animate-spin text-[#C89B3C]" size={24}/> : 
-                     searchQuery && <button onClick={() => {setSearchQuery(""); setSearchResults([])}}><X className="text-white/50 hover:text-white" size={24}/></button>
-                    }
+                    {isSearching ? <Loader2 className="animate-spin text-[#C89B3C]" size={24}/> : searchQuery && <button onClick={() => {setSearchQuery(""); setSearchResults([])}}><X className="text-white/50 hover:text-white" size={24}/></button>}
                 </div>
             </div>
-
             {/* القائمة المنسدلة للنتائج */}
             {searchResults.length > 0 && (
                 <div className="absolute top-full left-0 right-0 bg-[#1a1a1a] border border-t-0 border-white/20 rounded-b-2xl shadow-2xl overflow-hidden max-h-[400px] overflow-y-auto custom-scrollbar">
                     {searchResults.map((result, idx) => (
-                        <Link 
-                            key={`${result.id}-${idx}`} 
-                            href={result.link}
-                            className="flex items-center gap-4 p-4 hover:bg-white/5 transition border-b border-white/5 last:border-0 group"
-                        >
+                        <Link key={`${result.id}-${idx}`} href={result.link} className="flex items-center gap-4 p-4 hover:bg-white/5 transition border-b border-white/5 last:border-0 group">
                             <div className="relative w-16 h-12 rounded-lg overflow-hidden shrink-0 border border-white/10">
                                 <Image src={result.image} alt={result.title} fill className="object-cover group-hover:scale-110 transition duration-500" />
                             </div>
@@ -375,10 +268,12 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-6xl pb-20 px-4">
+          {/* ✅ تعديل الكروت لتصبح 4 كروت */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl pb-20 px-4">
             <Link href="/landmarks" className="block h-full"><GlassCard title="المعالم السياحية والتراثية" desc="جولة عبر التاريخ والطبيعة في أبرز معالم المنطقة" icon={<Landmark size={32} className="text-[#C89B3C]" />} /></Link>
-            <Link href="/facilities" className="block h-full"><GlassCard title="المرافق والفعاليات" desc="نزل تراثية، مطاعم شعبية، ومقاهي ريفية" icon={<Coffee size={32} className="text-blue-400" />} /></Link>
-            <Link href="/experiences" className="block h-full"><GlassCard title="التجارب السياحية" desc="هايكنج، تخييم، وورش عمل تراثية مع أهل المنطقة" icon={<Tent size={32} className="text-emerald-400" />} /></Link>
+            <Link href="/facilities" className="block h-full"><GlassCard title="المرافق والنزل" desc="نزل تراثية، مطاعم شعبية، مقاهي، واستراحات" icon={<Coffee size={32} className="text-blue-400" />} /></Link>
+            <Link href="/experiences" className="block h-full"><GlassCard title="التجارب السياحية" desc="هايكنج، تخييم، وورش عمل مع أهل المنطقة" icon={<Tent size={32} className="text-emerald-400" />} /></Link>
+            <Link href="/events" className="block h-full"><GlassCard title="الفعاليات" desc="حفلات، عروض حية، ومهرجانات مستمرة" icon={<Ticket size={32} className="text-red-400" />} /></Link>
           </div>
         </section>
 
@@ -414,62 +309,40 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* ========================================================================= */}
-        {/* ================ منطقة الإحصائيات + شركاء النجاح + التسويق ================ */}
-        {/* ========================================================================= */}
+        {/* منطقة الإحصائيات + شركاء النجاح + التسويق */}
         <div className="py-24 px-4 bg-[#0a0a0a] relative overflow-hidden">
             <div className="absolute top-0 right-0 w-96 h-96 bg-[#C89B3C]/5 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
             <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2 pointer-events-none"></div>
 
             <div className="container mx-auto max-w-6xl">
-                {/* 1. قسم الإحصائيات */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-24">
                     <div className="bg-white/5 border border-white/10 p-8 rounded-3xl text-center hover:bg-white/10 transition duration-500 hover:border-[#C89B3C]/30 group">
-                        <div className="w-16 h-16 mx-auto bg-[#C89B3C]/10 rounded-full flex items-center justify-center text-[#C89B3C] mb-4 group-hover:scale-110 transition">
-                            <Landmark size={32} />
-                        </div>
-                        <div className="text-5xl font-bold text-white mb-2 font-mono">
-                           +<AnimatedCounter end={stats.places} />
-                        </div>
+                        <div className="w-16 h-16 mx-auto bg-[#C89B3C]/10 rounded-full flex items-center justify-center text-[#C89B3C] mb-4 group-hover:scale-110 transition"><Landmark size={32} /></div>
+                        <div className="text-5xl font-bold text-white mb-2 font-mono">+<AnimatedCounter end={stats.places} /></div>
                         <p className="text-white/60">معلم سياحي وتراثي</p>
                     </div>
-
                     <div className="bg-white/5 border border-white/10 p-8 rounded-3xl text-center hover:bg-white/10 transition duration-500 hover:border-[#C89B3C]/30 group">
-                        <div className="w-16 h-16 mx-auto bg-blue-500/10 rounded-full flex items-center justify-center text-blue-400 mb-4 group-hover:scale-110 transition">
-                            <Briefcase size={32} />
-                        </div>
-                        <div className="text-5xl font-bold text-white mb-2 font-mono">
-                           +<AnimatedCounter end={stats.services} />
-                        </div>
+                        <div className="w-16 h-16 mx-auto bg-blue-500/10 rounded-full flex items-center justify-center text-blue-400 mb-4 group-hover:scale-110 transition"><Briefcase size={32} /></div>
+                        <div className="text-5xl font-bold text-white mb-2 font-mono">+<AnimatedCounter end={stats.services} /></div>
                         <p className="text-white/60">خدمة وتجربة متوفرة</p>
                     </div>
-
                     <div className="bg-white/5 border border-white/10 p-8 rounded-3xl text-center hover:bg-white/10 transition duration-500 hover:border-[#C89B3C]/30 group">
-                        <div className="w-16 h-16 mx-auto bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-400 mb-4 group-hover:scale-110 transition">
-                            <Users size={32} />
-                        </div>
-                        <div className="text-5xl font-bold text-white mb-2 font-mono">
-                           +<AnimatedCounter end={stats.providers} />
-                        </div>
+                        <div className="w-16 h-16 mx-auto bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-400 mb-4 group-hover:scale-110 transition"><Users size={32} /></div>
+                        <div className="text-5xl font-bold text-white mb-2 font-mono">+<AnimatedCounter end={stats.providers} /></div>
                         <p className="text-white/60">شريك نجاح مسجل معنا</p>
                     </div>
                 </div>
 
-                {/* 2. قسم شركاء النجاح (ديناميكي) */}
+                {/* شركاء النجاح */}
                 {partners.length > 0 && (
                   <div className="mb-24 text-center animate-in fade-in slide-in-from-bottom-8 duration-700">
                      <div className="flex items-center justify-center gap-2 mb-2">
                         <Handshake className="text-[#C89B3C]" size={24}/>
-                        <h2 className="text-3xl font-bold text-white">
-                          {platformInfo?.partners_title || "شركاء النجاح"}
-                        </h2>
+                        <h2 className="text-3xl font-bold text-white">{platformInfo?.partners_title || "شركاء النجاح"}</h2>
                      </div>
-                     <p className="text-white/50 mb-10 max-w-2xl mx-auto font-light">
-                       {platformInfo?.partners_subtitle || "نفخر بشراكتنا مع نخبة من الجهات والمؤسسات التي تساهم في إثراء تجربة السائح في عسير"}
-                     </p>
+                     <p className="text-white/50 mb-10 max-w-2xl mx-auto font-light">{platformInfo?.partners_subtitle || "نفخر بشراكتنا مع نخبة من الجهات والمؤسسات التي تساهم في إثراء تجربة السائح في عسير"}</p>
                      
                      {partners.length <= 10 ? (
-                        /* عرض ثابت إذا كان العدد 10 أو أقل */
                         <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-sm">
                            <div className="flex flex-wrap justify-center gap-10 md:gap-16 items-center">
                               {partners.map((p) => (
@@ -480,17 +353,14 @@ export default function HomePage() {
                            </div>
                         </div>
                      ) : (
-                        /* عرض متحرك (Infinite Marquee) إذا زاد عن 10 */
                         <div className="bg-white/5 border border-white/10 rounded-3xl py-12 backdrop-blur-sm overflow-hidden relative">
                            <div className="flex w-max animate-marquee gap-16 md:gap-24 items-center" dir="ltr">
-                              {/* تكرار القائمة مرتين لضمان استمرارية الحركة بدون فراغات */}
                               {[...partners, ...partners].map((p, index) => (
                                  <div key={`${p.id}-${index}`} className="relative w-24 h-24 md:w-32 md:h-32 flex-shrink-0 flex items-center justify-center grayscale-0 hover:scale-110 transition-all duration-500" title={p.name}>
                                     <Image src={p.logo_url} alt={p.name} fill className="object-contain drop-shadow-md" />
                                  </div>
                               ))}
                            </div>
-                           {/* تدرج لوني على الجوانب للجمالية */}
                            <div className="absolute top-0 left-0 bottom-0 w-20 bg-gradient-to-r from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
                            <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-l from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
                         </div>
@@ -498,32 +368,23 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {/* 3. قسم الدعوة للانضمام (تسويقي) */}
+                {/* قسم الدعوة للانضمام */}
                 <div className="bg-gradient-to-r from-[#C89B3C] to-[#8a6a26] rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-2xl shadow-[#C89B3C]/20 text-center md:text-right flex flex-col md:flex-row items-center justify-between gap-8">
                     <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
                     <div className="relative z-10 max-w-2xl">
-                        <h3 className="text-3xl md:text-4xl font-bold text-[#2B1F17] mb-4">
-                            هل تملك خدمة سياحية في عسير؟
-                        </h3>
+                        <h3 className="text-3xl md:text-4xl font-bold text-[#2B1F17] mb-4">هل تملك خدمة سياحية في عسير؟</h3>
                         <p className="text-[#2B1F17]/90 text-lg leading-relaxed font-medium">
-                            لا تضيع الفرصة! انضم الآن إلى نخبة مقدمي الخدمات في المنطقة. 
-                            منصة <span className="font-bold">سَيّر</span> تمنحك وصولاً مباشراً لآلاف السياح، 
-                            نظام حجوزات ذكي، وتسويق مجاني لخدماتك.
+                            لا تضيع الفرصة! انضم الآن إلى نخبة مقدمي الخدمات في المنطقة. منصة <span className="font-bold">سَيّر</span> تمنحك وصولاً مباشراً لآلاف السياح، نظام حجوزات ذكي، وتسويق مجاني لخدماتك.
                         </p>
                     </div>
                     <div className="relative z-10 shrink-0">
-                        <button 
-                            onClick={() => router.push("/register/provider")}
-                            className="bg-[#2B1F17] text-[#C89B3C] text-lg font-bold px-8 py-4 rounded-xl shadow-xl hover:bg-black hover:scale-105 transition-all flex items-center gap-3"
-                        >
-                            <TrendingUp size={20} />
-                            سجّل كشريك الآن
+                        <button onClick={() => router.push("/register/provider")} className="bg-[#2B1F17] text-[#C89B3C] text-lg font-bold px-8 py-4 rounded-xl shadow-xl hover:bg-black hover:scale-105 transition-all flex items-center gap-3">
+                            <TrendingUp size={20} /> سجّل كشريك الآن
                         </button>
                     </div>
                 </div>
             </div>
         </div>
-        {/* ========================================================================= */}
 
         {/* Footer & Info Section */}
         {platformInfo && (
@@ -599,89 +460,50 @@ export default function HomePage() {
   );
 }
 
-// دالة فحص الفيديو
 const isVideo = (url: string | null) => {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
     return lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') || lowerUrl.includes('.ogg') || lowerUrl.includes('video'); 
 };
 
-// مكون كرت التجربة (مع دعم الفيديو)
 function ExperienceCard({ data }: { data: any }) {
-  // ✅ التعديل هنا: التوجيه حسب المصدر
-  const linkHref = data.source === 'place' 
-      ? `/place/${data.id}` 
-      : `/service/${data.id}`;
-
+  const linkHref = data.source === 'place' ? `/place/${data.id}` : `/service/${data.id}`;
   const mediaIsVideo = isVideo(data.image);
 
   return (
     <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
       <div className="relative h-64 w-full overflow-hidden shrink-0 bg-black">
         {mediaIsVideo ? (
-            <video 
-                src={data.image} 
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                autoPlay 
-                muted 
-                loop 
-                playsInline 
-            />
+            <video src={data.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" autoPlay muted loop playsInline />
         ) : (
-            <img 
-              src={data.image} 
-              alt={data.title} 
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-              onError={(e) => {
-                e.currentTarget.src = "/logo.png"; 
-                e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; 
-              }}
-            />
+            <img src={data.image} alt={data.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" onError={(e) => { e.currentTarget.src = "/logo.png"; e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; }} />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
         
         {data.price > 0 && (
             <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl z-10">
-            <span className="text-[#C89B3C] font-bold text-lg">
-                {data.price} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span>
-            </span>
+            <span className="text-[#C89B3C] font-bold text-lg">{data.price} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span></span>
             </div>
         )}
         
         <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10 z-10">
-            {mediaIsVideo ? <PlayCircle size={12} className="text-[#C89B3C]"/> : <Compass size={12} />} 
-            {data.activity_type}
+            {mediaIsVideo ? <PlayCircle size={12} className="text-[#C89B3C]"/> : <Compass size={12} />} {data.activity_type}
         </div>
       </div>
       
       <div className="p-6 flex flex-col flex-1">
-        <div className="flex justify-between items-start mb-2">
-            <h3 className="text-2xl font-bold group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3>
-        </div>
+        <div className="flex justify-between items-start mb-2"><h3 className="text-2xl font-bold group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3></div>
         
         <div className="flex flex-wrap gap-4 mb-4 text-xs text-white/50 bg-white/5 p-3 rounded-xl border border-white/5">
-            {data.duration && (
-                <div className="flex items-center gap-1"><Clock size={14} className="text-[#C89B3C]"/> {data.duration}</div>
-            )}
-            {data.difficulty_level && (
-                <div className="flex items-center gap-1">
-                    <Activity size={14} className="text-[#C89B3C]"/> 
-                    {data.difficulty_level === 'easy' ? 'سهل' : data.difficulty_level === 'medium' ? 'متوسط' : data.difficulty_level === 'hard' ? 'صعب' : data.difficulty_level}
-                </div>
-            )}
-            {data.meeting_point && (
-                <div className="flex items-center gap-1 line-clamp-1"><MapPin size={14} className="text-[#C89B3C]"/> {data.meeting_point}</div>
-            )}
+            {data.duration && <div className="flex items-center gap-1"><Clock size={14} className="text-[#C89B3C]"/> {data.duration}</div>}
+            {data.difficulty_level && <div className="flex items-center gap-1"><Activity size={14} className="text-[#C89B3C]"/> {data.difficulty_level === 'easy' ? 'سهل' : data.difficulty_level === 'medium' ? 'متوسط' : data.difficulty_level === 'hard' ? 'صعب' : data.difficulty_level}</div>}
+            {data.meeting_point && <div className="flex items-center gap-1 line-clamp-1"><MapPin size={14} className="text-[#C89B3C]"/> {data.meeting_point}</div>}
         </div>
 
-        <p className="text-white/60 text-sm line-clamp-3 mb-6 flex-1 leading-relaxed">
-            {data.description}
-        </p>
+        <p className="text-white/60 text-sm line-clamp-3 mb-6 flex-1 leading-relaxed">{data.description}</p>
         
         <Link href={linkHref} className="w-full block mt-auto">
-            <button className="w-full py-3 rounded-xl bg-[#C89B3C] text-black font-bold hover:bg-[#b38a35] transition-all flex items-center justify-center gap-2">
-                احجز تجربتك <ArrowRight size={18} className="rotate-180"/>
-            </button>
+            <button className="w-full py-3 rounded-xl bg-[#C89B3C] text-black font-bold hover:bg-[#b38a35] transition-all flex items-center justify-center gap-2">احجز تجربتك <ArrowRight size={18} className="rotate-180"/></button>
         </Link>
       </div>
     </div>
