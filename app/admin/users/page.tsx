@@ -6,7 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   Shield, UserPlus, Loader2, LogOut, LayoutDashboard, Settings, 
-  Users, Map, DollarSign, Activity, X, Check, Lock, Briefcase, ShieldAlert,
+  Users, Map, DollarSign, X, Check, Lock, Briefcase, ShieldAlert,
   Trash2, Ban, Unlock
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
@@ -14,15 +14,14 @@ import { useRouter, usePathname } from "next/navigation";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// تعريف الصلاحيات المتاحة (محدثة وشاملة)
 const ALL_PERMISSIONS = [
   {
     category: "إدارة المستخدمين",
     icon: Users,
     items: [
       { key: "users_view", label: "مشاهدة قائمة المستخدمين" },
-      { key: "users_manage", label: "حظر/تفعيل المستخدمين" }, // للأدمن العادي
-      { key: "users_delete", label: "حذف المستخدمين نهائياً" }, // خطير
+      { key: "users_manage", label: "حظر/تفعيل المستخدمين" },
+      { key: "users_delete", label: "حذف المستخدمين نهائياً" },
     ]
   },
   {
@@ -58,7 +57,7 @@ const ALL_PERMISSIONS = [
     items: [
       { key: "logs_view", label: "مشاهدة سجلات النشاط" },
       { key: "settings_manage", label: "تغيير إعدادات المنصة العامة" },
-      { key: "admins_manage", label: "إدارة فريق العمل (للسوبر أدمن فقط)" }, // عادة للسوبر فقط
+      { key: "admins_manage", label: "إدارة فريق العمل (للسوبر أدمن فقط)" },
     ]
   }
 ];
@@ -71,7 +70,8 @@ interface Profile {
   role: string;
   is_admin: boolean;
   is_super_admin: boolean;
-  is_blocked: boolean; // ✅ أضفنا حالة الحظر
+  is_blocked: boolean;
+  is_deleted: boolean;
   permissions?: any; 
 }
 
@@ -84,7 +84,7 @@ export default function UsersManagement() {
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [newUser, setNewUser] = useState({ fullName: "", email: "", phone: "" });
-  const [processingId, setProcessingId] = useState<string | null>(null); // للعمليات
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   const [selectedAdmin, setSelectedAdmin] = useState<Profile | null>(null);
   const [tempPermissions, setTempPermissions] = useState<Record<string, boolean>>({});
@@ -99,14 +99,17 @@ export default function UsersManagement() {
     if (!session) { router.replace("/login"); return; }
     setCurrentUserId(session.user.id);
 
-    const { data: profiles } = await supabase
+    // جلب بيانات جميع الأدمنز من قاعدة البيانات
+    const { data: profiles, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('is_admin', true) 
       .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
-    if (profiles) {
+    if (error) {
+      console.error("Error fetching admins:", error);
+    } else if (profiles) {
       setAdmins(profiles as Profile[]);
       const myProfile = profiles.find((p: any) => p.id === session.user.id);
       if (myProfile && myProfile.is_super_admin) setIsSuperAdmin(true);
@@ -118,14 +121,26 @@ export default function UsersManagement() {
     e.preventDefault();
     setCreating(true);
     try {
+      // إرسال الدعوة عبر الـ API الخاص بك
       const res = await fetch('/api/admin/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newUser, requesterId: currentUserId })
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error);
-      alert(`✅ تم إضافة المسؤول بنجاح.`);
+      if (!res.ok) throw new Error(result.error || "حدث خطأ أثناء الإرسال");
+
+      // تحديث البروفايل فوراً لجعله أدمن لكي يظهر في القائمة
+      const { error: profileUpdateError } = await supabase
+        .from('profiles')
+        .update({ 
+            is_admin: true, 
+            full_name: newUser.fullName, 
+            phone: newUser.phone 
+        })
+        .eq('email', newUser.email); // تحديث بناءً على الإيميل الذي تم إنشاؤه
+
+      alert(`✅ تم إرسال الدعوة وإضافة المسؤول بنجاح.`);
       setNewUser({ fullName: "", email: "", phone: "" });
       fetchAdmins();
     } catch (error: any) {
@@ -135,43 +150,45 @@ export default function UsersManagement() {
     }
   };
 
-  // --- دالة الحذف ---
+  // --- دالة الحذف (الحذف الناعم من قاعدة البيانات) ---
   const handleDeleteAdmin = async (targetId: string) => {
     if (!confirm("⚠️ هل أنت متأكد من حذف هذا الأدمن نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.")) return;
     setProcessingId(targetId);
     try {
-        const res = await fetch('/api/admin/delete-user', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ targetUserId: targetId, requesterId: currentUserId })
-        });
-        if (!res.ok) throw new Error("فشل الحذف");
-        alert("✅ تم حذف المسؤول بنجاح");
+        const { error } = await supabase
+            .from('profiles')
+            .update({ is_deleted: true, is_admin: false, is_super_admin: false })
+            .eq('id', targetId);
+
+        if (error) throw error;
+        
+        alert("✅ تم إزالة المسؤول بنجاح");
         fetchAdmins();
-    } catch (e) {
-        alert("فشل الحذف، تأكد من الصلاحيات");
+    } catch (e: any) {
+        alert("❌ فشل الحذف: " + e.message);
     } finally {
         setProcessingId(null);
     }
   };
 
-  // --- دالة الحظر/فك الحظر ---
+  // --- دالة الحظر/فك الحظر مباشرة مع قاعدة البيانات ---
   const handleToggleBlock = async (admin: Profile) => {
     const action = admin.is_blocked ? "فك الحظر" : "حظر";
-    if (!confirm(`هل تريد ${action} عن ${admin.full_name}؟\n(لن يتمكن من الدخول للمنصة في حال الحظر)`)) return;
+    if (!confirm(`هل تريد ${action} عن ${admin.full_name}؟`)) return;
     
     setProcessingId(admin.id);
     try {
-        const res = await fetch('/api/admin/toggle-block', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ targetUserId: admin.id, requesterId: currentUserId, block: !admin.is_blocked })
-        });
-        if (!res.ok) throw new Error("فشل التعديل");
+        const { error } = await supabase
+            .from('profiles')
+            .update({ is_blocked: !admin.is_blocked })
+            .eq('id', admin.id);
+
+        if (error) throw error;
+        
         alert(`✅ تم ${action} بنجاح`);
         fetchAdmins();
-    } catch (e) {
-        alert("حدث خطأ أثناء تغيير الحالة");
+    } catch (e: any) {
+        alert("❌ حدث خطأ أثناء تغيير الحالة: " + e.message);
     } finally {
         setProcessingId(null);
     }
@@ -189,27 +206,23 @@ export default function UsersManagement() {
     }));
   };
 
+  // --- حفظ الصلاحيات مباشرة في قاعدة البيانات ---
   const savePermissions = async () => {
     if (!selectedAdmin) return;
     setSavingPermissions(true);
     try {
-      const res = await fetch('/api/admin/update-permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          targetUserId: selectedAdmin.id, 
-          permissions: tempPermissions,
-          requesterId: currentUserId 
-        })
-      });
-      if (!res.ok) throw new Error("فشل التحديث");
+      const { error } = await supabase
+          .from('profiles')
+          .update({ permissions: tempPermissions })
+          .eq('id', selectedAdmin.id);
+
+      if (error) throw error;
 
       alert("✅ تم تحديث الصلاحيات بنجاح");
       setSelectedAdmin(null);
       fetchAdmins(); 
-
     } catch (error: any) {
-      alert("خطأ: " + error.message);
+      alert("❌ خطأ: " + error.message);
     } finally {
       setSavingPermissions(false);
     }

@@ -49,14 +49,30 @@ export default function AdminSettingsPage() {
     twilioPhone:  ""  
   });
 
+  // === States for Account Management ===
+  const [accountInfo, setAccountInfo] = useState({ fullName: "", email: "" });
+  const [passwords, setPasswords] = useState({ newPassword: "", confirmPassword: "" });
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
   // --- Fetch Data ---
   useEffect(() => {
     const initData = async () => {
-        await Promise.all([fetchSettings(), fetchFields(), fetchCitiesAndCats()]);
+        await Promise.all([fetchSettings(), fetchFields(), fetchCitiesAndCats(), fetchAccountInfo()]);
         setLoading(false);
     };
     initData();
   }, []);
+
+  const fetchAccountInfo = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+        const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
+        setAccountInfo({ 
+            fullName: profile?.full_name || "المدير العام", 
+            email: session.user.email || "" 
+        });
+    }
+  };
 
   const fetchFields = async () => {
     const { data } = await supabase.from('registration_fields').select('*').order('scope', { ascending: false }).order('sort_order', { ascending: true });
@@ -117,6 +133,25 @@ export default function AdminSettingsPage() {
       if (error) throw error;
       alert("✅ تم حفظ الإعدادات بنجاح!");
     } catch (error: any) { alert("❌ خطأ: " + error.message); } finally { setSaving(false); }
+  };
+
+  // --- Password Update Logic ---
+  const handleUpdatePassword = async () => {
+    if (!passwords.newPassword) return alert("الرجاء إدخال كلمة المرور الجديدة.");
+    if (passwords.newPassword !== passwords.confirmPassword) return alert("كلمات المرور غير متطابقة!");
+    if (passwords.newPassword.length < 6) return alert("كلمة المرور يجب أن تتكون من 6 أحرف على الأقل.");
+
+    setUpdatingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: passwords.newPassword });
+      if (error) throw error;
+      alert("✅ تم تغيير كلمة المرور بنجاح في قاعدة البيانات!");
+      setPasswords({ newPassword: "", confirmPassword: "" }); // تصفير الحقول بعد النجاح
+    } catch (error: any) {
+      alert("❌ حدث خطأ أثناء التحديث: " + error.message);
+    } finally {
+      setUpdatingPassword(false);
+    }
   };
 
   // --- Field Logic ---
@@ -217,7 +252,6 @@ export default function AdminSettingsPage() {
       {activeTab === "app_settings" && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
            
-           {/* Section 1: App Status */}
            <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
              <h2 className="text-xl font-bold text-[#C89B3C] mb-4 flex gap-2"><Globe size={20}/> حالة التطبيق</h2>
              <div className="flex justify-between items-center bg-black/40 p-4 rounded-xl border border-white/5">
@@ -229,7 +263,6 @@ export default function AdminSettingsPage() {
              </div>
            </section>
 
-           {/* ✅ Section 2: Content Management (Vision, Mission, About) - تمت إضافته هنا */}
            <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
              <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
                <FileText size={20} /> إدارة المحتوى التعريفي
@@ -270,7 +303,6 @@ export default function AdminSettingsPage() {
              </div>
            </section>
 
-           {/* Section 3: Contact Info */}
            <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2">
               <Phone size={20} /> معلومات التواصل
@@ -399,7 +431,7 @@ export default function AdminSettingsPage() {
             </div>
           </section>
           {isModalOpen && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
             <div className="bg-[#2B2B2B] w-full max-w-lg rounded-2xl border border-white/10 p-6 shadow-2xl">
                 <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
                     <h3 className="text-xl font-bold">{currentField.id ? "تعديل الحقل" : "إضافة حقل جديد"}</h3>
@@ -447,7 +479,6 @@ export default function AdminSettingsPage() {
                       <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5 group">
                           <span>{city.name}</span>
                           <div className="flex items-center gap-2">
-                              {/* زر التعديل المضاف ✅ */}
                               <button onClick={() => handleEditCity(city.id, city.name)} className="text-blue-400 hover:bg-blue-500/20 p-1.5 rounded transition"><Edit size={14}/></button>
                               <button onClick={() => handleDeleteCity(city.id)} className="text-red-400 hover:bg-red-500/20 p-1.5 rounded transition"><Trash2 size={14}/></button>
                           </div>
@@ -467,7 +498,6 @@ export default function AdminSettingsPage() {
                       <div key={idx} className="flex justify-between items-center p-3 bg-black/40 rounded-lg border border-white/5 group">
                           <span>{cat.name}</span>
                           <div className="flex items-center gap-2">
-                              {/* زر التعديل المضاف ✅ */}
                               <button onClick={() => handleEditCategory(cat.id, cat.name)} className="text-blue-400 hover:bg-blue-500/20 p-1.5 rounded transition"><Edit size={14}/></button>
                               <button onClick={() => handleDeleteCategory(cat.id)} className="text-red-400 hover:bg-red-500/20 p-1.5 rounded transition"><Trash2 size={14}/></button>
                           </div>
@@ -484,18 +514,51 @@ export default function AdminSettingsPage() {
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
           <section className="bg-white/5 border border-white/10 p-6 rounded-2xl">
             <h2 className="text-xl font-bold text-[#C89B3C] mb-6 flex items-center gap-2"><User size={20} /> إعدادات الحساب</h2>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-               <div><label className="block text-gray-400 mb-2 text-sm">المسؤول</label><input type="text" defaultValue="المدير العام" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none" /></div>
-               <div><label className="block text-gray-400 mb-2 text-sm">البريد</label><input type="email" defaultValue="admin@sayyir.com" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none" disabled /></div>
-            </div>
-            <div className="mt-8 border-t border-white/10 pt-6">
-               <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Lock size={16}/> كلمة المرور</h3>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div><label className="block text-gray-400 mb-2 text-sm">الحالية</label><input type="password" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none" /></div>
-                  <div><label className="block text-gray-400 mb-2 text-sm">الجديدة</label><input type="password" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none" /></div>
+               <div>
+                 <label className="block text-gray-400 mb-2 text-sm">المسؤول</label>
+                 <input type="text" value={accountInfo.fullName} disabled className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white/50 outline-none cursor-not-allowed" />
                </div>
-               <div className="mt-6 flex justify-end"><button className="px-6 py-2 bg-[#C89B3C] text-black font-bold rounded-lg hover:bg-[#b88a2c] transition">تحديث</button></div>
+               <div>
+                 <label className="block text-gray-400 mb-2 text-sm">البريد الإلكتروني</label>
+                 <input type="email" value={accountInfo.email} disabled className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white/50 outline-none cursor-not-allowed" />
+               </div>
             </div>
+
+            <div className="mt-8 border-t border-white/10 pt-6">
+               <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Lock size={16}/> تغيير كلمة المرور</h3>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-gray-400 mb-2 text-sm">كلمة المرور الجديدة</label>
+                    <input 
+                      type="password" 
+                      value={passwords.newPassword} 
+                      onChange={(e) => setPasswords({...passwords, newPassword: e.target.value})} 
+                      className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] transition" 
+                      placeholder="******"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 mb-2 text-sm">تأكيد كلمة المرور الجديدة</label>
+                    <input 
+                      type="password" 
+                      value={passwords.confirmPassword} 
+                      onChange={(e) => setPasswords({...passwords, confirmPassword: e.target.value})} 
+                      className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-[#C89B3C] transition" 
+                      placeholder="******"
+                    />
+                  </div>
+               </div>
+               
+               <div className="mt-6 flex justify-end">
+                 <button onClick={handleUpdatePassword} disabled={updatingPassword} className="px-8 py-3 bg-[#C89B3C] text-[#2B1F17] font-bold rounded-xl hover:bg-[#b88a2c] transition flex items-center gap-2 shadow-lg">
+                   {updatingPassword ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                   تحديث كلمة المرور
+                 </button>
+               </div>
+            </div>
+
           </section>
         </div>
       )}
