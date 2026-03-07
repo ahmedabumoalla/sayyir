@@ -9,11 +9,47 @@ import DynamicShowcase from "@/components/DynamicShowcase";
 import { 
   Briefcase, Map as MapIcon, Sparkles, Tent, Coffee, Landmark, 
   User, LayoutDashboard, Eye, Target, Phone, Mail, 
-  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin, TrendingUp, Users, Search, Handshake, X, Loader2, Mountain, Ticket
+  Instagram, Twitter, Linkedin, PlayCircle, Compass, ArrowRight, Activity, Clock, MapPin, TrendingUp, Users, Search, Handshake, X, Loader2, Ticket, Megaphone, Timer
 } from "lucide-react";
 import Link from "next/link";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
+
+// ==========================================
+// ⏳ مكون العداد التنازلي لشريط الإعلانات
+// ==========================================
+const CountdownTimer = ({ endDate }: { endDate: string }) => {
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+  useEffect(() => {
+    const calculateTime = () => {
+      const difference = +new Date(endDate) - +new Date();
+      if (difference > 0) {
+        setTimeLeft({
+          days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+          minutes: Math.floor((difference / 1000 / 60) % 60),
+          seconds: Math.floor((difference / 1000) % 60),
+        });
+      }
+    };
+    calculateTime();
+    const timer = setInterval(calculateTime, 1000);
+    return () => clearInterval(timer);
+  }, [endDate]);
+
+  if (timeLeft.days === 0 && timeLeft.hours === 0 && timeLeft.minutes === 0 && timeLeft.seconds === 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full text-[10px] sm:text-xs font-mono font-bold text-white border border-white/10 shrink-0 mr-2 dir-ltr shadow-inner">
+      <Timer size={12} className="text-[#C89B3C] animate-pulse" />
+      <span>{timeLeft.days}d</span>:
+      <span>{timeLeft.hours.toString().padStart(2, '0')}h</span>:
+      <span>{timeLeft.minutes.toString().padStart(2, '0')}m</span>:
+      <span className="text-[#C89B3C]">{timeLeft.seconds.toString().padStart(2, '0')}s</span>
+    </span>
+  );
+};
 
 const AnimatedCounter = ({ end }: { end: number }) => {
   const [count, setCount] = useState(0);
@@ -21,17 +57,14 @@ const AnimatedCounter = ({ end }: { end: number }) => {
   useEffect(() => {
     let startTime: number | null = null;
     const duration = 2000; 
-
     const step = (timestamp: number) => {
       if (!startTime) startTime = timestamp;
       const progress = Math.min((timestamp - startTime) / duration, 1);
       setCount(Math.floor(progress * end));
       if (progress < 1) window.requestAnimationFrame(step);
     };
-    
     window.requestAnimationFrame(step);
   }, [end]);
-
   return <span>{count}</span>;
 };
 
@@ -46,6 +79,7 @@ export default function HomePage() {
   const [facilitiesData, setFacilitiesData] = useState<any[]>([]);
   const [experiencesData, setExperiencesData] = useState<any[]>([]);
   const [partners, setPartners] = useState<any[]>([]); 
+  const [announcements, setAnnouncements] = useState<any[]>([]); 
   
   const [stats, setStats] = useState({ places: 0, services: 0, providers: 0 });
   
@@ -92,9 +126,7 @@ export default function HomePage() {
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
-        setSearchResults([]);
-      }
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) setSearchResults([]);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -130,6 +162,14 @@ export default function HomePage() {
 
   useEffect(() => {
     const fetchData = async () => {
+      const { data: activeAnnouncements } = await supabase
+        .from('announcements')
+        .select('*')
+        .eq('is_active', true)
+        .gte('end_date', new Date().toISOString())
+        .order('created_at', { ascending: false });
+      if (activeAnnouncements) setAnnouncements(activeAnnouncements);
+
       const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
       if (places) setLandmarksData(places);
 
@@ -169,6 +209,8 @@ export default function HomePage() {
     fetchData();
   }, []);
 
+  const hasAnnouncements = announcements.length > 0;
+
   return (
     <main className={`relative min-h-screen ${tajawal.className} bg-black text-white`} dir="rtl">
       
@@ -178,8 +220,40 @@ export default function HomePage() {
         .animate-marquee:hover { animation-play-state: paused; }
       `}</style>
 
+      {/* ========================================================= */}
+      {/* 📢 شريط الإعلانات الزجاجي (متتالي وبدون تداخل) */}
+      {/* ========================================================= */}
+      {hasAnnouncements && (
+          <div className="fixed top-0 left-0 right-0 h-10 z-60 bg-black/40 backdrop-blur-xl border-b border-white/10 shadow-lg flex items-center overflow-hidden">
+              <div className="absolute right-0 bg-linear-to-l from-black/80 via-black/50 to-transparent w-20 h-full z-10 flex items-center justify-center pr-4 pointer-events-none">
+                  <div className="bg-[#C89B3C]/20 p-1.5 rounded-full border border-[#C89B3C]/30">
+                      <Megaphone size={14} className="text-[#C89B3C] animate-bounce" />
+                  </div>
+              </div>
+              
+              <div className="w-full overflow-hidden flex items-center">
+                  <div className="flex w-max animate-marquee gap-12 sm:gap-16 items-center" dir="ltr">
+                      {[...announcements, ...announcements].map((ann, idx) => (
+                          <Link key={`${ann.id}-${idx}`} href={ann.link_url || '#'} className="flex items-center gap-3 hover:text-[#C89B3C] transition-colors group shrink-0" dir="rtl">
+                              <span className="font-bold text-[#C89B3C] drop-shadow-md">{ann.title}</span>
+                              {ann.description && (
+                                  <>
+                                      <span className="w-1.5 h-1.5 rounded-full bg-white/30 shrink-0"></span>
+                                      <span className="text-white/70 group-hover:text-white transition-colors">{ann.description}</span>
+                                  </>
+                              )}
+                              <CountdownTimer endDate={ann.end_date} />
+                          </Link>
+                      ))}
+                  </div>
+              </div>
+
+              <div className="absolute left-0 bg-linear-to-r from-black/80 via-black/50 to-transparent w-16 h-full z-10 pointer-events-none"></div>
+          </div>
+      )}
+
       {/* HEADER SECTION */}
-      <header className="fixed top-0 left-0 right-0 z-50 p-6 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent transition-all duration-300">
+      <header className={`fixed left-0 right-0 z-50 p-6 flex justify-between items-center bg-linear-to-b from-black/90 to-transparent transition-all duration-300 ${hasAnnouncements ? 'top-10' : 'top-0'}`}>
         <div className="w-28 md:w-32 hover:scale-105 transition duration-300">
           <Link href="/"><Image src="/logo.png" alt="Sayyir" width={120} height={50} priority className="drop-shadow-lg" /></Link>
         </div>
@@ -202,7 +276,7 @@ export default function HomePage() {
               <User size={16} /> <span>دخول</span>
             </Link>
           )}
-          <Link href="/ai-guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-tr from-[#C89B3C] to-[#dcb45e] flex items-center justify-center shadow-lg animate-pulse hover:animate-none hover:scale-110 transition border border-[#C89B3C]/50" title="المرشد الذكي">
+          <Link href="/ai-guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-linear-to-tr from-[#C89B3C] to-[#dcb45e] flex items-center justify-center shadow-lg animate-pulse hover:animate-none hover:scale-110 transition border border-[#C89B3C]/50" title="المرشد الذكي">
               <Sparkles size={20} className="text-[#2B1F17]" />
           </Link>
         </div>
@@ -213,20 +287,20 @@ export default function HomePage() {
       <div className="fixed inset-0 bg-black/60 z-0 pointer-events-none" />
 
       <div className="relative z-10">
-        <section className="relative min-h-screen flex flex-col items-center justify-center px-4 text-center pt-24 md:pt-32">
+        <section className="relative min-h-screen flex flex-col items-center justify-center px-4 text-center pt-32">
           
           <div className="mb-6 animate-in fade-in zoom-in duration-1000 md:hidden">
             <Image src="/logo.png" alt="Sayyir AI" width={180} height={60} priority />
           </div>
 
-          <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-white leading-tight min-h-[4rem] tracking-wide mb-4 max-w-4xl drop-shadow-2xl">
+          <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-white leading-tight min-h-16 tracking-wide mb-4 max-w-4xl drop-shadow-2xl">
             {displayedText}<span className="animate-pulse text-[#C89B3C]">|</span>
           </h1>
           <p className="mt-4 text-base md:text-xl text-white/80 max-w-2xl font-light">
             دليلك الذكي لاستكشاف المعالم، حجز التجارب، والعثور على أفضل أماكن الإقامة في عسير.
           </p>
 
-          {/* ✅ نظام البحث الذكي */}
+          {/* نظام البحث الذكي */}
           <div ref={searchContainerRef} className="w-full max-w-2xl mt-8 mb-4 relative z-50 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
             <div className={`relative flex items-center bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-2 transition-all duration-300 focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50 shadow-2xl ${searchResults.length > 0 ? 'rounded-b-none border-b-0 bg-[#1a1a1a]' : ''}`}>
                 <Search className="text-white/50 mr-4 ml-2" size={24} />
@@ -237,7 +311,7 @@ export default function HomePage() {
             </div>
             {/* القائمة المنسدلة للنتائج */}
             {searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-[#1a1a1a] border border-t-0 border-white/20 rounded-b-2xl shadow-2xl overflow-hidden max-h-[400px] overflow-y-auto custom-scrollbar">
+                <div className="absolute top-full left-0 right-0 bg-[#1a1a1a] border border-t-0 border-white/20 rounded-b-2xl shadow-2xl overflow-hidden max-h-100 overflow-y-auto custom-scrollbar">
                     {searchResults.map((result, idx) => (
                         <Link key={`${result.id}-${idx}`} href={result.link} className="flex items-center gap-4 p-4 hover:bg-white/5 transition border-b border-white/5 last:border-0 group">
                             <div className="relative w-16 h-12 rounded-lg overflow-hidden shrink-0 border border-white/10">
@@ -260,7 +334,7 @@ export default function HomePage() {
             <button onClick={() => router.push("/map")} className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl backdrop-blur-md bg-white/5 border border-white/10 text-white font-bold shadow-lg transition-all hover:-translate-y-1 hover:bg-white/10 hover:border-[#C89B3C]/50 group">
               <MapIcon size={20} className="group-hover:text-[#C89B3C] transition" /> استكشف الخريطة
             </button>
-             <button onClick={() => router.push("/ai-guide")} className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl backdrop-blur-md bg-gradient-to-r from-[#C89B3C] to-[#b38a35] text-[#2B1F17] font-bold shadow-lg shadow-[#C89B3C]/20 transition-all hover:-translate-y-1 hover:shadow-[#C89B3C]/40 group">
+             <button onClick={() => router.push("/ai-guide")} className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl backdrop-blur-md bg-linear-to-r from-[#C89B3C] to-[#b38a35] text-[#2B1F17] font-bold shadow-lg shadow-[#C89B3C]/20 transition-all hover:-translate-y-1 hover:shadow-[#C89B3C]/40 group">
               <Sparkles size={20} className="group-hover:rotate-12 transition" /> المرشد الذكي
             </button>
             <button onClick={() => router.push("/register/provider")} className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-2xl backdrop-blur-md bg-[#C89B3C]/10 border border-[#C89B3C]/40 text-[#C89B3C] font-bold shadow-lg transition-all hover:-translate-y-1 hover:bg-[#C89B3C] hover:text-[#2B1F17] group">
@@ -268,7 +342,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* ✅ تعديل الكروت لتصبح 4 كروت */}
+          {/* الكروت */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl pb-20 px-4">
             <Link href="/landmarks" className="block h-full"><GlassCard title="المعالم السياحية والتراثية" desc="جولة عبر التاريخ والطبيعة في أبرز معالم المنطقة" icon={<Landmark size={32} className="text-[#C89B3C]" />} /></Link>
             <Link href="/facilities" className="block h-full"><GlassCard title="المرافق والنزل" desc="نزل تراثية، مطاعم شعبية، مقاهي، واستراحات" icon={<Coffee size={32} className="text-blue-400" />} /></Link>
@@ -278,7 +352,7 @@ export default function HomePage() {
         </section>
 
         {/* Dynamic Data Sections */}
-        <div className="bg-gradient-to-t from-black via-[#0a0a0a] to-transparent py-10 space-y-24">
+        <div className="bg-linear-to-t from-black via-[#0a0a0a] to-transparent py-10 space-y-24">
           {landmarksData.length > 0 && (
               <div className="container mx-auto px-4">
                 <DynamicShowcase title="أبرز المعالم المختارة" linkHref="/landmarks" data={landmarksData} dataType="places" />
@@ -356,20 +430,20 @@ export default function HomePage() {
                         <div className="bg-white/5 border border-white/10 rounded-3xl py-12 backdrop-blur-sm overflow-hidden relative">
                            <div className="flex w-max animate-marquee gap-16 md:gap-24 items-center" dir="ltr">
                               {[...partners, ...partners].map((p, index) => (
-                                 <div key={`${p.id}-${index}`} className="relative w-24 h-24 md:w-32 md:h-32 flex-shrink-0 flex items-center justify-center grayscale-0 hover:scale-110 transition-all duration-500" title={p.name}>
+                                 <div key={`${p.id}-${index}`} className="relative w-24 h-24 md:w-32 md:h-32 shrink-0 flex items-center justify-center grayscale-0 hover:scale-110 transition-all duration-500" title={p.name}>
                                     <Image src={p.logo_url} alt={p.name} fill className="object-contain drop-shadow-md" />
                                  </div>
                               ))}
                            </div>
-                           <div className="absolute top-0 left-0 bottom-0 w-20 bg-gradient-to-r from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
-                           <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-l from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
+                           <div className="absolute top-0 left-0 bottom-0 w-20 bg-linear-to-r from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
+                           <div className="absolute top-0 right-0 bottom-0 w-20 bg-linear-to-l from-[#1a1a1a]/90 to-transparent z-10 pointer-events-none"></div>
                         </div>
                      )}
                   </div>
                 )}
 
                 {/* قسم الدعوة للانضمام */}
-                <div className="bg-gradient-to-r from-[#C89B3C] to-[#8a6a26] rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-2xl shadow-[#C89B3C]/20 text-center md:text-right flex flex-col md:flex-row items-center justify-between gap-8">
+                <div className="bg-linear-to-r from-[#C89B3C] to-[#8a6a26] rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-2xl shadow-[#C89B3C]/20 text-center md:text-right flex flex-col md:flex-row items-center justify-between gap-8">
                     <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
                     <div className="relative z-10 max-w-2xl">
                         <h3 className="text-3xl md:text-4xl font-bold text-[#2B1F17] mb-4">هل تملك خدمة سياحية في عسير؟</h3>
@@ -478,7 +552,7 @@ function ExperienceCard({ data }: { data: any }) {
         ) : (
             <img src={data.image} alt={data.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" onError={(e) => { e.currentTarget.src = "/logo.png"; e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; }} />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
         
         {data.price > 0 && (
             <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl z-10">

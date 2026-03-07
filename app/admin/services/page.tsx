@@ -5,13 +5,12 @@ import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   CheckCircle, XCircle, Eye, Edit, Trash2, 
-  MapPin, Clock, FileText, ChevronLeft, Save, Loader2, Filter, User, 
-  Sparkles, Box, Utensils, Mountain, Compass, Info, PauseCircle, AlertTriangle, CheckSquare, Image as ImageIcon, Video,
+  MapPin, Clock, FileText, Save, Loader2, Filter, User, 
+  Sparkles, Utensils, Mountain, Compass, Info, PauseCircle, AlertTriangle, CheckSquare, Image as ImageIcon, Video,
   Calendar, Map as MapIcon, ShieldAlert, Home, Send, HeartPulse, Waves, Car, Wind, Tv, Flame, Coffee, ShieldCheck, Ticket, Wifi, Percent,
   Activity, Briefcase, CalendarDays, CalendarOff, Users, Tent, Building
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
-import Link from "next/link";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -22,7 +21,6 @@ const ADMIN_CONTACT_INFO = `للاستفسار يرجى التواصل مع ال
 Email: admin@sayyir.com
 Phone: +966 50 000 0000`;
 
-// ✅ ترجمة جميع المميزات 
 const ALL_FEATURES_DICT: Record<string, any> = {
     'yard': { label: 'يوجد حوش', icon: MapPin },
     'view': { label: 'إطلالة مميزة', icon: Mountain },
@@ -187,13 +185,23 @@ export default function ReviewServicesPage() {
       return <span key={id} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {id}</span>;
   };
 
+  const handleDirectEmail = (providerEmail: string, providerName: string, serviceTitle: string) => {
+      const subject = encodeURIComponent(`بخصوص خدمتك: ${serviceTitle}`);
+      const body = encodeURIComponent(`مرحباً ${providerName}،\n\nنحن فريق الدعم في منصة سيّر، ونتواصل معك بخصوص الخدمة المذكورة أعلاه...\n\n`);
+      window.location.href = `mailto:${providerEmail}?subject=${subject}&body=${body}`;
+  };
+
   return (
-    <div className={`min-h-screen bg-[#1a1a1a] text-white p-6 lg:p-10 ${tajawal.className}`} dir="rtl">
+    <div className={`animate-in fade-in duration-500 pb-10 ${tajawal.className}`} dir="rtl">
       
-      <div className="flex justify-between items-center mb-8">
-        <div><h1 className="text-3xl font-bold mb-2">مراجعة الخدمات</h1><p className="text-white/50">إدارة الخدمات والتجارب المقدمة من الشركاء.</p></div>
-        <Link href="/admin/dashboard" className="bg-white/5 hover:bg-white/10 p-3 rounded-xl transition"><ChevronLeft /></Link>
-      </div>
+      <header className="flex justify-between items-center mb-8">
+        <div>
+            <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
+               <CheckCircle className="text-[#C89B3C]" /> مراجعة الخدمات
+            </h1>
+            <p className="text-white/60 text-sm">إدارة الخدمات والتجارب المقدمة من الشركاء.</p>
+        </div>
+      </header>
 
       <div className="flex gap-3 mb-6 overflow-x-auto pb-2 custom-scrollbar">
         {[
@@ -216,7 +224,7 @@ export default function ReviewServicesPage() {
           {services.map((service) => (
             <div key={service.id} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg flex flex-col hover:border-[#C89B3C]/30 transition group">
                 <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C] font-bold text-lg">{service.title.charAt(0)}</div>
+                    <div className="w-10 h-10 shrink-0 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C] font-bold text-lg">{service.title.charAt(0)}</div>
                     <div><h3 className="font-bold text-white line-clamp-1 text-lg">{service.title}</h3><p className="text-xs text-white/50 flex items-center gap-1"><User size={10}/> {service.profiles?.full_name}</p></div>
                 </div>
                 <div className="bg-black/20 p-3 rounded-xl mb-4 space-y-2 text-sm border border-white/5">
@@ -227,14 +235,17 @@ export default function ReviewServicesPage() {
                            {service.sub_category === 'facility' ? 'مرفق' : service.sub_category === 'lodging' ? 'نزل' : service.sub_category === 'experience' ? 'تجربة' : 'فعالية'}
                        </span>
                    </div>
-                   <div className="flex justify-between">
+                   <div className="flex justify-between items-center">
                        <span className="text-white/50">الحالة:</span>
                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${service.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : service.status === 'stop_requested' ? 'bg-orange-500/20 text-orange-400' : service.status === 'stopped' ? 'bg-gray-500/20 text-gray-400' : service.status === 'deleted' ? 'bg-red-900/20 text-red-500' : 'bg-red-500/20 text-red-400'}`}>
                            {service.status === 'approved' ? 'نشط' : service.status === 'stop_requested' ? 'طلب إيقاف' : service.status === 'stopped' ? 'متوقفة' : service.status === 'deleted' ? 'محذوفة' : 'مرفوضة'}
                        </span>
                    </div>
                 </div>
-                <button onClick={() => openModal(service)} className="mt-auto w-full py-2.5 bg-white/5 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C]"><Eye size={18}/> معاينة واتخاذ إجراء</button>
+                <div className="mt-auto flex gap-2 w-full">
+                    <button onClick={() => openModal(service)} className="flex-1 py-2.5 bg-white/5 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C] text-sm"><Eye size={16}/> معاينة</button>
+                    <button onClick={() => handleDirectEmail(service.profiles?.email, service.profiles?.full_name, service.title)} className="p-2.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-xl transition border border-indigo-500/20" title="مراسلة المزود"><Send size={16}/></button>
+                </div>
             </div>
           ))}
         </div>
@@ -242,14 +253,14 @@ export default function ReviewServicesPage() {
 
       {/* --- MODAL التفاصيل الكاملة --- */}
       {selectedService && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
           <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
             
             {/* Header */}
             <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl">
               <div>
                   <h2 className="text-2xl font-bold flex items-center gap-2 text-white"><FileText className="text-[#C89B3C]" /> تفاصيل الخدمة كاملة</h2>
-                  <p className="text-xs text-white/50 mt-1">المعرف: {selectedService.id}</p>
+                  <p className="text-xs text-white/50 mt-1 font-mono">ID: {selectedService.id}</p>
               </div>
               <div className="flex gap-2">
                   <button onClick={() => setIsEditing(!isEditing)} className={`p-2 rounded-lg transition ${isEditing ? 'bg-[#C89B3C] text-black' : 'bg-white/10 text-white hover:bg-white/20'}`} title="تعديل"><Edit size={20}/></button>
@@ -296,8 +307,8 @@ export default function ReviewServicesPage() {
                         <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                             <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><User size={16}/> بيانات المزود والتصنيف</h3>
                             <div className="space-y-2 text-sm">
-                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">اسم المزود:</span> <span>{selectedService.profiles?.full_name}</span></p>
-                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">البريد الإلكتروني:</span> <span>{selectedService.profiles?.email}</span></p>
+                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">اسم المزود:</span> <span className="font-bold">{selectedService.profiles?.full_name}</span></p>
+                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">البريد الإلكتروني:</span> <span className="font-mono">{selectedService.profiles?.email}</span></p>
                                 <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">القسم الرئيسي:</span> <span className="font-bold">{selectedService.service_category === 'facility' ? 'مرفق أو فعالية' : 'تجربة سياحية'}</span></p>
                                 <p className="flex justify-between"><span className="text-white/50">النوع الفرعي:</span> <span className="bg-white/10 px-2 rounded">{selectedService.sub_category}</span></p>
                             </div>
@@ -308,16 +319,16 @@ export default function ReviewServicesPage() {
                             <h3 className="text-[#C89B3C] font-bold text-sm mb-2">البيانات الأساسية</h3>
                             {isEditing ? (
                                 <div className="space-y-2">
-                                    <input value={editData.title} onChange={e => setEditData({...editData, title: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
-                                    {selectedService.sub_category !== 'event' && <input type="number" value={editData.price} onChange={e => setEditData({...editData, price: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>}
-                                    <textarea rows={4} value={editData.description} onChange={e => setEditData({...editData, description: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded p-2 text-white outline-none"/>
+                                    <input value={editData.title} onChange={e => setEditData({...editData, title: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-white outline-none focus:border-[#C89B3C]"/>
+                                    {selectedService.sub_category !== 'event' && <input type="number" value={editData.price} onChange={e => setEditData({...editData, price: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-white outline-none focus:border-[#C89B3C]"/>}
+                                    <textarea rows={4} value={editData.description} onChange={e => setEditData({...editData, description: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-white outline-none focus:border-[#C89B3C] resize-none"/>
                                 </div>
                             ) : (
                                 <>
-                                    <div><p className="text-xs text-white/50">العنوان</p><p className="font-bold text-lg">{selectedService.title}</p></div>
-                                    {selectedService.sub_category !== 'event' && <div><p className="text-xs text-white/50">{selectedService.sub_category === 'lodging' ? 'سعر الليلة' : 'السعر'}</p><p className="font-bold text-[#C89B3C] text-xl font-mono">{selectedService.price === 0 ? 'مجاني' : `${selectedService.price} ﷼`}</p></div>}
-                                    {selectedService.sub_category === 'event' && selectedService.details?.event_info?.child_price !== undefined && <div><p className="text-xs text-white/50">رسوم الأطفال</p><p className="font-bold text-[#C89B3C] text-lg font-mono">{selectedService.details.event_info.child_price === 0 ? 'مجاني' : `${selectedService.details.event_info.child_price} ﷼`}</p></div>}
-                                    <div><p className="text-xs text-white/50">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{selectedService.description}</p></div>
+                                    <div><p className="text-xs text-white/50 mb-1">العنوان</p><p className="font-bold text-lg">{selectedService.title}</p></div>
+                                    {selectedService.sub_category !== 'event' && <div><p className="text-xs text-white/50 mb-1">{selectedService.sub_category === 'lodging' ? 'سعر الليلة' : 'السعر'}</p><p className="font-bold text-[#C89B3C] text-xl font-mono">{selectedService.price === 0 ? 'مجاني' : `${selectedService.price} ﷼`}</p></div>}
+                                    {selectedService.sub_category === 'event' && selectedService.details?.event_info?.child_price !== undefined && <div><p className="text-xs text-white/50 mb-1">رسوم الأطفال</p><p className="font-bold text-[#C89B3C] text-lg font-mono">{selectedService.details.event_info.child_price === 0 ? 'مجاني' : `${selectedService.details.event_info.child_price} ﷼`}</p></div>}
+                                    <div><p className="text-xs text-white/50 mb-1">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{selectedService.description}</p></div>
                                 </>
                             )}
                         </div>
@@ -329,7 +340,7 @@ export default function ReviewServicesPage() {
                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                     <div><p className="text-xs text-white/50">نوع النزل</p><p className="font-bold">{selectedService.details.lodging_type === 'other' ? selectedService.details.custom_lodging_type : selectedService.details.lodging_type}</p></div>
                                     <div><p className="text-xs text-white/50">عدد الوحدات/الغرف</p><p>{selectedService.details.number_of_units || 'غير محدد'}</p></div>
-                                    {selectedService.details.area && <div><p className="text-xs text-white/50">المساحة</p><p>{selectedService.details.area} م²</p></div>}
+                                    {selectedService.details.area && <div><p className="text-xs text-white/50">المساحة</p><p dir="ltr" className="text-right">{selectedService.details.area} m²</p></div>}
                                     {selectedService.max_capacity && <div><p className="text-xs text-white/50">السعة (أشخاص)</p><p>{selectedService.max_capacity}</p></div>}
                                     {selectedService.details.target_audience && <div><p className="text-xs text-white/50">مخصص لـ</p><p>{selectedService.details.target_audience === 'singles' ? 'عزاب' : selectedService.details.target_audience === 'families' ? 'عوايل' : 'الكل'}</p></div>}
                                 </div>
@@ -416,10 +427,10 @@ export default function ReviewServicesPage() {
                                 <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Ticket size={16}/> تفاصيل وتواريخ الفعالية</h3>
                                 
                                 <div className="grid grid-cols-2 gap-4 text-sm bg-white/5 p-3 rounded-lg">
-                                    <div><p className="text-xs text-white/50">من تاريخ</p><p className="font-bold dir-ltr">{selectedService.details.event_info.dates?.startDate}</p></div>
-                                    <div><p className="text-xs text-white/50">إلى تاريخ</p><p className="font-bold dir-ltr">{selectedService.details.event_info.dates?.endDate}</p></div>
-                                    <div><p className="text-xs text-white/50">من الساعة</p><p className="font-bold dir-ltr">{selectedService.details.event_info.dates?.startTime}</p></div>
-                                    <div><p className="text-xs text-white/50">إلى الساعة</p><p className="font-bold dir-ltr">{selectedService.details.event_info.dates?.endTime}</p></div>
+                                    <div><p className="text-xs text-white/50">من تاريخ</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.startDate}</p></div>
+                                    <div><p className="text-xs text-white/50">إلى تاريخ</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.endDate}</p></div>
+                                    <div><p className="text-xs text-white/50">من الساعة</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.startTime}</p></div>
+                                    <div><p className="text-xs text-white/50">إلى الساعة</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.endTime}</p></div>
                                 </div>
 
                                 {(safeArray(selectedService.details.event_info.activities).length > 0 || safeArray(selectedService.details.event_info.custom_activities).length > 0) && (
@@ -458,7 +469,7 @@ export default function ReviewServicesPage() {
                                     <NavigationControl showCompass={false}/>
                                     <Marker latitude={selectedService.location_lat} longitude={selectedService.location_lng} color="#C89B3C"/>
                                 </Map>
-                                <a href={`http://googleusercontent.com/maps.google.com/4{selectedService.location_lat},${selectedService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-[#C89B3C] hover:text-black transition"><MapPin size={14}/> عرض في الخرائط</a>
+                                <a href={`http://googleusercontent.com/maps.google.com/4${selectedService.location_lat},${selectedService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-[#C89B3C] hover:text-black transition"><MapPin size={14}/> عرض في الخرائط</a>
                             </div>
                         )}
 
@@ -469,7 +480,7 @@ export default function ReviewServicesPage() {
                                 <div className="space-y-2">
                                     {safeArray(selectedService.details.facility_services).map((srv: any, i: number) => (
                                         <div key={i} className="flex gap-3 bg-white/5 p-3 rounded-lg items-center border border-white/5">
-                                            {srv.image_url ? <Image src={srv.image_url} width={40} height={40} className="rounded object-cover" alt={srv.name}/> : <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center"><ImageIcon size={14} className="text-white/20"/></div>}
+                                            {srv.image_url ? <Image src={srv.image_url} width={40} height={40} className="rounded object-cover" alt={srv.name}/> : <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center shrink-0"><ImageIcon size={14} className="text-white/20"/></div>}
                                             <div><p className="text-sm font-bold text-white">{srv.name}</p>{srv.description && <p className="text-xs text-white/50">{srv.description}</p>}</div>
                                         </div>
                                     ))}
@@ -605,7 +616,7 @@ export default function ReviewServicesPage() {
       )}
 
       {zoomedImage && (
-        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-60 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-2 rounded-full"><XCircle size={32} /></button>
             <div className="relative w-full max-w-5xl h-[85vh] flex items-center justify-center">
                 {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> )}

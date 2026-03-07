@@ -1,18 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { 
-  Shield, UserPlus, Loader2, LogOut, LayoutDashboard, Settings, 
+  Shield, UserPlus, Loader2, Settings, 
   Users, Map, DollarSign, X, Check, Lock, Briefcase, ShieldAlert,
   Trash2, Ban, Unlock
 } from "lucide-react";
-import { Tajawal } from "next/font/google";
-import { useRouter, usePathname } from "next/navigation";
-
-const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
+import { useRouter } from "next/navigation";
 
 const ALL_PERMISSIONS = [
   {
@@ -77,7 +72,6 @@ interface Profile {
 
 export default function UsersManagement() {
   const router = useRouter();
-  const pathname = usePathname();
   const [admins, setAdmins] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -99,7 +93,6 @@ export default function UsersManagement() {
     if (!session) { router.replace("/login"); return; }
     setCurrentUserId(session.user.id);
 
-    // جلب بيانات جميع الأدمنز من قاعدة البيانات
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('*')
@@ -121,7 +114,6 @@ export default function UsersManagement() {
     e.preventDefault();
     setCreating(true);
     try {
-      // إرسال الدعوة عبر الـ API الخاص بك
       const res = await fetch('/api/admin/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -130,15 +122,15 @@ export default function UsersManagement() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "حدث خطأ أثناء الإرسال");
 
-      // تحديث البروفايل فوراً لجعله أدمن لكي يظهر في القائمة
-      const { error: profileUpdateError } = await supabase
+      // تحديث البروفايل في حال تم إنشاء الحساب بنجاح
+      await supabase
         .from('profiles')
         .update({ 
             is_admin: true, 
             full_name: newUser.fullName, 
             phone: newUser.phone 
         })
-        .eq('email', newUser.email); // تحديث بناءً على الإيميل الذي تم إنشاؤه
+        .eq('email', newUser.email);
 
       alert(`✅ تم إرسال الدعوة وإضافة المسؤول بنجاح.`);
       setNewUser({ fullName: "", email: "", phone: "" });
@@ -150,7 +142,6 @@ export default function UsersManagement() {
     }
   };
 
-  // --- دالة الحذف (الحذف الناعم من قاعدة البيانات) ---
   const handleDeleteAdmin = async (targetId: string) => {
     if (!confirm("⚠️ هل أنت متأكد من حذف هذا الأدمن نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.")) return;
     setProcessingId(targetId);
@@ -171,7 +162,6 @@ export default function UsersManagement() {
     }
   };
 
-  // --- دالة الحظر/فك الحظر مباشرة مع قاعدة البيانات ---
   const handleToggleBlock = async (admin: Profile) => {
     const action = admin.is_blocked ? "فك الحظر" : "حظر";
     if (!confirm(`هل تريد ${action} عن ${admin.full_name}؟`)) return;
@@ -206,7 +196,6 @@ export default function UsersManagement() {
     }));
   };
 
-  // --- حفظ الصلاحيات مباشرة في قاعدة البيانات ---
   const savePermissions = async () => {
     if (!selectedAdmin) return;
     setSavingPermissions(true);
@@ -228,48 +217,11 @@ export default function UsersManagement() {
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.replace("/login");
-  };
-
-  const menuItems = [
-    { label: "الرئيسية", icon: LayoutDashboard, href: "/admin/dashboard", show: true },
-    { label: "طلبات الانضمام", icon: Briefcase, href: "/admin/requests", show: true },
-    { label: "إدارة المعالم", icon: Map, href: "/admin/landmarks", show: true },
-    { label: "المستخدمين", icon: Users, href: "/admin/customers", show: true },
-    { label: "المالية والأرباح", icon: DollarSign, href: "/admin/finance", show: true },
-    { label: "فريق الإدارة", icon: ShieldAlert, href: "/admin/users", show: isSuperAdmin },
-    { label: "الإعدادات", icon: Settings, href: "/admin/settings", show: true },
-  ];
-
   return (
-    <main dir="rtl" className={`flex min-h-screen bg-[#1a1a1a] text-white ${tajawal.className}`}>
-      
-      {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-black/40 border-l border-white/10 p-6 backdrop-blur-md">
-        <div className="mb-10 flex justify-center pt-4">
-          <Image src="/logo.png" alt="Sayyir Admin" width={120} height={50} priority className="opacity-90" />
-        </div>
-        <nav className="space-y-2 flex-1">
-          {menuItems.map((item, i) => item.show && (
-            <Link key={i} href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname === item.href ? "bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 font-bold" : "text-white/60 hover:bg-white/5"}`}>
-              <item.icon size={20} /><span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-        <div className="pt-6 border-t border-white/10">
-          <button onClick={handleLogout} className="flex items-center gap-3 text-red-400 hover:text-red-300 transition w-full px-2">
-            <LogOut size={20} />
-            <span>تسجيل الخروج</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className="flex-1 p-6 lg:p-10 overflow-y-auto h-screen relative">
-        <header className="mb-10">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+        
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
             <Shield className="text-[#C89B3C]" />
             فريق الإدارة والصلاحيات
           </h1>
@@ -277,7 +229,7 @@ export default function UsersManagement() {
         </header>
 
         {isSuperAdmin && (
-          <div className="bg-gradient-to-br from-white/10 to-white/5 border border-white/10 rounded-2xl p-6 mb-10 shadow-lg">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-10 shadow-lg">
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
               <UserPlus size={20} className="text-[#C89B3C]" />
               إضافة مسؤول جديد
@@ -311,78 +263,77 @@ export default function UsersManagement() {
           {loading ? (
             <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-[#C89B3C] w-8 h-8" /></div>
           ) : (
-            <table className="w-full text-right">
-              <thead className="bg-black/20 text-white/50 text-xs uppercase">
-                <tr>
-                  <th className="px-6 py-4">الاسم</th>
-                  <th className="px-6 py-4">التواصل</th>
-                  <th className="px-6 py-4">الدور الحالي</th>
-                  {isSuperAdmin && <th className="px-6 py-4 text-center">التحكم</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-sm">
-                {admins.map((user) => (
-                  <tr key={user.id} className={`hover:bg-white/5 transition ${user.is_blocked ? 'bg-red-500/5' : ''}`}>
-                    <td className="px-6 py-4 font-bold flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#C89B3C]/20 to-white/5 flex items-center justify-center text-[#C89B3C] font-bold border border-[#C89B3C]/30">
-                        {user.full_name?.charAt(0) || "A"}
-                      </div>
-                      <div>
-                        <div className="text-white flex items-center gap-2">
-                            {user.full_name}
-                            {user.is_blocked && <span className="text-[10px] bg-red-500 text-white px-1.5 rounded">محظور</span>}
+            <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-right min-w-[800px]">
+                <thead className="bg-black/20 text-white/50 text-xs uppercase">
+                    <tr>
+                    <th className="px-6 py-4">الاسم</th>
+                    <th className="px-6 py-4">التواصل</th>
+                    <th className="px-6 py-4">الدور الحالي</th>
+                    {isSuperAdmin && <th className="px-6 py-4 text-center">التحكم</th>}
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-sm">
+                    {admins.map((user) => (
+                    <tr key={user.id} className={`hover:bg-white/5 transition ${user.is_blocked ? 'bg-red-500/5' : ''}`}>
+                        <td className="px-6 py-4 font-bold flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-[#C89B3C] font-bold border border-white/10 shrink-0">
+                            {user.full_name?.charAt(0) || "A"}
                         </div>
-                        {user.id === currentUserId && <span className="text-[10px] text-[#C89B3C]">(حسابك)</span>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-white/80">{user.email}</div>
-                      <div className="text-white/40 text-xs font-mono">{user.phone}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {user.is_super_admin ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20">سوبر أدمن ⚡</span> : <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20">أدمن 🛡️</span>}
-                    </td>
-                    {isSuperAdmin && (
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center items-center gap-2">
-                            
-                            {/* زر تعديل الصلاحيات */}
-                            <button 
-                              disabled={user.is_super_admin || processingId === user.id}
-                              onClick={() => openPermissionsModal(user)}
-                              className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent" : "bg-white/5 border-white/10 text-white hover:border-[#C89B3C] hover:text-[#C89B3C]"}`}
-                              title="تعديل الصلاحيات"
-                            >
-                              <Settings size={16} />
-                            </button>
-
-                            {/* زر الحظر/فك الحظر */}
-                            <button 
-                              disabled={user.is_super_admin || processingId === user.id}
-                              onClick={() => handleToggleBlock(user)}
-                              className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent" : user.is_blocked ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500 hover:text-white" : "bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white"}`}
-                              title={user.is_blocked ? "فك الحظر" : "حظر المستخدم"}
-                            >
-                                {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : user.is_blocked ? <Unlock size={16}/> : <Ban size={16} />}
-                            </button>
-
-                            {/* زر الحذف */}
-                            <button 
-                              disabled={user.is_super_admin || processingId === user.id}
-                              onClick={() => handleDeleteAdmin(user.id)}
-                              className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent" : "bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white"}`}
-                              title="حذف نهائي"
-                            >
-                              {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : <Trash2 size={16} />}
-                            </button>
-
+                        <div>
+                            <div className="text-white flex items-center gap-2">
+                                {user.full_name}
+                                {user.is_blocked && <span className="text-[10px] bg-red-500 text-white px-1.5 rounded">محظور</span>}
+                            </div>
+                            {user.id === currentUserId && <span className="text-[10px] text-[#C89B3C]">(حسابك)</span>}
                         </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="px-6 py-4">
+                        <div className="text-white/80">{user.email}</div>
+                        <div className="text-white/40 text-xs font-mono">{user.phone}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                        {user.is_super_admin ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20">سوبر أدمن ⚡</span> : <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20">أدمن 🛡️</span>}
+                        </td>
+                        {isSuperAdmin && (
+                        <td className="px-6 py-4 text-center">
+                            <div className="flex justify-center items-center gap-2">
+                                
+                                <button 
+                                disabled={user.is_super_admin || processingId === user.id}
+                                onClick={() => openPermissionsModal(user)}
+                                className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent cursor-not-allowed" : "bg-white/5 border-white/10 text-white hover:border-[#C89B3C] hover:text-[#C89B3C]"}`}
+                                title="تعديل الصلاحيات"
+                                >
+                                <Settings size={16} />
+                                </button>
+
+                                <button 
+                                disabled={user.is_super_admin || processingId === user.id}
+                                onClick={() => handleToggleBlock(user)}
+                                className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent cursor-not-allowed" : user.is_blocked ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500 hover:text-white" : "bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white"}`}
+                                title={user.is_blocked ? "فك الحظر" : "حظر المستخدم"}
+                                >
+                                    {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : user.is_blocked ? <Unlock size={16}/> : <Ban size={16} />}
+                                </button>
+
+                                <button 
+                                disabled={user.is_super_admin || processingId === user.id}
+                                onClick={() => handleDeleteAdmin(user.id)}
+                                className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent cursor-not-allowed" : "bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white"}`}
+                                title="حذف نهائي"
+                                >
+                                {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : <Trash2 size={16} />}
+                                </button>
+
+                            </div>
+                        </td>
+                        )}
+                    </tr>
+                    ))}
+                </tbody>
+                </table>
+            </div>
           )}
         </div>
 
@@ -430,7 +381,6 @@ export default function UsersManagement() {
             </div>
           </div>
         )}
-      </div>
-    </main>
+    </div>
   );
 }
