@@ -25,6 +25,9 @@ export default function DynamicProviderRegister() {
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [files, setFiles] = useState<Record<string, File[]>>({});
   const [previews, setPreviews] = useState<Record<string, string[]>>({});
+  
+  // حالة مفتاح الدولة
+  const [phoneCode, setPhoneCode] = useState("+966");
 
   // حالة القوائم والسياسات
   const [openSelectId, setOpenSelectId] = useState<string | null>(null);
@@ -108,7 +111,55 @@ export default function DynamicProviderRegister() {
 
     setSubmitting(true);
     try {
-      // 1. رفع الملفات (كما هي)
+      let nameVal = "مزود جديد", emailVal = "", phoneVal = "", serviceTypeVal = "";
+      fields.forEach(f => {
+          const val = answers[f.id];
+          if (f.label.includes("اسم") || f.field_type === 'text') { if(!nameVal || nameVal === "مزود جديد") nameVal = val; }
+          if (f.field_type === 'email') emailVal = val;
+          if (f.field_type === 'tel') phoneVal = val;
+          if (f.field_type === 'select') serviceTypeVal = val;
+      });
+
+      if (!emailVal || !phoneVal) {
+          alert("البريد الإلكتروني ورقم الجوال مطلوبان بشكل إجباري.");
+          setSubmitting(false);
+          return;
+      }
+
+      // --- الفحص الذكي قبل رفع الطلب ---
+      // 1. التحقق إذا كان مسجلاً كمزود خدمة بالفعل
+      const { data: profileData } = await supabase
+          .from('profiles')
+          .select('is_provider')
+          .eq('email', emailVal)
+          .single();
+
+      if (profileData && profileData.is_provider) {
+          alert("❌ هذا البريد الإلكتروني مسجل كمزود خدمة مسبقاً.");
+          setSubmitting(false);
+          return;
+      }
+
+      // 2. التحقق من وجود طلب انضمام تحت الإجراء أو مقبول مسبقاً
+      const { data: requestData } = await supabase
+          .from('provider_requests')
+          .select('status')
+          .eq('email', emailVal)
+          .in('status', ['pending', 'approved']);
+
+      if (requestData && requestData.length > 0) {
+          const isApproved = requestData.some(r => r.status === 'approved');
+          if (isApproved) {
+              alert("❌ هذا البريد الإلكتروني مسجل كمزود خدمة مسبقاً.");
+          } else {
+              alert("❌ يوجد طلب انضمام تحت الإجراء لهذا البريد الإلكتروني. يرجى انتظار رد الإدارة.");
+          }
+          setSubmitting(false);
+          return;
+      }
+      // --- نهاية الفحص ---
+
+      // 1. رفع الملفات
       const uploadedData: Record<string, string[]> = {};
       for (const [fieldId, fileList] of Object.entries(files)) {
         if (fileList.length > 0) {
@@ -128,16 +179,7 @@ export default function DynamicProviderRegister() {
       const finalData = { ...answers };
       Object.keys(uploadedData).forEach(key => { finalData[key] = uploadedData[key]; });
 
-      let nameVal = "مزود جديد", emailVal = "", phoneVal = "", serviceTypeVal = "";
-      fields.forEach(f => {
-          const val = answers[f.id];
-          if (f.label.includes("اسم") || f.field_type === 'text') { if(!nameVal || nameVal === "مزود جديد") nameVal = val; }
-          if (f.field_type === 'email') emailVal = val;
-          if (f.field_type === 'tel') phoneVal = val;
-          if (f.field_type === 'select') serviceTypeVal = val;
-      });
-
-      // 3. الإرسال للـ API الجديد بدلاً من Supabase مباشرة
+      // 3. الإرسال للـ API
       const response = await fetch('/api/provider/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -206,20 +248,68 @@ export default function DynamicProviderRegister() {
                     {field.field_type !== 'policy' && (
                         <label className="text-sm text-[#C89B3C] font-bold mb-2 block flex items-center gap-2">
                             {getFieldIcon(field.field_type)}
-                            {field.label} {field.is_required && <span className="text-red-500">*</span>}
+                            {field.label} {(field.is_required || field.field_type === 'email' || field.field_type === 'tel') && <span className="text-red-500">*</span>}
                         </label>
                     )}
 
-                    {/* Input Fields */}
-                    {['text', 'email', 'tel'].includes(field.field_type) && (
+                    {/* حقل النصوص */}
+                    {field.field_type === 'text' && (
                     <div className="relative">
                         <input 
-                            type={field.field_type} required={field.is_required} 
+                            type="text" required={field.is_required} 
                             className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20"
                             placeholder={`أدخل ${field.label}...`}
                             onChange={(e) => handleChange(field.id, e.target.value)} 
                         />
                         <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-0 group-focus-within:opacity-100 transition duration-500 text-[#C89B3C]"><Check size={18} /></div>
+                    </div>
+                    )}
+
+                    {/* حقل الإيميل (إجباري) */}
+                    {field.field_type === 'email' && (
+                    <div className="relative">
+                        <input 
+                            type="email" required={true} 
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20 text-left"
+                            placeholder={`أدخل ${field.label}...`}
+                            onChange={(e) => handleChange(field.id, e.target.value)} 
+                            dir="ltr"
+                        />
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-focus-within:opacity-100 transition duration-500 text-[#C89B3C]"><Check size={18} /></div>
+                    </div>
+                    )}
+
+                    {/* حقل الجوال (إجباري + مفتاح الدولة) */}
+                    {field.field_type === 'tel' && (
+                    <div className="relative flex flex-row-reverse" dir="ltr">
+                        <select
+                            className="bg-white/5 border border-white/10 border-l-0 rounded-l-2xl px-3 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20 text-center appearance-none"
+                            value={phoneCode}
+                            onChange={(e) => {
+                                setPhoneCode(e.target.value);
+                                const currentVal = answers[field.id] || '';
+                                const justNumber = currentVal.startsWith('+') ? currentVal.replace(/^\+\d+\s*/, '') : currentVal;
+                                handleChange(field.id, e.target.value + justNumber);
+                            }}
+                        >
+                            <option value="+966" className="bg-[#1a1a1a]">+966 🇸🇦</option>
+                            <option value="+971" className="bg-[#1a1a1a]">+971 🇦🇪</option>
+                            <option value="+965" className="bg-[#1a1a1a]">+965 🇰🇼</option>
+                            <option value="+973" className="bg-[#1a1a1a]">+973 🇧🇭</option>
+                            <option value="+968" className="bg-[#1a1a1a]">+968 🇴🇲</option>
+                            <option value="+974" className="bg-[#1a1a1a]">+974 🇶🇦</option>
+                            <option value="+20" className="bg-[#1a1a1a]">+20 🇪🇬</option>
+                        </select>
+                        <input
+                            type="tel" required={true}
+                            className="w-full bg-white/5 border border-white/10 rounded-r-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20 text-left"
+                            placeholder={`رقم الجوال...`}
+                            onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '');
+                                handleChange(field.id, phoneCode + val);
+                            }}
+                            dir="ltr"
+                        />
                     </div>
                     )}
 
@@ -282,7 +372,7 @@ export default function DynamicProviderRegister() {
                     </div>
                     )}
 
-                    {/* File Upload (معاينة الصور محسنة) */}
+                    {/* File Upload */}
                     {field.field_type === 'file' && (
                     <div className="relative group/upload">
                         <input type="file" multiple accept="image/*,video/*" id={`file-${field.id}`} className="hidden" onChange={(e) => handleFileChange(field.id, e)} />
@@ -294,7 +384,6 @@ export default function DynamicProviderRegister() {
                         <div className="flex gap-3 mt-4 overflow-x-auto pb-2 custom-scrollbar">
                             {previews[field.id].map((src, idx) => (
                             <div key={idx} className="w-20 h-20 rounded-xl overflow-hidden relative shrink-0 border border-white/20 shadow-lg group-hover:border-[#C89B3C]/50 transition">
-                                {/* استخدام img عادي للمعاينة لتجنب المشاكل */}
                                 <img src={src} className="w-full h-full object-cover" alt="preview" />
                             </div>
                             ))}
