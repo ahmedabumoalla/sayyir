@@ -664,7 +664,7 @@ function CheckoutContent() {
                         <span className="font-bold text-sm">البطاقات البنكية</span>
                     </div>
                     <div className="flex gap-1.5">
-                        <div className="w-8 h-5 bg-gradient-to-r from-green-400 to-emerald-600 rounded flex items-center justify-center text-[7px] font-bold text-white shadow-sm">mada</div>
+                        <div className="w-8 h-5 bg-gradientto-r from-green-400 to-emerald-600 rounded flex items-center justify-center text-[7px] font-bold text-white shadow-sm">mada</div>
                         <div className="w-8 h-5 bg-white rounded flex items-center justify-center text-[7px] font-bold text-blue-900 italic shadow-sm">VISA</div>
                     </div>
                 </div>
@@ -695,7 +695,7 @@ function CheckoutContent() {
 
       {/* تكبير الصور */}
       {zoomedImage && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><XIcon size={24} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
                 {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-2xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain drop-shadow-2xl"/> )}

@@ -249,7 +249,7 @@ export default function ClientDashboard() {
                   />
               )}
               
-              <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-[#121212]/60 to-transparent" />
+              <div className="absolute inset-0 bg-gradientto-t from-[#121212] via-[#121212]/60 to-transparent" />
               
               {/* شريط التقدم التلقائي (7 ثواني) */}
               <div className="absolute top-0 left-0 h-1 bg-[#C89B3C] w-full animate-[progress_7s_linear_infinite] origin-left"></div>

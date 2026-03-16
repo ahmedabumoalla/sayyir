@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
   MapPin, ArrowRight, Loader2, Mountain, Landmark, 
-  Search, Trees, X // 👈 ✅ تم إضافة X هنا لحل المشكلة
+  Search, Trees, X 
 } from "lucide-react";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -68,7 +68,7 @@ export default function LandmarksPage() {
           fill 
           className="object-contain p-16 md:p-24 opacity-30"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/70 to-[#0a0a0a]" />
+        <div className="absolute inset-0 bg-gradientto-b from-black/50 via-black/70 to-[#0a0a0a]" />
         
         <div className="relative z-10 text-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
           <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-2 md:mb-4 drop-shadow-lg">كنوز عسير</h1>
@@ -96,7 +96,7 @@ export default function LandmarksPage() {
                 />
                 {searchQuery && (
                     <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition p-1">
-                        <X className="w-3.5 h-3.5 md:w-4 md:h-4" /> {/* الآن ستعمل بدون مشاكل */}
+                        <X className="w-3.5 h-3.5 md:w-4 md:h-4" /> 
                     </button>
                 )}
             </div>
@@ -142,7 +142,7 @@ export default function LandmarksPage() {
   );
 }
 
-// ... (باقي الكود في الأعلى كما هو بدون تغيير)
+// ... (مكون بطاقة المعلم السياحي)
 
 function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => boolean }) {
   const isHeritage = data.type === 'heritage';
@@ -151,7 +151,7 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
   const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   
   return (
-    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
+    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-2rem overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
         <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black flex items-center justify-center">
           {mainMedia ? (
               isMainMediaVideo ? (
@@ -169,10 +169,8 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
                     alt={data.name} 
                     fill 
                     className="object-cover transition-transform duration-700 group-hover:scale-110"
-                    // 👇 ✅ هذا هو التعديل السحري: إذا فشلت الصورة، ضع الصورة الافتراضية
                     onError={(e) => {
                       e.currentTarget.src = "/placeholder.jpg"; 
-                      // يمكنك تغيير الصورة الافتراضية إلى لوجو المنصة مثلاً: "/logo.png"
                     }}
                   />
               )
@@ -190,10 +188,9 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
             </span>
           </div>
 
-          <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10 ${data.price > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
-              {data.price > 0 ? `${data.price} ريال` : 'دخول مجاني'}
-          </div>
+          {/* ❌ تم حذف شارة السعر نهائياً من هنا لكي لا تظهر في كروت المعالم ❌ */}
         </div>
+        
         <div className="p-4 md:p-6 relative -mt-8 md:-mt-10 z-20">
           <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl">
               <h3 className="text-lg md:text-xl font-bold text-white mb-1.5 md:mb-2 group-hover:text-[#C89B3C] transition line-clamp-1">{data.name}</h3>

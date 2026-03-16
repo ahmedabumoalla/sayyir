@@ -298,7 +298,7 @@ export default function TripsPage() {
                                 
                                 {/* الباركود */}
                                 {trip.status === 'confirmed' && trip.ticket_qr_code && (
-                                    <div className="bg-gradient-to-br from-emerald-900/20 to-[#1a1a1a] border border-emerald-500/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between text-center md:text-right relative overflow-hidden shadow-inner gap-6">
+                                    <div className="bg-gradientto-br from-emerald-900/20 to-[#1a1a1a] border border-emerald-500/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between text-center md:text-right relative overflow-hidden shadow-inner gap-6">
                                         <div className="flex-1">
                                             <p className="text-emerald-400 font-bold mb-2 flex items-center justify-center md:justify-start gap-2 text-lg"><CheckCircle2/> تذكرة الدخول صالحة</p>
                                             <p className="text-white/70 text-sm leading-relaxed mb-4">تم تأكيد حجزك. يرجى إبراز هذا الرمز (الباركود) لمزود الخدمة عند وصولك.</p>
@@ -552,7 +552,7 @@ export default function TripsPage() {
       )}
 
       {zoomedImage && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><X size={24} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
                 {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-2xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain drop-shadow-2xl"/> )}

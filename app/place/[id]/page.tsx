@@ -189,7 +189,7 @@ export default function PlaceDetails() {
       
       {/* ================= 1. قسم الصور ================= */}
       <div className="relative h-[60vh] w-full group">
-        <div className="absolute inset-0 z-10 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/20 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 z-10 bg-gradientto-t from-[#0a0a0a] via-[#0a0a0a]/20 to-transparent pointer-events-none" />
         
         <div className="absolute top-6 left-6 right-6 flex justify-between items-center z-20">
           <button onClick={() => router.back()} className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center hover:bg-[#C89B3C] hover:text-black transition text-white border border-white/10">
@@ -207,6 +207,11 @@ export default function PlaceDetails() {
           onClick={() => { if(place.media_urls?.length) openModal(0); }}
           className={`w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105 ${place.media_urls?.length ? 'cursor-pointer' : ''}`}
         />
+
+        {/* ✅ التعديل هنا: منع إظهار السعر للمعالم نهائياً حتى لو كان محفوظ في قاعدة البيانات */}
+        <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10 ${isBooking && place.price && place.price > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
+            {isBooking && place.price && place.price > 0 ? `${place.price} ريال` : 'دخول مجاني'}
+        </div>
 
         <div className="absolute bottom-0 w-full p-6 md:p-12 z-20 pointer-events-none">
             <div className="container mx-auto">
@@ -285,14 +290,12 @@ export default function PlaceDetails() {
                     </div>
                 )}
 
-                {/* 👇 تم التعديل هنا: معرض الصور يعرض جميع الصور من البداية 👇 */}
                 {place.media_urls && place.media_urls.length > 1 && (
                     <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-xl">
                         <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                             <ImageIcon className="text-[#C89B3C]" size={20}/> معرض الصور
                         </h2>
                         <div className="flex overflow-x-auto gap-4 pb-2 custom-scrollbar">
-                            {/* حذفنا .slice(1) ليعرض جميع الصور */}
                             {place.media_urls.map((url, idx) => (
                                 <div 
                                     key={idx} 
@@ -452,10 +455,10 @@ export default function PlaceDetails() {
 
       {/* ================= 3. عارض الصور المنبثق (Fullscreen Image Modal) ================= */}
       {isImageModalOpen && place?.media_urls && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-100 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
           
           {/* Top Bar: Close Button & Counter */}
-          <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-10 bg-gradient-to-b from-black/80 to-transparent">
+          <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-10 bg-gradientto-b from-black/80 to-transparent">
             <button 
               onClick={() => setIsImageModalOpen(false)}
               className="p-3 bg-white/10 hover:bg-red-500/80 hover:text-white rounded-full transition-colors backdrop-blur-md"

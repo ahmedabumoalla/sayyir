@@ -51,7 +51,7 @@ export default function EventsPage() {
       {/* HEADER SECTION */}
       <div className="relative h-[40vh] md:h-[45vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
         <Image src="/logo.png" alt="Sayyir Logo" fill className="object-contain p-16 md:p-24 opacity-30" />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/70 to-[#0a0a0a]" />
+        <div className="absolute inset-0 bg-gradientto-b from-black/50 via-black/70 to-[#0a0a0a]" />
         
         <div className="relative z-10 text-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
           <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-2 md:mb-4 drop-shadow-lg flex justify-center items-center gap-4">
@@ -116,8 +116,11 @@ function EventCard({ data, isVideo }: { data: any, isVideo: (url: string) => boo
   const mainMedia = data.image_url;
   const mediaIsVideo = mainMedia ? isVideo(mainMedia) : false;
   
+  // ✅ التعديل هنا: تحويل السعر لرقم لضمان المقارنة الصحيحة
+  const priceValue = Number(data.price) || 0;
+  
   return (
-    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40 flex flex-col">
+    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-2rem overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40 flex flex-col">
         <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black flex items-center justify-center shrink-0">
           {mainMedia ? (
               mediaIsVideo ? (
@@ -134,8 +137,9 @@ function EventCard({ data, isVideo }: { data: any, isVideo: (url: string) => boo
             <span className="text-[10px] md:text-xs font-bold text-white">فعالية</span>
           </div>
 
-          <div className="absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur bg-[#C89B3C]/90 text-black text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10">
-              {data.price > 0 ? `دخول: ${data.price} ريال` : 'دخول مجاني'}
+          {/* ✅ التعديل هنا: إظهار السعر وإظهار مجاني بخلفية مختلفة */}
+          <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10 ${priceValue > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
+              {priceValue > 0 ? `دخول: ${priceValue} ريال` : 'دخول مجاني'}
           </div>
         </div>
         

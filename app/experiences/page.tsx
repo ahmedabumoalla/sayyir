@@ -5,7 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
-  ArrowRight, Loader2, Compass, Clock, Activity, MapPin, PlayCircle, Search, X // 👈 تمت إضافة أيقونات البحث
+  ArrowRight, Loader2, Compass, Clock, Activity, MapPin, PlayCircle, Search, X
 } from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
@@ -95,7 +95,7 @@ export default function ExperiencesPage() {
       {/* HEADER */}
       <div className="relative h-[40vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
         <div className="absolute inset-0 bg-black/40" />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/60 to-[#0a0a0a]" />
+        <div className="absolute inset-0 bg-gradientto-b from-black/20 via-black/60 to-[#0a0a0a]" />
         
         <div className="relative z-10 text-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
           <h1 className="text-4xl md:text-6xl font-bold mb-4 tracking-tight">التجارب السياحية</h1>
@@ -109,9 +109,7 @@ export default function ExperiencesPage() {
         </Link>
       </div>
 
-      {/* ======================================================= */}
       {/* ==================== قسم البحث ======================== */}
-      {/* ======================================================= */}
       <div className="container mx-auto px-4 -mt-8 relative z-30 mb-8">
         <div className="max-w-md mx-auto relative group">
             <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-4 h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
@@ -131,7 +129,6 @@ export default function ExperiencesPage() {
             </div>
         </div>
       </div>
-      {/* ======================================================= */}
 
       {/* LIST */}
       <div className="container mx-auto px-4 py-16">
@@ -180,13 +177,15 @@ const isVideo = (url: string | null) => {
 };
 
 function ExperienceCard({ data }: { data: any }) {
-  // ✅ التعديل الجوهري هنا: تحديد الرابط بناءً على المصدر
   const linkHref = data.source === 'place' 
-      ? `/place/${data.id}`   // إذا كان من الأدمن يروح لصفحة المكان
-      : `/service/${data.id}`; // إذا كان من مزود يروح لصفحة الخدمة
+      ? `/place/${data.id}`   
+      : `/service/${data.id}`; 
 
   const buttonText = data.source === 'service' ? 'احجز تجربتك' : 'استكشف التجربة';
   const mediaIsVideo = isVideo(data.image);
+  
+  // ✅ التعديل هنا: تحويل السعر لرقم لضمان المقارنة الصحيحة
+  const priceValue = Number(data.price) || 0;
 
   return (
     <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
@@ -213,15 +212,14 @@ function ExperienceCard({ data }: { data: any }) {
             />
         )}
         
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradientto-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
-        {data.price > 0 && (
-            <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md border border-[#C89B3C]/50 px-4 py-2 rounded-xl z-10">
-            <span className="text-[#C89B3C] font-bold text-lg">
-                {data.price} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span>
+        {/* ✅ التعديل هنا: إظهار السعر وإظهار مجاني بخلفية مختلفة */}
+        <div className={`absolute top-4 left-4 backdrop-blur-md px-4 py-2 rounded-xl z-10 border shadow-lg ${priceValue > 0 ? 'bg-black/60 border-[#C89B3C]/50' : 'bg-emerald-500/90 border-emerald-400'}`}>
+            <span className={`font-bold text-lg ${priceValue > 0 ? 'text-[#C89B3C]' : 'text-white'}`}>
+                {priceValue > 0 ? <>{priceValue} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span></> : 'مجاني'}
             </span>
-            </div>
-        )}
+        </div>
         
         <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10 z-10">
             {mediaIsVideo ? <PlayCircle size={12} className="text-[#C89B3C]"/> : <Compass size={12} />} 
