@@ -5,9 +5,10 @@ import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   CreditCard, Tag, ArrowRight, ShieldCheck, Loader2, 
-  FileText, CheckCircle, AlertCircle, MapPin, Clock, 
+  FileText, CheckCircle, AlertCircle, AlertTriangle, MapPin, Clock, 
   Info, Box, CalendarDays, CalendarOff, Calendar, Apple, PlayCircle,
-  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, ShieldAlert, Compass, CheckSquare, Image as ImageIcon, Video, Ticket, Lock, X, AlertTriangle, Briefcase, Home, Coffee, Eye, HeartPulse
+  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, ShieldAlert, Compass, CheckSquare, Image as ImageIcon, Video, Ticket,
+  Coffee, Home, Briefcase, X, Lock
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link"; 
@@ -18,6 +19,7 @@ import { Tajawal } from "next/font/google";
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
+// ✅ قاموس المميزات
 const ALL_FEATURES_DICT: Record<string, any> = {
     'yard': { label: 'يوجد حوش', icon: MapPin },
     'view': { label: 'إطلالة مميزة', icon: Mountain },
@@ -48,36 +50,30 @@ const ALL_FEATURES_DICT: Record<string, any> = {
     'rides': { label: 'ملاهي وألعاب', icon: Activity },
     'seating': { label: 'جلسات عامة', icon: Users },
     'cable_car': { label: 'تلفريك', icon: MapPin },
-    'live_shows': { label: 'عروض حية', icon: Tv },
-    'security': { label: 'حراسة / أمان', icon: ShieldCheck },
-    'firstaid': { label: 'إسعافات أولية', icon: HeartPulse },
-    'breakfast': { label: 'إفطار مشمول', icon: Coffee }
+    'live_shows': { label: 'عروض حية', icon: Tv }
 };
 
 const safeArray = (data: any) => {
     if (!data) return [];
     if (Array.isArray(data)) return data;
-    if (typeof data === 'string') { try { return JSON.parse(data); } catch { return []; } }
+    if (typeof data === 'string') {
+        try { return JSON.parse(data); } catch { return []; }
+    }
     if (typeof data === 'object') return Object.values(data);
     return [];
 };
 
-const formatTime12H = (timeStr: string) => {
-    if (!timeStr) return "";
+const formatTime12H = (time24: string) => {
+    if (!time24) return "";
     try {
-        if (timeStr.includes('T')) {
-            const date = new Date(timeStr);
-            return date.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
-        }
-        const [hourStr, minute] = timeStr.split(':');
+        if (time24.includes('T')) return new Date(time24).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const [hourStr, minute] = time24.split(':');
         let hour = parseInt(hourStr, 10);
         const period = hour >= 12 ? 'مساءً' : 'صباحاً';
         if (hour > 12) hour -= 12;
         if (hour === 0) hour = 12;
         return `${hour.toString().padStart(2, '0')}:${minute} ${period}`;
-    } catch {
-        return timeStr;
-    }
+    } catch { return time24; }
 };
 
 const formatDate = (dateStr: string) => {
@@ -90,13 +86,15 @@ function CheckoutContent() {
   const searchParams = useSearchParams();
   const params = useParams();
   
-  const bookingId = (params?.id as string) || (searchParams?.get("booking_id") as string);
+  // ✅ دعم التقاط الآيدي سواء من مسار الصفحة /checkout/[id] أو من الـ Query
+  const bookingId = (params.id as string) || searchParams.get("booking_id");
 
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [booking, setBooking] = useState<any>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   
+  // ✅ اختيار طريقة الدفع
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'card' | 'applepay'>('card');
 
   const [couponCode, setCouponCode] = useState("");
@@ -142,7 +140,7 @@ function CheckoutContent() {
             return;
           }
 
-          const { data: serviceData } = await supabase
+          const { data: serviceData, error: serviceError } = await supabase
             .from("services")
             .select(`*, profiles:provider_id(full_name, email, phone)`) 
             .eq("id", bookingData.service_id)
@@ -187,7 +185,9 @@ function CheckoutContent() {
     }
 
     const totalDisc = generalDisc + couponDisc;
+    
     const finalTotal = Math.max(0, totalServicePrice - totalDisc);
+
     const baseAmount = finalTotal / 1.15;
     const vat = finalTotal - baseAmount;
 
@@ -223,35 +223,16 @@ function CheckoutContent() {
   };
 
   const handlePayment = async () => {
-    if (!bookingId) return;
     setProcessing(true);
 
     try {
-        const qrCodeString = `QR-${bookingId.substring(0, 8).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-        if (totals.total <= 0) {
-            const { error: updateError } = await supabase.from("bookings").update({ 
-                status: "confirmed", 
-                payment_status: "paid",
-                payment_method: "مجاني",
-                ticket_qr_code: qrCodeString,
-                is_ticket_used: false
-            }).eq("id", bookingId);
-
-            if (updateError) throw updateError;
-
-            alert("✅ تم تأكيد الحجز بنجاح وإصدار التذكرة!");
-            router.replace("/client/dashboard");
-            return;
-        }
-
         const response = await fetch('/api/paymob/initiate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 bookingId: bookingId,
                 couponCode: appliedCoupon ? appliedCoupon.code : null,
-                paymentMethod: selectedPaymentMethod 
+                paymentMethod: selectedPaymentMethod // ✅ إرسال 'card' أو 'applepay' للـ API
             })
         });
 
@@ -262,17 +243,8 @@ function CheckoutContent() {
         }
 
         if (data.skipPayment) {
-            const { error: updateError } = await supabase.from("bookings").update({ 
-                status: "confirmed", 
-                payment_status: "paid",
-                payment_method: "كود خصم",
-                ticket_qr_code: qrCodeString,
-                is_ticket_used: false
-            }).eq("id", bookingId);
-
-            if (updateError) throw updateError;
-
-            alert("✅ تم تأكيد الحجز بنجاح وإصدار التذكرة!");
+            await supabase.from("bookings").update({ status: "confirmed", payment_status: "paid" }).eq("id", bookingId);
+            alert("✅ تم تأكيد الحجز بنجاح (مجاني)!");
             router.replace("/client/dashboard");
             return;
         }
@@ -568,15 +540,12 @@ function CheckoutContent() {
             {service.location_lat && service.location_lng && (
                 <div className="bg-[#1e1e1e] p-2 rounded-3xl border border-white/5 shadow-xl overflow-hidden h-80 relative group">
                     <Map initialViewState={{ latitude: service.location_lat, longitude: service.location_lng, zoom: 14 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN} interactive={false}>
-                        <NavigationControl showCompass={false}/>
+                        <NavigationControl position="top-left" showCompass={false}/>
                         <Marker latitude={service.location_lat} longitude={service.location_lng} color="#C89B3C"/>
                     </Map>
-                    <div className="absolute top-4 left-4 right-4 bg-black/80 backdrop-blur-md p-3 rounded-xl flex items-center gap-3 border border-white/10">
-                        <MapPin className="text-[#C89B3C] shrink-0" size={24}/>
-                        <div>
-                            <p className="text-sm font-bold text-white">موقع الفعالية / الخدمة</p>
-                            <p className="text-xs text-white/50">سيتم إرسال رابط خرائط جوجل الدقيق بعد الدفع</p>
-                        </div>
+                    <div className="absolute top-6 right-6 bg-black/80 backdrop-blur-md px-4 py-2 rounded-lg border border-white/10 flex items-center gap-2">
+                        <MapPin size={18} className="text-[#C89B3C]"/>
+                        <span className="text-sm font-bold">موقع تقديم الخدمة</span>
                     </div>
                 </div>
             )}
@@ -666,7 +635,7 @@ function CheckoutContent() {
                         <span className="font-bold text-sm">البطاقات البنكية</span>
                     </div>
                     <div className="flex gap-1.5">
-                        <div className="w-8 h-5 bg-gradient-to-r from-green-400 to-emerald-600 rounded flex items-center justify-center text-[7px] font-bold text-white shadow-sm">mada</div>
+                        <div className="w-8 h-5 bg-linear-to-r from-green-400 to-emerald-600 rounded flex items-center justify-center text-[7px] font-bold text-white shadow-sm">mada</div>
                         <div className="w-8 h-5 bg-white rounded flex items-center justify-center text-[7px] font-bold text-blue-900 italic shadow-sm">VISA</div>
                     </div>
                 </label>

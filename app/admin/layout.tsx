@@ -21,7 +21,7 @@ import {
   Bell,
   Globe,
   Handshake,
-  CheckCircle // 👈 أيقونة مراجعة الخدمات
+  CheckCircle 
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { TranslationProvider, useTranslation } from "./TranslationContext";
@@ -54,6 +54,12 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const [userName, setUserName] = useState("المدير");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
+  // ✅ حالة لتخزين العدادات (الإشعارات)
+  const [notificationCounts, setNotificationCounts] = useState({
+      requests: 0,
+      services: 0
+  });
+
   useEffect(() => {
     const fetchUser = async () => {
         const { data: { session } } = await supabase.auth.getSession();
@@ -68,28 +74,55 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
         }
     };
     fetchUser();
+    fetchNotificationCounts(); // جلب الإشعارات عند التحميل
   }, [router]);
+
+  // ✅ دالة جلب الإشعارات
+  const fetchNotificationCounts = async () => {
+      try {
+          // جلب طلبات الانضمام الجديدة فقط
+          const { count: requestsCount } = await supabase
+              .from('provider_requests')
+              .select('*', { count: 'exact', head: true })
+              .eq('status', 'pending');
+
+          // جلب جميع الخدمات التي تحتاج إجراء (جديدة، تعديل، إيقاف، حذف)
+          const { count: servicesCount } = await supabase
+              .from('services')
+              .select('*', { count: 'exact', head: true })
+              .in('status', ['pending', 'update_requested', 'stop_requested', 'delete_requested']);
+
+          setNotificationCounts({
+              requests: requestsCount || 0,
+              services: servicesCount || 0
+          });
+      } catch (error) {
+          console.error("Error fetching notification counts:", error);
+      }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.replace("/login");
   };
 
-  // ✅ تم إرجاع قسم "مراجعة الخدمات" كقسم مستقل
   const sidebarItems = [
-    { icon: LayoutDashboard, label: language === "ar" ? "الرئيسية" : "Dashboard", href: "/admin/dashboard", show: true },
-    { icon: Briefcase, label: language === "ar" ? "طلبات الانضمام" : "Join Requests", href: "/admin/requests", show: true },
-    { icon: CheckCircle, label: language === "ar" ? "مراجعة الخدمات" : "Review Services", href: "/admin/services", show: true }, // 👈 هذا القسم الذي كان مفقوداً
-    { icon: Map, label: language === "ar" ? "إدارة المعالم" : "Landmarks", href: "/admin/landmarks", show: true },
-    { icon: Handshake, label: language === "ar" ? "شركاء النجاح" : "Partners", href: "/admin/partners", show: true }, 
-    { icon: Users, label: language === "ar" ? "المستخدمين" : "Users", href: "/admin/customers", show: true },
-    { icon: Megaphone, label: language === "ar" ? "إعلانات المنصة" : "Announcements", href: "/admin/announcements", show: true },
-    { icon: DollarSign, label: language === "ar" ? "المالية والأرباح" : "Finance", href: "/admin/finance", show: true },
-    { icon: ShieldAlert, label: language === "ar" ? "فريق الإدارة" : "Admins", href: "/admin/users", show: isSuperAdmin },
-    { icon: Settings, label: language === "ar" ? "الإعدادات العامة" : "Settings", href: "/admin/settings", show: true },
+    { icon: LayoutDashboard, label: language === "ar" ? "الرئيسية" : "Dashboard", href: "/admin/dashboard", show: true, badge: 0 },
+    { icon: Briefcase, label: language === "ar" ? "طلبات الانضمام" : "Join Requests", href: "/admin/requests", show: true, badge: notificationCounts.requests }, // 👈 ربط العداد
+    { icon: CheckCircle, label: language === "ar" ? "مراجعة الخدمات" : "Review Services", href: "/admin/services", show: true, badge: notificationCounts.services }, // 👈 ربط العداد
+    { icon: Map, label: language === "ar" ? "إدارة المعالم" : "Landmarks", href: "/admin/landmarks", show: true, badge: 0 },
+    { icon: Handshake, label: language === "ar" ? "شركاء النجاح" : "Partners", href: "/admin/partners", show: true, badge: 0 }, 
+    { icon: Users, label: language === "ar" ? "المستخدمين" : "Users", href: "/admin/customers", show: true, badge: 0 },
+    { icon: Megaphone, label: language === "ar" ? "إعلانات المنصة" : "Announcements", href: "/admin/announcements", show: true, badge: 0 },
+    { icon: DollarSign, label: language === "ar" ? "المالية والأرباح" : "Finance", href: "/admin/finance", show: true, badge: 0 },
+    { icon: ShieldAlert, label: language === "ar" ? "فريق الإدارة" : "Admins", href: "/admin/users", show: isSuperAdmin, badge: 0 },
+    { icon: Settings, label: language === "ar" ? "الإعدادات العامة" : "Settings", href: "/admin/settings", show: true, badge: 0 },
   ];
 
   const currentPageLabel = sidebarItems.find(item => item.href === pathname)?.label || (language === "ar" ? "لوحة الإدارة" : "Admin Panel");
+
+  // حساب المجموع الكلي للإشعارات لزر الجرس
+  const totalNotifications = notificationCounts.requests + notificationCounts.services;
 
   return (
     <div className={`flex min-h-screen bg-[#121212] text-white ${tajawal.className} relative`} dir={language === "ar" ? "rtl" : "ltr"}>
@@ -167,14 +200,22 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
                 key={item.href} 
                 href={item.href} 
                 onClick={() => setSidebarOpen(false)} 
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${
+                className={`flex items-center justify-between px-4 py-3 rounded-xl transition ${
                     isActive 
                         ? "bg-[#C89B3C] text-black font-bold shadow-lg shadow-[#C89B3C]/20" 
                         : "text-white/60 hover:bg-white/5 hover:text-white"
                 }`}
               >
-                <Icon size={20} className={isActive ? "text-black" : "text-[#C89B3C]"} />
-                <span className="text-sm">{item.label}</span>
+                <div className="flex items-center gap-3">
+                    <Icon size={20} className={isActive ? "text-black" : "text-[#C89B3C]"} />
+                    <span className="text-sm">{item.label}</span>
+                </div>
+                {/* ✅ عرض العداد إذا كان أكبر من 0 */}
+                {item.badge > 0 && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isActive ? 'bg-red-600 text-white' : 'bg-red-500 text-white'}`}>
+                        {item.badge}
+                    </span>
+                )}
               </Link>
             );
           })}
@@ -214,6 +255,13 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
 
               <button className="p-2 text-white/50 hover:text-[#C89B3C] hover:bg-white/5 rounded-full transition relative">
                   <Bell size={20} />
+                  {/* نقطة الإشعار العامة */}
+                  {totalNotifications > 0 && (
+                      <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                      </span>
+                  )}
               </button>
            </div>
         </header>

@@ -1,24 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams, useParams, useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
+import { Tajawal } from "next/font/google";
 import { 
-  MapPin, Clock, Users, CheckCircle, X, 
-  Info, Star, ShieldCheck, Image as ImageIcon, 
-  ChevronLeft, Loader2, FileText, PlayCircle, Calendar, Box, Utensils, AlertCircle, Briefcase, Minus, Plus, Send,CheckSquare, Home,
-  Wifi, Car, Waves, Sparkles, Wind, Tv, Flame, Coffee, HeartPulse, Mountain, CalendarDays, CalendarOff, Activity, Compass, Tent, Building, Ticket, CreditCard
+  Search, MapPin, Filter, Star, Loader2, Home, Utensils, Mountain, ArrowLeft, Clock, CalendarDays, ChevronLeft,
+  Users, CheckCircle, X, Info, ShieldCheck, Image as ImageIcon, PlayCircle, Calendar, Box, AlertCircle, Briefcase, Minus, Plus, Send, CheckSquare,
+  Wifi, Car, Waves, Sparkles, Wind, Tv, Flame, Coffee, HeartPulse, CalendarOff, Activity, Compass, Tent, Building, Ticket, CreditCard
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { Tajawal } from "next/font/google";
 import { toast, Toaster } from "sonner";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-// ✅ القاموس الشامل لكل المميزات والخدمات
 const ALL_FEATURES_DICT: Record<string, any> = {
     'yard': { label: 'يوجد حوش', icon: MapPin },
     'view': { label: 'إطلالة مميزة', icon: Mountain },
@@ -143,8 +142,29 @@ export default function ServiceDetailsPage() {
       if (service.sub_category === 'event' && eventInfo?.dates) {
           if (bookingDate < eventInfo.dates.startDate || bookingDate > eventInfo.dates.endDate) {
               setDateTimeError("هذا التاريخ يقع خارج فترة إقامة الفعالية.");
-          } else if (bookingTime && (bookingTime < eventInfo.dates.startTime || bookingTime > eventInfo.dates.endTime)) {
-              setDateTimeError("الوقت المختار خارج ساعات عمل الفعالية.");
+          } else if (bookingTime) {
+              const timeParts = bookingTime.split(':');
+              const startParts = eventInfo.dates.startTime.split(':');
+              const endParts = eventInfo.dates.endTime.split(':');
+
+              const tMin = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
+              const sMin = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+              let eMin = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+
+              if (eMin <= sMin) {
+                  eMin += 1440;
+              }
+
+              let currentTMin = tMin;
+              if (currentTMin < sMin && eMin > 1440) {
+                  currentTMin += 1440;
+              }
+
+              if (currentTMin >= sMin && currentTMin <= eMin) {
+                  setDateTimeError("");
+              } else {
+                  setDateTimeError("الوقت المختار خارج ساعات عمل الفعالية.");
+              }
           } else {
               setDateTimeError("");
           }
@@ -220,7 +240,7 @@ export default function ServiceDetailsPage() {
           if (!session) { toast.error("يجب تسجيل الدخول لإرسال طلب حجز."); router.push('/login'); return; }
 
           const isAutoApprove = service.sub_category === 'event';
-          const bookingStatus = isAutoApprove ? 'awaiting_payment' : 'pending';
+          const bookingStatus = isAutoApprove ? 'approved_unpaid' : 'pending';
 
           const { data: bookingData, error: bookingError } = await supabase.from('bookings').insert([{
               user_id: session.user.id,
@@ -274,7 +294,6 @@ export default function ServiceDetailsPage() {
   const galleryImages = service.details?.images || (service.image_url ? [service.image_url] : []);
   const isEventOrExp = service.service_category === 'experience' || service.sub_category === 'event';
   
-  // ✅ تعريف قائمة المنيو لحل الخطأ الأول
   const menuItems = safeArray(service.menu_items);
 
   return (

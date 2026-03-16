@@ -345,7 +345,7 @@ export default function HomePage() {
           {/* الكروت */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl pb-20 px-4">
             <Link href="/landmarks" className="block h-full"><GlassCard title="المعالم السياحية والتراثية" desc="جولة عبر التاريخ والطبيعة في أبرز معالم المنطقة" icon={<Landmark size={32} className="text-[#C89B3C]" />} /></Link>
-            <Link href="/facilities" className="block h-full"><GlassCard title="المرافق والنزل" desc="نزل تراثية، مطاعم شعبية، مقاهي، واستراحات" icon={<Coffee size={32} className="text-blue-400" />} /></Link>
+            <Link href="/facilities" className="block h-full"><GlassCard title="المرافق الريفية والتراثية" desc="نزل تراثية، مقاهي، مساكن ريفية وتراثية" icon={<Coffee size={32} className="text-blue-400" />} /></Link>
             <Link href="/experiences" className="block h-full"><GlassCard title="التجارب السياحية" desc="هايكنج، تخييم، وورش عمل مع أهل المنطقة" icon={<Tent size={32} className="text-emerald-400" />} /></Link>
             <Link href="/events" className="block h-full"><GlassCard title="الفعاليات" desc="حفلات، عروض حية، ومهرجانات مستمرة" icon={<Ticket size={32} className="text-red-400" />} /></Link>
           </div>

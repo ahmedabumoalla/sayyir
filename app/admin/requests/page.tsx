@@ -6,30 +6,6 @@ import {
   Briefcase, Loader2, Mail, Phone, Calendar, Eye, FileText, X, MapPin, ExternalLink, Link as LinkIcon, Percent, Save, CheckCircle
 } from "lucide-react";
 
-const LABELS_DICT: Record<string, string> = {
-    company_name: "اسم الشركة / المؤسسة",
-    commercial_register: "رقم السجل التجاري",
-    commercial_license: "الترخيص التجاري",
-    tax_number: "الرقم الضريبي",
-    id_number: "رقم الهوية / الإقامة",
-    city: "المدينة",
-    address: "العنوان التفصيلي",
-    bank_name: "اسم البنك",
-    iban: "رقم الآيبان (IBAN)",
-    description: "وصف الخدمة المقدمة",
-    website: "الموقع الإلكتروني / رابط",
-    social_media: "حسابات التواصل",
-    files: "المرفقات والمستندات",
-    images: "صور المكان / الخدمة",
-    location: "الإحداثيات الجغرافية",
-    "341194A4-EE4A-41B8-BAA7-5EA6A5B7DE58": "البريد الإلكتروني الإضافي",
-    "E90FC2FC-B69A-4CBA-98B6-DF134C836CBD": "رقم الجوال للتواصل",
-    "AA372A24-E6ED-4300-99B0-6E8E2F3792FB": "اسم المنشأة / الاسم التجاري",
-    "561C6D03-487C-46C0-AFFD-861EDB928C5D": "اسم مقدم الطلب",
-    "D06E380D-CAC2-4D54-8C2E-5919F6E2A112": "هل تمتلك رخصة تجارية؟ / موافقة", 
-    "F003760E-1516-4B9D-8635-89F6A01085A6": "نوع الخدمة أو الفعالية",
-};
-
 interface RequestData {
   id: string;
   name: string;
@@ -54,9 +30,30 @@ export default function JoinRequestsPage() {
   const [customCommission, setCustomCommission] = useState("");
   const [savingCommission, setSavingCommission] = useState(false);
 
+  // ✅ حالة جديدة لحفظ أسماء الحقول من الداتا بيس
+  const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({});
+
   useEffect(() => {
     fetchRequests();
+    fetchFieldLabels(); // استدعاء دالة جلب أسماء الحقول
   }, [filter]);
+
+  // ✅ جلب أسماء الحقول الديناميكية من جدول registration_fields
+  const fetchFieldLabels = async () => {
+      const { data } = await supabase.from('registration_fields').select('id, label');
+      if (data) {
+          const labelsMap: Record<string, string> = {};
+          data.forEach(field => {
+              labelsMap[field.id] = field.label;
+          });
+          // إضافة بعض الحقول الثابتة للاحتياط
+          labelsMap['company_name'] = "اسم الشركة / المؤسسة";
+          labelsMap['commercial_register'] = "رقم السجل التجاري";
+          labelsMap['commercial_license'] = "الترخيص التجاري";
+          labelsMap['tax_number'] = "الرقم الضريبي";
+          setFieldLabels(labelsMap);
+      }
+  };
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -337,7 +334,8 @@ export default function JoinRequestsPage() {
                             {Object.entries(selectedRequest.dynamic_data).map(([key, value], idx) => {
                                 if(value === null || value === undefined || value === '') return null;
                                 
-                                const label = LABELS_DICT[key] || key.replace(/_/g, ' ').toUpperCase();
+                                // ✅ هنا يتم استخدام القاموس الديناميكي بدل الثابت
+                                const label = fieldLabels[key] || key.replace(/_/g, ' ').toUpperCase();
                                 const isFullWidth = Array.isArray(value) || (typeof value === 'string' && value.length > 50) || (typeof value === 'object' && 'lat' in value);
 
                                 return (
