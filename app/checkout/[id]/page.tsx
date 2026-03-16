@@ -229,7 +229,8 @@ function CheckoutContent() {
     setProcessing(true);
 
     try {
-        // ✅ 1. إذا كان الإجمالي 0 (مجاني) نؤكد الحجز فوراً عبر الـ API للتخطي (لحل مشكلة RLS)
+        const qrCodeString = bookingId ? `QR-${bookingId.substring(0, 8).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}` : '';
+
         if (totals.total <= 0) {
             const response = await fetch('/api/paymob/free-checkout', {
                 method: 'POST',
@@ -244,7 +245,6 @@ function CheckoutContent() {
             return;
         }
 
-        // ✅ 2. في حال وجود مبلغ للدفع، نرسل البيانات للـ API لبوابة الدفع
         const response = await fetch('/api/paymob/initiate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -261,7 +261,6 @@ function CheckoutContent() {
             throw new Error(data.error || "فشل في إنشاء رابط الدفع");
         }
 
-        // في حال الـ API رد بتخطي الدفع (كود خصم 100%)
         if (data.skipPayment) {
             const res = await fetch('/api/paymob/free-checkout', {
                 method: 'POST',
@@ -415,6 +414,7 @@ function CheckoutContent() {
                         {service.details.target_audience && <div><p className="text-xs text-white/50 mb-1">مخصص لـ</p><p className="font-bold">{service.details.target_audience === 'singles' ? 'عزاب' : service.details.target_audience === 'families' ? 'عوايل' : 'الكل'}</p></div>}
                     </div>
                     
+                    {/* تفاصيل الشقة */}
                     {service.details.apartment_details && (
                         <div className="grid grid-cols-3 gap-3 text-center">
                             <div className="bg-white/5 border border-white/10 rounded-xl p-3"><span className="block text-xs text-white/50 mb-1">غرف النوم</span><span className="font-bold text-lg">{service.details.apartment_details.rooms}</span></div>
@@ -423,6 +423,7 @@ function CheckoutContent() {
                         </div>
                     )}
 
+                    {/* تفاصيل البيت الشعبي */}
                     {service.details.house_details && (
                         <div className="grid grid-cols-4 gap-3 text-center">
                             <div className="bg-white/5 border border-white/10 rounded-xl p-3"><span className="block text-[10px] md:text-xs text-white/50 mb-1">عدد الأدوار</span><span className="font-bold md:text-lg">{service.details.house_details.floors}</span></div>
@@ -432,6 +433,7 @@ function CheckoutContent() {
                         </div>
                     )}
 
+                    {/* المميزات (الثابتة واليدوية) */}
                     {(safeArray(service.details.features).length > 0 || safeArray(service.details.custom_features).length > 0) && (
                         <div className="pt-4 border-t border-white/10">
                             <h4 className="font-bold mb-3 flex items-center gap-2"><Sparkles size={16} className="text-[#C89B3C]"/> مميزات المكان</h4>
@@ -638,12 +640,12 @@ function CheckoutContent() {
               </div>
             </div>
 
-            {/* ✅ اختيار طريقة الدفع المحدثة لأبل باي */}
+            {/* ✅ اختيار طريقة الدفع */}
             <h4 className="font-bold text-sm mb-3">اختر طريقة الدفع:</h4>
             <div className="space-y-3 mb-8">
                 
                 {/* Apple Pay Option */}
-                <label className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${selectedPaymentMethod === 'applepay' ? 'bg-white text-black border-black shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-white/5'}`}>
+                <div onClick={() => setSelectedPaymentMethod('applepay')} className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${selectedPaymentMethod === 'applepay' ? 'bg-white text-black border-black shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-white/5'}`}>
                     <div className="flex items-center gap-3">
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedPaymentMethod === 'applepay' ? 'border-black' : 'border-white/30'}`}>
                             {selectedPaymentMethod === 'applepay' && <div className="w-2.5 h-2.5 bg-black rounded-full" />}
@@ -651,10 +653,10 @@ function CheckoutContent() {
                         <span className="font-bold text-xl mt-1 font-mono tracking-wide">Pay</span>
                     </div>
                     <Apple size={28} className={selectedPaymentMethod === 'applepay' ? 'text-black' : 'text-white'} />
-                </label>
+                </div>
 
                 {/* Mada / Credit Card Option */}
-                <label className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${selectedPaymentMethod === 'card' ? 'bg-[#C89B3C] text-black border-[#C89B3C] shadow-[0_0_15px_rgba(200,155,60,0.2)]' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-white/5'}`}>
+                <div onClick={() => setSelectedPaymentMethod('card')} className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${selectedPaymentMethod === 'card' ? 'bg-[#C89B3C] text-black border-[#C89B3C] shadow-[0_0_15px_rgba(200,155,60,0.2)]' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-white/5'}`}>
                     <div className="flex items-center gap-3">
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedPaymentMethod === 'card' ? 'border-black' : 'border-white/30'}`}>
                             {selectedPaymentMethod === 'card' && <div className="w-2.5 h-2.5 bg-black rounded-full" />}
@@ -665,7 +667,7 @@ function CheckoutContent() {
                         <div className="w-8 h-5 bg-gradient-to-r from-green-400 to-emerald-600 rounded flex items-center justify-center text-[7px] font-bold text-white shadow-sm">mada</div>
                         <div className="w-8 h-5 bg-white rounded flex items-center justify-center text-[7px] font-bold text-blue-900 italic shadow-sm">VISA</div>
                     </div>
-                </label>
+                </div>
 
             </div>
 
@@ -693,7 +695,7 @@ function CheckoutContent() {
 
       {/* تكبير الصور */}
       {zoomedImage && (
-        <div className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><XIcon size={24} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
                 {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-2xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain drop-shadow-2xl"/> )}
@@ -712,3 +714,4 @@ export default function CheckoutPage() {
     </Suspense>
   );
 }
+
