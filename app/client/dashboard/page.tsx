@@ -189,7 +189,8 @@ export default function ClientDashboard() {
           <div className="space-y-4">
             {recentBookings.length > 0 ? (
               recentBookings.map((booking) => (
-                <Link key={booking.id} href={booking.status === 'approved_unpaid' ? `/checkout?booking_id=${booking.id}` : `/client/trips/${booking.id}`} className="block bg-[#252525] border border-white/5 rounded-2xl p-4 hover:border-[#C89B3C]/30 transition group relative overflow-hidden shadow-md">
+                // ✅ تعديل الروابط بشكل صحيح لصفحة الدفع والرحلات
+                <Link key={booking.id} href={booking.status === 'approved_unpaid' ? `/checkout/${booking.id}` : `/client/trips`} className="block bg-[#252525] border border-white/5 rounded-2xl p-4 hover:border-[#C89B3C]/30 transition group relative overflow-hidden shadow-md">
                   <div className="flex flex-col md:flex-row items-center gap-5 relative z-10">
                     <div className="w-full md:w-24 h-24 rounded-xl overflow-hidden relative bg-black shrink-0 border border-white/10">
                       {isVideo(booking.services?.image_url) ? (

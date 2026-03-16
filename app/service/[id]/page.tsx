@@ -81,6 +81,35 @@ const addDaysToDate = (dateStr: string, days: number): string => {
     return d.toISOString().split('T')[0];
 };
 
+// ✅ الدالة الجديدة لتوليد أوقات الفعالية المتاحة فقط بنظام 12 ساعة
+const generateTimeSlots = (startTime: string, endTime: string, intervalMinutes = 30) => {
+    if (!startTime || !endTime) return [];
+    const parseTime = (t: string) => {
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + (m || 0);
+    };
+
+    let startMins = parseTime(startTime);
+    let endMins = parseTime(endTime);
+
+    if (endMins <= startMins) {
+        endMins += 24 * 60; // إذا كانت الفعالية تقطع منتصف الليل
+    }
+
+    const slots = [];
+    for (let m = startMins; m <= endMins; m += intervalMinutes) {
+        const currentMins = m % (24 * 60);
+        const hours24 = Math.floor(currentMins / 60);
+        const mins = currentMins % 60;
+        const value24 = `${hours24.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+        slots.push({
+            value: value24,
+            label: formatTime12H(value24)
+        });
+    }
+    return slots;
+};
+
 export default function ServiceDetailsPage() {
   const { id } = useParams();
   const router = useRouter(); 
@@ -140,28 +169,37 @@ export default function ServiceDetailsPage() {
       }
 
       if (service.sub_category === 'event' && eventInfo?.dates) {
+          // 1. التحقق من التاريخ
           if (bookingDate < eventInfo.dates.startDate || bookingDate > eventInfo.dates.endDate) {
               setDateTimeError("هذا التاريخ يقع خارج فترة إقامة الفعالية.");
-          } else if (bookingTime) {
-              const timeParts = bookingTime.split(':');
-              const startParts = eventInfo.dates.startTime.split(':');
-              const endParts = eventInfo.dates.endTime.split(':');
+              return;
+          } 
+          
+          // 2. التحقق من الوقت باحترافية (تحويل لدقائق)
+          if (bookingTime && eventInfo.dates.startTime && eventInfo.dates.endTime) {
+              const parseTime = (timeStr: string) => {
+                  if (!timeStr) return 0;
+                  const [h, m] = timeStr.split(':').map(Number);
+                  return (h * 60) + (m || 0);
+              };
 
-              const tMin = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
-              const sMin = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
-              let eMin = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+              const tMin = parseTime(bookingTime);
+              const sMin = parseTime(eventInfo.dates.startTime);
+              let eMin = parseTime(eventInfo.dates.endTime);
 
+              // إذا كانت الفعالية تنتهي بعد منتصف الليل نضيف 24 ساعة (1440 دقيقة)
               if (eMin <= sMin) {
                   eMin += 1440;
               }
 
-              let currentTMin = tMin;
-              if (currentTMin < sMin && eMin > 1440) {
-                  currentTMin += 1440;
+              let adjustedUserTime = tMin;
+              // إذا العميل اختار وقت بعد منتصف الليل والفعالية مستمرة لبعد منتصف الليل
+              if (adjustedUserTime < sMin && eMin > 1440) {
+                  adjustedUserTime += 1440;
               }
 
-              if (currentTMin >= sMin && currentTMin <= eMin) {
-                  setDateTimeError("");
+              if (adjustedUserTime >= sMin && adjustedUserTime <= eMin) {
+                  setDateTimeError(""); // الوقت سليم
               } else {
                   setDateTimeError("الوقت المختار خارج ساعات عمل الفعالية.");
               }
@@ -472,7 +510,7 @@ export default function ServiceDetailsPage() {
                                 <p><span className="text-white/50">نوع الوجبة:</span> <span className="font-bold text-white">{service.details.experience_info.food_details.mealType}</span></p>
                                 {service.details.experience_info.food_details.calories && <p><span className="text-white/50">السعرات الحرارية:</span> <span className="font-bold text-white">{service.details.experience_info.food_details.calories}</span></p>}
                                 <p className="md:col-span-2"><span className="text-white/50">المشروبات:</span> <span className="text-white">{service.details.experience_info.food_details.drinks}</span></p>
-                                <p className="md:col-span-2"><span className="text-white/50 block mb-1">المكونات والمحتويات:</span> <span className="text-white bg-black/20 p-2 rounded block">{service.details.experience_info.food_details.contents}</span></p>
+                                <p className="md:col-span-2"><span className="text-white/50 block mb-1">المكونات والمحتويات:</span> <span className="text-white bg-black/20 p-2 rounded block mt-1">{service.details.experience_info.food_details.contents}</span></p>
                             </div>
                         </div>
                     )}
@@ -504,13 +542,13 @@ export default function ServiceDetailsPage() {
                     <div className="bg-linear-to-r from-[#C89B3C]/10 to-transparent p-5 rounded-2xl border border-[#C89B3C]/20 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                         <div><p className="text-[10px] text-white/50 mb-1">من تاريخ</p><p className="font-bold text-sm dir-ltr">{service.details.event_info.dates?.startDate}</p></div>
                         <div><p className="text-[10px] text-white/50 mb-1">إلى تاريخ</p><p className="font-bold text-sm dir-ltr">{service.details.event_info.dates?.endDate}</p></div>
-                        <div><p className="text-[10px] text-white/50 mb-1">أبواب الدخول (من)</p><p className="font-bold text-sm text-[#C89B3C]">{formatTime12H(service.details.event_info.dates?.startTime)}</p></div>
-                        <div><p className="text-[10px] text-white/50 mb-1">تغلق الأبواب (إلى)</p><p className="font-bold text-sm text-[#C89B3C]">{formatTime12H(service.details.event_info.dates?.endTime)}</p></div>
+                        <div><p className="text-[10px] text-white/50 mb-1">فتح الأبواب</p><p className="font-bold text-sm text-[#C89B3C]">{formatTime12H(service.details.event_info.dates?.startTime)}</p></div>
+                        <div><p className="text-[10px] text-white/50 mb-1">إغلاق الأبواب</p><p className="font-bold text-sm text-[#C89B3C]">{formatTime12H(service.details.event_info.dates?.endTime)}</p></div>
                     </div>
 
                     {(safeArray(service.details.event_info.activities).length > 0 || safeArray(service.details.event_info.custom_activities).length > 0) && (
                         <div className="pt-4 border-t border-white/10">
-                            <h4 className="font-bold mb-3 flex items-center gap-2 text-sm"><Activity size={16} className="text-[#C89B3C]"/> الأنشطة المتوفرة داخل الفعالية</h4>
+                            <h4 className="font-bold mb-3 flex items-center gap-2 text-sm"><Activity size={16} className="text-[#C89B3C]"/> الأنشطة المتاحة</h4>
                             <div className="flex flex-wrap gap-2">
                                 {safeArray(service.details.event_info.activities).map((act: string) => getTranslatedFeature(act))}
                                 {safeArray(service.details.event_info.custom_activities).map((act: string, idx: number) => <span key={`cust-${idx}`} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {act}</span>)}
@@ -662,7 +700,24 @@ export default function ServiceDetailsPage() {
                                         </div>
                                     ) : (
                                         <div className={`bg-black/40 border rounded-xl flex items-center relative overflow-hidden transition ${dateTimeError ? 'border-red-500/50 bg-red-500/5' : 'border-white/10 hover:border-[#C89B3C]/50'}`}>
-                                            <input type="time" value={bookingTime} onClick={(e) => e.currentTarget.showPicker()} onChange={(e) => setBookingTime(e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-transparent p-3 outline-none text-white text-sm cursor-pointer text-center" />
+                                            {/* ✅ استبدال حقل الوقت المفتوح بقائمة منسدلة مغلقة بالأوقات المتاحة فقط */}
+                                            {service.sub_category === 'event' && service.details?.event_info?.dates?.startTime && service.details?.event_info?.dates?.endTime ? (
+                                                <select
+                                                    value={bookingTime}
+                                                    onChange={(e) => setBookingTime(e.target.value)}
+                                                    className="w-full bg-transparent p-3 outline-none text-white text-sm cursor-pointer text-center appearance-none"
+                                                    style={{ colorScheme: 'dark' }}
+                                                >
+                                                    <option value="" disabled hidden>اختر الوقت</option>
+                                                    {generateTimeSlots(service.details.event_info.dates.startTime, service.details.event_info.dates.endTime).map((slot: any) => (
+                                                        <option key={slot.value} value={slot.value} className="bg-[#1a1a1a] text-white">
+                                                            {slot.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <input type="time" value={bookingTime} onClick={(e) => e.currentTarget.showPicker()} onChange={(e) => setBookingTime(e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-transparent p-3 outline-none text-white text-sm cursor-pointer text-center" />
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -758,15 +813,15 @@ export default function ServiceDetailsPage() {
                     {/* زر الإرسال / الدفع */}
                     <button 
                         onClick={handleBookingRequest}
-                        disabled={isSoldOut || ((service.details?.policies || service.sub_category === 'lodging') && !agreedToPolicies) || bookingLoading || dateTimeError !== "" || (service.sub_category === 'lodging' && !checkIn)}
+                        disabled={isSoldOut || ((service.details?.policies || service.sub_category === 'lodging') && !agreedToPolicies) || bookingLoading || dateTimeError !== "" || (service.sub_category === 'lodging' && !checkIn) || (service.sub_category === 'event' && !bookingTime)}
                         className={`w-full py-5 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mt-2
-                        ${(isSoldOut || dateTimeError !== "" || (service.sub_category === 'lodging' && !checkIn))
+                        ${(isSoldOut || dateTimeError !== "" || (service.sub_category === 'lodging' && !checkIn) || (service.sub_category === 'event' && !bookingTime))
                             ? 'bg-white/5 text-white/20 cursor-not-allowed border border-white/5' 
                             : (!service.details?.policies && service.sub_category !== 'lodging' || agreedToPolicies) 
                                 ? 'bg-[#C89B3C] text-black hover:bg-[#b38a35] shadow-[0_0_20px_rgba(200,155,60,0.3)]' 
                                 : 'bg-white/10 text-white/30 cursor-not-allowed border border-white/10'}`}
                     >
-                        {bookingLoading ? <Loader2 className="animate-spin"/> : (isSoldOut ? 'انتهى الحجز' : (service.sub_category === 'lodging' && !checkIn) ? 'حدد تاريخ الوصول' : ((agreedToPolicies || (!service.details?.policies && service.sub_category !== 'lodging')) ? (service.sub_category === 'event' ? <><CreditCard size={20}/> متابعة للدفع مباشرة</> : <><Send size={20}/> تأكيد وإرسال الطلب</>) : 'وافق على الشروط أولاً'))}
+                        {bookingLoading ? <Loader2 className="animate-spin"/> : (isSoldOut ? 'انتهى الحجز' : (service.sub_category === 'lodging' && !checkIn) ? 'حدد تاريخ الوصول' : (service.sub_category === 'event' && !bookingTime) ? 'حدد وقت الحضور' : ((agreedToPolicies || (!service.details?.policies && service.sub_category !== 'lodging')) ? (service.sub_category === 'event' ? <><CreditCard size={20}/> متابعة للدفع مباشرة</> : <><Send size={20}/> تأكيد وإرسال الطلب</>) : 'وافق على الشروط أولاً'))}
                     </button>
                     {service.sub_category !== 'event' && <p className="text-[10px] text-center text-white/40">لن يتم خصم أي مبلغ حتى يوافق المزود على طلبك.</p>}
                 </div>
@@ -775,6 +830,7 @@ export default function ServiceDetailsPage() {
 
       </div>
 
+      {/* تكبير الصور */}
       {zoomedImage && (
         <div className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><X size={24} /></button>

@@ -5,21 +5,21 @@ import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   CreditCard, Tag, ArrowRight, ShieldCheck, Loader2, 
-  FileText, CheckCircle, AlertCircle, AlertTriangle, MapPin, Clock, 
+  FileText, CheckCircle, AlertCircle, MapPin, Clock, 
   Info, Box, CalendarDays, CalendarOff, Calendar, Apple, PlayCircle,
-  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, ShieldAlert, Compass, CheckSquare, Image as ImageIcon, Video, Ticket,
-  Coffee, Home, Briefcase, X, Lock
+  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, ShieldAlert, Compass, CheckSquare, Image as ImageIcon, Video, Ticket, Lock as LockIcon, X as XIcon, AlertTriangle, Briefcase, Home, Coffee, Eye, HeartPulse
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link"; 
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Tajawal } from "next/font/google";
+import { toast, Toaster } from "sonner";
+import { QRCodeSVG } from 'qrcode.react';
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-// ✅ قاموس المميزات
 const ALL_FEATURES_DICT: Record<string, any> = {
     'yard': { label: 'يوجد حوش', icon: MapPin },
     'view': { label: 'إطلالة مميزة', icon: Mountain },
@@ -50,30 +50,36 @@ const ALL_FEATURES_DICT: Record<string, any> = {
     'rides': { label: 'ملاهي وألعاب', icon: Activity },
     'seating': { label: 'جلسات عامة', icon: Users },
     'cable_car': { label: 'تلفريك', icon: MapPin },
-    'live_shows': { label: 'عروض حية', icon: Tv }
+    'live_shows': { label: 'عروض حية', icon: Tv },
+    'security': { label: 'حراسة / أمان', icon: ShieldCheck },
+    'firstaid': { label: 'إسعافات أولية', icon: HeartPulse },
+    'breakfast': { label: 'إفطار مشمول', icon: Coffee }
 };
 
 const safeArray = (data: any) => {
     if (!data) return [];
     if (Array.isArray(data)) return data;
-    if (typeof data === 'string') {
-        try { return JSON.parse(data); } catch { return []; }
-    }
+    if (typeof data === 'string') { try { return JSON.parse(data); } catch { return []; } }
     if (typeof data === 'object') return Object.values(data);
     return [];
 };
 
-const formatTime12H = (time24: string) => {
-    if (!time24) return "";
+const formatTime12H = (timeStr: string) => {
+    if (!timeStr) return "";
     try {
-        if (time24.includes('T')) return new Date(time24).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
-        const [hourStr, minute] = time24.split(':');
+        if (timeStr.includes('T')) {
+            const date = new Date(timeStr);
+            return date.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
+        }
+        const [hourStr, minute] = timeStr.split(':');
         let hour = parseInt(hourStr, 10);
         const period = hour >= 12 ? 'مساءً' : 'صباحاً';
         if (hour > 12) hour -= 12;
         if (hour === 0) hour = 12;
         return `${hour.toString().padStart(2, '0')}:${minute} ${period}`;
-    } catch { return time24; }
+    } catch {
+        return timeStr;
+    }
 };
 
 const formatDate = (dateStr: string) => {
@@ -86,15 +92,13 @@ function CheckoutContent() {
   const searchParams = useSearchParams();
   const params = useParams();
   
-  // ✅ دعم التقاط الآيدي سواء من مسار الصفحة /checkout/[id] أو من الـ Query
-  const bookingId = (params.id as string) || searchParams.get("booking_id");
+  const bookingId = (params?.id as string) || (searchParams?.get("booking_id") as string);
 
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [booking, setBooking] = useState<any>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   
-  // ✅ اختيار طريقة الدفع
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'card' | 'applepay'>('card');
 
   const [couponCode, setCouponCode] = useState("");
@@ -140,7 +144,7 @@ function CheckoutContent() {
             return;
           }
 
-          const { data: serviceData, error: serviceError } = await supabase
+          const { data: serviceData } = await supabase
             .from("services")
             .select(`*, profiles:provider_id(full_name, email, phone)`) 
             .eq("id", bookingData.service_id)
@@ -185,9 +189,7 @@ function CheckoutContent() {
     }
 
     const totalDisc = generalDisc + couponDisc;
-    
     const finalTotal = Math.max(0, totalServicePrice - totalDisc);
-
     const baseAmount = finalTotal / 1.15;
     const vat = finalTotal - baseAmount;
 
@@ -219,20 +221,37 @@ function CheckoutContent() {
     }
 
     setAppliedCoupon(data);
-    alert(`تم تطبيق خصم الكوبون ${data.discount_percent}% بنجاح!`);
+    toast.success(`تم تطبيق خصم الكوبون ${data.discount_percent}% بنجاح!`);
   };
 
   const handlePayment = async () => {
+    if (!bookingId) return;
     setProcessing(true);
 
     try {
+        // ✅ 1. إذا كان الإجمالي 0 (مجاني) نؤكد الحجز فوراً عبر الـ API للتخطي (لحل مشكلة RLS)
+        if (totals.total <= 0) {
+            const response = await fetch('/api/paymob/free-checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: bookingId, paymentMethod: 'مجاني' })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+
+            toast.success("✅ تم تأكيد الحجز بنجاح وإصدار التذكرة!");
+            router.replace("/client/dashboard");
+            return;
+        }
+
+        // ✅ 2. في حال وجود مبلغ للدفع، نرسل البيانات للـ API لبوابة الدفع
         const response = await fetch('/api/paymob/initiate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 bookingId: bookingId,
                 couponCode: appliedCoupon ? appliedCoupon.code : null,
-                paymentMethod: selectedPaymentMethod // ✅ إرسال 'card' أو 'applepay' للـ API
+                paymentMethod: selectedPaymentMethod 
             })
         });
 
@@ -242,9 +261,16 @@ function CheckoutContent() {
             throw new Error(data.error || "فشل في إنشاء رابط الدفع");
         }
 
+        // في حال الـ API رد بتخطي الدفع (كود خصم 100%)
         if (data.skipPayment) {
-            await supabase.from("bookings").update({ status: "confirmed", payment_status: "paid" }).eq("id", bookingId);
-            alert("✅ تم تأكيد الحجز بنجاح (مجاني)!");
+            const res = await fetch('/api/paymob/free-checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: bookingId, paymentMethod: 'كود خصم' })
+            });
+            if (!res.ok) throw new Error("فشل تأكيد الكوبون");
+
+            toast.success("✅ تم تأكيد الحجز بنجاح وإصدار التذكرة!");
             router.replace("/client/dashboard");
             return;
         }
@@ -255,7 +281,7 @@ function CheckoutContent() {
 
     } catch (err: any) {
         console.error(err);
-        alert("حدث خطأ أثناء الاتصال ببوابة الدفع: " + err.message);
+        toast.error("حدث خطأ أثناء الاتصال بالخادم: " + err.message);
         setProcessing(false); 
     }
   };
@@ -285,6 +311,7 @@ function CheckoutContent() {
 
   return (
     <div className={`min-h-screen bg-[#121212] text-white py-12 px-4 md:px-8 ${tajawal.className}`} dir="rtl">
+      <Toaster position="top-center" richColors />
       
       {/* رأس الصفحة */}
       <div className="max-w-7xl mx-auto mb-8">
@@ -540,7 +567,7 @@ function CheckoutContent() {
             {service.location_lat && service.location_lng && (
                 <div className="bg-[#1e1e1e] p-2 rounded-3xl border border-white/5 shadow-xl overflow-hidden h-80 relative group">
                     <Map initialViewState={{ latitude: service.location_lat, longitude: service.location_lng, zoom: 14 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN} interactive={false}>
-                        <NavigationControl position="top-left" showCompass={false}/>
+                        <NavigationControl showCompass={false}/>
                         <Marker latitude={service.location_lat} longitude={service.location_lng} color="#C89B3C"/>
                     </Map>
                     <div className="absolute top-6 right-6 bg-black/80 backdrop-blur-md px-4 py-2 rounded-lg border border-white/10 flex items-center gap-2">
@@ -570,7 +597,7 @@ function CheckoutContent() {
                 {!appliedCoupon ? (
                     <button onClick={handleApplyCoupon} disabled={!couponCode} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition disabled:opacity-50 font-bold text-xs">تطبيق</button>
                 ) : (
-                    <button onClick={() => {setAppliedCoupon(null); setCouponCode("");}} className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-2 rounded-lg transition" title="إلغاء الكوبون"><X size={18} /></button>
+                    <button onClick={() => {setAppliedCoupon(null); setCouponCode("");}} className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-2 rounded-lg transition" title="إلغاء الكوبون"><XIcon size={18} /></button>
                 )}
               </div>
               {couponError && <p className="text-red-400 text-xs mt-2 flex items-center gap-1"><AlertCircle size={12}/> {couponError}</p>}
@@ -635,7 +662,7 @@ function CheckoutContent() {
                         <span className="font-bold text-sm">البطاقات البنكية</span>
                     </div>
                     <div className="flex gap-1.5">
-                        <div className="w-8 h-5 bg-linear-to-r from-green-400 to-emerald-600 rounded flex items-center justify-center text-[7px] font-bold text-white shadow-sm">mada</div>
+                        <div className="w-8 h-5 bg-gradient-to-r from-green-400 to-emerald-600 rounded flex items-center justify-center text-[7px] font-bold text-white shadow-sm">mada</div>
                         <div className="w-8 h-5 bg-white rounded flex items-center justify-center text-[7px] font-bold text-blue-900 italic shadow-sm">VISA</div>
                     </div>
                 </label>
@@ -652,7 +679,7 @@ function CheckoutContent() {
                 {processing ? (
                     <><Loader2 className="animate-spin" size={20}/> جاري إنشاء رابط الدفع...</>
                 ) : (
-                    <>ادفع {totals.total.toFixed(2)} ر.س الآن <Lock size={16} className="text-black/50 ml-1"/></>
+                    <>ادفع {totals.total.toFixed(2)} ر.س الآن <LockIcon size={16} className="text-black/50 ml-1"/></>
                 )}
             </button>
             <div className="mt-5 flex items-center justify-center gap-2 text-[10px] text-gray-500">
@@ -667,7 +694,7 @@ function CheckoutContent() {
       {/* تكبير الصور */}
       {zoomedImage && (
         <div className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
-            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><X size={24} /></button>
+            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><XIcon size={24} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
                 {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-2xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain drop-shadow-2xl"/> )}
             </div>
