@@ -81,7 +81,6 @@ const addDaysToDate = (dateStr: string, days: number): string => {
     return d.toISOString().split('T')[0];
 };
 
-// ✅ الدالة الجديدة لتوليد أوقات الفعالية المتاحة فقط بنظام 12 ساعة
 const generateTimeSlots = (startTime: string, endTime: string, intervalMinutes = 30) => {
     if (!startTime || !endTime) return [];
     const parseTime = (t: string) => {
@@ -93,7 +92,7 @@ const generateTimeSlots = (startTime: string, endTime: string, intervalMinutes =
     let endMins = parseTime(endTime);
 
     if (endMins <= startMins) {
-        endMins += 24 * 60; // إذا كانت الفعالية تقطع منتصف الليل
+        endMins += 24 * 60; 
     }
 
     const slots = [];
@@ -156,7 +155,7 @@ export default function ServiceDetailsPage() {
   }, [guestCount, childCount, checkIn, service]);
 
   useEffect(() => {
-      if (!service || (service.service_category !== 'experience' && service.sub_category !== 'event')) return;
+      if (!service || service.sub_category === 'lodging') return;
       if (!bookingDate) { setDateTimeError(""); return; }
 
       const blockedDates = safeArray(service.blocked_dates);
@@ -169,13 +168,11 @@ export default function ServiceDetailsPage() {
       }
 
       if (service.sub_category === 'event' && eventInfo?.dates) {
-          // 1. التحقق من التاريخ
           if (bookingDate < eventInfo.dates.startDate || bookingDate > eventInfo.dates.endDate) {
               setDateTimeError("هذا التاريخ يقع خارج فترة إقامة الفعالية.");
               return;
           } 
           
-          // 2. التحقق من الوقت باحترافية (تحويل لدقائق)
           if (bookingTime && eventInfo.dates.startTime && eventInfo.dates.endTime) {
               const parseTime = (timeStr: string) => {
                   if (!timeStr) return 0;
@@ -185,21 +182,22 @@ export default function ServiceDetailsPage() {
 
               const tMin = parseTime(bookingTime);
               const sMin = parseTime(eventInfo.dates.startTime);
-              let eMin = parseTime(eventInfo.dates.endTime);
+              const eMin = parseTime(eventInfo.dates.endTime);
 
-              // إذا كانت الفعالية تنتهي بعد منتصف الليل نضيف 24 ساعة (1440 دقيقة)
+              let isTimeValid = false;
+
               if (eMin <= sMin) {
-                  eMin += 1440;
+                  if (tMin >= sMin || tMin <= eMin) {
+                      isTimeValid = true;
+                  }
+              } else {
+                  if (tMin >= sMin && tMin <= eMin) {
+                      isTimeValid = true;
+                  }
               }
 
-              let adjustedUserTime = tMin;
-              // إذا العميل اختار وقت بعد منتصف الليل والفعالية مستمرة لبعد منتصف الليل
-              if (adjustedUserTime < sMin && eMin > 1440) {
-                  adjustedUserTime += 1440;
-              }
-
-              if (adjustedUserTime >= sMin && adjustedUserTime <= eMin) {
-                  setDateTimeError(""); // الوقت سليم
+              if (isTimeValid) {
+                  setDateTimeError(""); 
               } else {
                   setDateTimeError("الوقت المختار خارج ساعات عمل الفعالية.");
               }
@@ -263,7 +261,15 @@ export default function ServiceDetailsPage() {
           finalCheckOut = addDaysToDate(checkIn, guestCount);
       } else {
           if (!bookingDate) return toast.warning("الرجاء تحديد تاريخ الحضور.");
-          if (service.sub_category !== 'experience' && !bookingTime) return toast.warning("الرجاء تحديد وقت الحضور.");
+          
+          // ✅ التحقق من الوقت لكل الخدمات (فعاليات ومرافق) ما عدا التجارب التي لها وقت محدد مسبقاً
+          if (service.sub_category !== 'experience' && !bookingTime) {
+              return toast.warning("الرجاء تحديد وقت الحضور.");
+          }
+          if (service.sub_category === 'experience' && !service.details?.experience_info?.start_time && !bookingTime) {
+              return toast.warning("الرجاء تحديد وقت الحضور.");
+          }
+
           if (dateTimeError) return toast.error("توجد مشكلة في التاريخ أو الوقت المختار.");
           finalCheckIn = `${bookingDate} ${bookingTime || service.details?.experience_info?.start_time || '00:00'}`;
       }
@@ -548,7 +554,7 @@ export default function ServiceDetailsPage() {
 
                     {(safeArray(service.details.event_info.activities).length > 0 || safeArray(service.details.event_info.custom_activities).length > 0) && (
                         <div className="pt-4 border-t border-white/10">
-                            <h4 className="font-bold mb-3 flex items-center gap-2 text-sm"><Activity size={16} className="text-[#C89B3C]"/> الأنشطة المتاحة</h4>
+                            <h4 className="font-bold mb-3 flex items-center gap-2 text-sm"><Activity size={16} className="text-[#C89B3C]"/> الأنشطة المتوفرة داخل الفعالية</h4>
                             <div className="flex flex-wrap gap-2">
                                 {safeArray(service.details.event_info.activities).map((act: string) => getTranslatedFeature(act))}
                                 {safeArray(service.details.event_info.custom_activities).map((act: string, idx: number) => <span key={`cust-${idx}`} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {act}</span>)}
@@ -681,8 +687,8 @@ export default function ServiceDetailsPage() {
                         </div>
                     )}
 
-                    {/* 2. نظام حجز الفعاليات والتجارب مع تحقق ذكي للتاريخ والوقت */}
-                    {isEventOrExp && (
+                    {/* 2. نظام حجز المواعيد (للفعاليات، التجارب، والمرافق) */}
+                    {service.sub_category !== 'lodging' && (
                         <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-2">
@@ -813,15 +819,31 @@ export default function ServiceDetailsPage() {
                     {/* زر الإرسال / الدفع */}
                     <button 
                         onClick={handleBookingRequest}
-                        disabled={isSoldOut || ((service.details?.policies || service.sub_category === 'lodging') && !agreedToPolicies) || bookingLoading || dateTimeError !== "" || (service.sub_category === 'lodging' && !checkIn) || (service.sub_category === 'event' && !bookingTime)}
+                        disabled={
+                            isSoldOut || 
+                            ((service.details?.policies || service.sub_category === 'lodging') && !agreedToPolicies) || 
+                            bookingLoading || 
+                            dateTimeError !== "" || 
+                            (service.sub_category === 'lodging' && !checkIn) || 
+                            (service.sub_category !== 'lodging' && !bookingDate) ||
+                            (service.sub_category !== 'lodging' && service.sub_category !== 'experience' && !bookingTime) ||
+                            (service.sub_category === 'experience' && !service.details?.experience_info?.start_time && !bookingTime)
+                        }
                         className={`w-full py-5 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mt-2
-                        ${(isSoldOut || dateTimeError !== "" || (service.sub_category === 'lodging' && !checkIn) || (service.sub_category === 'event' && !bookingTime))
+                        ${(isSoldOut || dateTimeError !== "" || (service.sub_category === 'lodging' && !checkIn))
                             ? 'bg-white/5 text-white/20 cursor-not-allowed border border-white/5' 
                             : (!service.details?.policies && service.sub_category !== 'lodging' || agreedToPolicies) 
                                 ? 'bg-[#C89B3C] text-black hover:bg-[#b38a35] shadow-[0_0_20px_rgba(200,155,60,0.3)]' 
                                 : 'bg-white/10 text-white/30 cursor-not-allowed border border-white/10'}`}
                     >
-                        {bookingLoading ? <Loader2 className="animate-spin"/> : (isSoldOut ? 'انتهى الحجز' : (service.sub_category === 'lodging' && !checkIn) ? 'حدد تاريخ الوصول' : (service.sub_category === 'event' && !bookingTime) ? 'حدد وقت الحضور' : ((agreedToPolicies || (!service.details?.policies && service.sub_category !== 'lodging')) ? (service.sub_category === 'event' ? <><CreditCard size={20}/> متابعة للدفع مباشرة</> : <><Send size={20}/> تأكيد وإرسال الطلب</>) : 'وافق على الشروط أولاً'))}
+                        {bookingLoading ? <Loader2 className="animate-spin"/> : 
+                            isSoldOut ? 'انتهى الحجز' : 
+                            (service.sub_category === 'lodging' && !checkIn) ? 'حدد تاريخ الوصول' : 
+                            (service.sub_category !== 'lodging' && !bookingDate) ? 'حدد تاريخ الحضور' : 
+                            ((service.sub_category !== 'lodging' && service.sub_category !== 'experience' && !bookingTime) || (service.sub_category === 'experience' && !service.details?.experience_info?.start_time && !bookingTime)) ? 'حدد وقت الحضور' : 
+                            ((agreedToPolicies || (!service.details?.policies && service.sub_category !== 'lodging')) ? 
+                                (service.sub_category === 'event' || service.price > 0 ? <><CreditCard size={20}/> متابعة للدفع مباشرة</> : <><Send size={20}/> تأكيد وإرسال الطلب</>) 
+                            : 'وافق على الشروط أولاً')}
                     </button>
                     {service.sub_category !== 'event' && <p className="text-[10px] text-center text-white/40">لن يتم خصم أي مبلغ حتى يوافق المزود على طلبك.</p>}
                 </div>
