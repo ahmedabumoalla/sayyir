@@ -101,12 +101,12 @@ export default function AdminLandmarksPage() {
           map.current = new mapboxgl.Map({
             container: mapContainer.current!,
             style: 'mapbox://styles/mapbox/satellite-streets-v12',
-            center: [formData.lng, formData.lat],
+            center: [formData.lng || 42.5053, formData.lat || 18.2164],
             zoom: 14,
           });
 
           marker.current = new mapboxgl.Marker({ color: "#C89B3C", draggable: true })
-            .setLngLat([formData.lng, formData.lat])
+            .setLngLat([formData.lng || 42.5053, formData.lat || 18.2164])
             .addTo(map.current);
 
           marker.current.on('dragend', () => {
@@ -119,8 +119,8 @@ export default function AdminLandmarksPage() {
             setFormData(prev => ({ ...prev, lat: e.lngLat.lat, lng: e.lngLat.lng }));
           });
         } else {
-            map.current.flyTo({ center: [formData.lng, formData.lat] });
-            marker.current?.setLngLat([formData.lng, formData.lat]);
+            map.current.flyTo({ center: [formData.lng || 42.5053, formData.lat || 18.2164] });
+            marker.current?.setLngLat([formData.lng || 42.5053, formData.lat || 18.2164]);
         }
       }, 200);
     } 
@@ -145,18 +145,13 @@ export default function AdminLandmarksPage() {
       }
 
       const numValue = parseFloat(cleanValue);
+      setFormData(prev => ({ ...prev, [field]: isNaN(numValue) ? "" : numValue }));
       
-      if (!isNaN(numValue)) {
-          setFormData(prev => {
-              const newData = { ...prev, [field]: numValue };
-              if (map.current && marker.current) {
-                  const newLat = field === 'lat' ? numValue : prev.lat;
-                  const newLng = field === 'lng' ? numValue : prev.lng;
-                  map.current.flyTo({ center: [newLng, newLat] });
-                  marker.current.setLngLat([newLng, newLat]);
-              }
-              return newData;
-          });
+      if (!isNaN(numValue) && map.current && marker.current) {
+          const newLat = field === 'lat' ? numValue : formData.lat;
+          const newLng = field === 'lng' ? numValue : formData.lng;
+          map.current.flyTo({ center: [newLng, newLat] });
+          marker.current.setLngLat([newLng, newLat]);
       }
   };
 
@@ -266,7 +261,7 @@ export default function AdminLandmarksPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(!formData.name) return alert("يرجى كتابة الاسم"); // حماية إضافية
+    if(!formData.name) return alert("يرجى كتابة الاسم"); 
     setSaving(true);
 
     try {
@@ -406,7 +401,7 @@ export default function AdminLandmarksPage() {
                           {p.type === 'tourist' ? 'سياحي' : p.type === 'heritage' ? 'تراثي' : p.type === 'natural' ? 'طبيعي' : 'تجربة'}
                       </span>
                   </td>
-                  <td className="px-6 py-4 font-mono text-[#C89B3C]">{p.price > 0 ? `${p.price} ريال` : 'مجاني'}</td>
+                  <td className="px-6 py-4 font-mono text-[#C89B3C]">{Number(p.price) > 0 ? `${p.price} ريال` : 'مجاني'}</td>
                   <td className="px-6 py-4"><span className={`w-2 h-2 rounded-full inline-block mr-2 ${p.is_active ? 'bg-emerald-400' : 'bg-red-400'}`}></span>{p.is_active ? "نشط" : "مخفي"}</td>
                   <td className="px-6 py-4 flex gap-2"><button onClick={() => handleEdit(p)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white"><Edit size={16}/></button><button onClick={() => handleDelete(p.id!)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white"><Trash2 size={16}/></button></td>
                   </tr>
@@ -481,59 +476,60 @@ export default function AdminLandmarksPage() {
                               <label className="text-xs text-white/60">الوصف</label>
                               <textarea rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white resize-none" />
                           </div>
-                        </div>
-
-                        <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
-                          <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Info size={16}/> تفاصيل {formData.type === 'experience' ? 'التجربة' : 'المكان'}</h4>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                  <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type !== 'experience' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
-                                  <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
+                          <div className="space-y-2 pt-2 border-t border-white/10 mt-4">
+                              <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type !== 'experience' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
+                              <div className="relative">
+                                  <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} placeholder="0 = مجاني" className="w-full bg-black/30 border border-white/10 rounded-xl pl-16 pr-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono dir-ltr text-right" />
+                                  <span className="absolute left-4 top-3 text-white/40">SAR</span>
                               </div>
-
-                              {formData.type === 'heritage' && (
-                                  <div className="space-y-2 md:col-span-2">
-                                          <label className="text-xs text-white/60 flex items-center gap-1"><List size={12}/> الخدمات المتوفرة (اكتبها نصياً)</label>
-                                          <textarea rows={2} placeholder="مثال: مرشد سياحي، دورات مياه، مواقف سيارات..." value={formData.services} onChange={e => setFormData({...formData, services: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
-                                  </div>
-                              )}
-
-                              {formData.type === 'experience' && (
-                                  <>
-                                          <div className="space-y-2">
-                                              <label className="text-xs text-white/60 flex items-center gap-1"><UserCheck size={12}/> السعة القصوى</label>
-                                              <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono" />
-                                          </div>
-                                          <div className="space-y-2">
-                                              <label className="text-xs text-white/60 flex items-center gap-1"><Activity size={12}/> مستوى الصعوبة</label>
-                                              <select value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                                                  <option value="سهل">سهل 🟢</option>
-                                                  <option value="متوسط">متوسط 🟡</option>
-                                                  <option value="صعب">صعب 🔴</option>
-                                              </select>
-                                          </div>
-                                          <div className="space-y-2">
-                                              <label className="text-xs text-white/60 flex items-center gap-1"><Hourglass size={12}/> المدة (مثال: ساعتين)</label>
-                                              <input type="text" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
-                                          </div>
-                                  </>
-                              )}
                           </div>
                         </div>
+
+                        {formData.type === 'heritage' && (
+                            <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
+                                <h4 className="font-bold text-amber-500 mb-2 flex items-center gap-2"><List size={16}/> المرافق والخدمات</h4>
+                                <div className="space-y-2">
+                                    <label className="text-xs text-white/60 block">اكتب الخدمات المتوفرة (مرشد، مواقف، الخ...)</label>
+                                    <textarea rows={2} value={formData.services} onChange={e => setFormData({...formData, services: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-amber-500 outline-none text-white" />
+                                </div>
+                            </div>
+                        )}
+
+                        {formData.type === 'experience' && (
+                            <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4 animate-in fade-in">
+                                <h4 className="font-bold text-emerald-500 mb-2 flex items-center gap-2"><Activity size={16}/> تفاصيل التجربة السياحية</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-white/60 flex items-center gap-1"><Clock size={12}/> مدة التجربة</label>
+                                        <input type="text" placeholder="مثال: ساعتين ونصف" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-white/60 flex items-center gap-1"><Mountain size={12}/> مستوى الصعوبة</label>
+                                        <select value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white appearance-none">
+                                            <option value="سهل">سهل 🟢</option>
+                                            <option value="متوسط">متوسط 🟡</option>
+                                            <option value="صعب">صعب 🔴</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2 sm:col-span-2">
+                                        <label className="text-xs text-white/60 flex items-center gap-1"><UserCheck size={12}/> الحد الأقصى للمشاركين</label>
+                                        <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white font-mono" />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5 space-y-4">
                           <h4 className="font-bold text-[#C89B3C] mb-2 flex items-center gap-2"><Clock size={16}/> التوفر والجدول الزمني</h4>
                           <div className="space-y-4">
                               <div className="space-y-2">
-                                  <label className="text-xs text-white/40 block mb-2">1. الجدول الأسبوعي العام</label>
+                                  <label className="text-xs text-white/40 block mb-2">الجدول الأسبوعي العام (أيام الافتتاح)</label>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                           {formData.work_hours?.map((wh, idx) => (
                                               <div key={idx} className={`flex items-center justify-between p-2 rounded-lg border ${wh.is_active ? 'bg-black/20 border-white/10' : 'bg-red-500/5 border-red-500/10'}`}>
                                                   <div className="flex items-center gap-2">
-                                                      <button type="button" onClick={() => updateWorkHour(idx, 'is_active', !wh.is_active)} className={`p-1 rounded-full ${wh.is_active ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                          {wh.is_active ? <CheckCircle size={16}/> : <XCircle size={16}/>}
-                                                      </button>
+                                                      <input type="checkbox" checked={wh.is_active} onChange={() => updateWorkHour(idx, 'is_active', !wh.is_active)} className="accent-[#C89B3C] w-4 h-4 cursor-pointer"/>
                                                       <span className="text-sm font-bold w-12">{wh.day}</span>
                                                   </div>
                                                   {wh.is_active ? (
@@ -548,7 +544,7 @@ export default function AdminLandmarksPage() {
                                   </div>
                               </div>
                               <div className="pt-4 border-t border-white/10">
-                                  <label className="text-xs text-white/60 block mb-2 flex items-center gap-2"><AlertTriangle size={12} className="text-amber-500"/> 2. استثناءات / أيام محجوزة</label>
+                                  <label className="text-xs text-white/60 block mb-2 flex items-center gap-2"><AlertTriangle size={12} className="text-amber-500"/> استثناءات / أيام محجوزة</label>
                                   <div className="flex gap-2 mb-3">
                                           <input type="date" value={newBlockedDate} onChange={e => setNewBlockedDate(e.target.value)} className="bg-black/30 border border-white/10 rounded-xl px-4 py-2 text-white outline-none focus:border-red-500 flex-1" />
                                           <button type="button" onClick={addBlockedDate} className="bg-red-500/20 text-red-400 px-4 py-2 rounded-xl hover:bg-red-500 hover:text-white transition text-sm font-bold shrink-0">حظر التاريخ</button>
@@ -583,7 +579,7 @@ export default function AdminLandmarksPage() {
                                       type="text" 
                                       value={formData.lat} 
                                       onChange={(e) => handleCoordinateChange('lat', e.target.value)}
-                                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-[#C89B3C] outline-none font-mono dir-ltr"
+                                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-[#C89B3C] outline-none font-mono dir-ltr text-right"
                                       placeholder="مثال: 18.2164"
                                   />
                               </div>
@@ -593,7 +589,7 @@ export default function AdminLandmarksPage() {
                                       type="text" 
                                       value={formData.lng} 
                                       onChange={(e) => handleCoordinateChange('lng', e.target.value)}
-                                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-[#C89B3C] outline-none font-mono dir-ltr"
+                                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-[#C89B3C] outline-none font-mono dir-ltr text-right"
                                       placeholder="مثال: 42.5053"
                                   />
                               </div>
