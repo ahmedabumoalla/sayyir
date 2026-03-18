@@ -1,812 +1,436 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { 
-  CheckCircle, XCircle, Eye, Edit, Trash2, 
-  MapPin, Clock, FileText, Save, Loader2, Filter, User, 
-  Sparkles, Utensils, Mountain, Compass, Info, PauseCircle, AlertTriangle, CheckSquare, Image as ImageIcon, Video,
-  Calendar, Map as MapIcon, ShieldAlert, Home, Send, HeartPulse, Waves, Car, Wind, Tv, Flame, Coffee, ShieldCheck, Ticket, Wifi, Percent,
-  Activity, Briefcase, CalendarDays, CalendarOff, Users, Tent, Building
-} from "lucide-react";
 import { Tajawal } from "next/font/google";
-import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
-import "mapbox-gl/dist/mapbox-gl.css";
+import { 
+    Loader2, ArrowRight, Edit, Send, Info, FileText, Clock, Compass, Home, Ticket, ShieldAlert, UploadCloud, CheckCircle, Eye
+} from "lucide-react";
 
-const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "700"] });
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-const ADMIN_CONTACT_INFO = `للاستفسار يرجى التواصل مع الإدارة:
-Email: admin@sayyir.com
-Phone: +966 50 000 0000`;
-
-const ALL_FEATURES_DICT: Record<string, any> = {
-    'yard': { label: 'يوجد حوش', icon: MapPin },
-    'view': { label: 'إطلالة مميزة', icon: Mountain },
-    'farm': { label: 'مزرعة', icon: MapPin },
-    'main_road': { label: 'على الطريق العام', icon: MapPin },
-    'services_nearby': { label: 'بالقرب من خدمات', icon: MapPin },
-    'wifi': { label: 'واي فاي', icon: Wifi },
-    'parking': { label: 'مواقف خاصة', icon: Car },
-    'bbq': { label: 'منطقة شواء', icon: Flame },
-    'pool': { label: 'مسبح خاص', icon: Waves },
-    'cleaning': { label: 'خدمة تنظيف', icon: Sparkles },
-    'ac': { label: 'تكييف', icon: Wind },
-    'tv': { label: 'تلفزيون', icon: Tv },
-    'kitchen': { label: 'مطبخ مجهز', icon: Utensils },
-    'volleyball': { label: 'ملعب طائرة', icon: Activity },
-    'football': { label: 'ملعب كرة قدم', icon: Activity },
-    'men_majlis': { label: 'مجلس رجال', icon: Users },
-    'women_majlis': { label: 'مجلس نساء', icon: Users },
-    'kids_area': { label: 'ألعاب أطفال', icon: Activity },
-    'green_area': { label: 'مسطحات خضراء', icon: MapPin },
-    'transport': { label: 'مركبة للنقل', icon: Car },
-    'tent': { label: 'خيمة', icon: Tent },
-    'floor_seating': { label: 'جلسات أرضية', icon: Users },
-    'chairs': { label: 'كراسي', icon: Users },
-    'water': { label: 'مياه شرب', icon: Coffee },
-    'food': { label: 'وجبات طعام', icon: Utensils },
-    'kiosks': { label: 'أكشاك بيع', icon: Building },
-    'rides': { label: 'ملاهي وألعاب', icon: Activity },
-    'seating': { label: 'جلسات عامة', icon: Users },
-    'cable_car': { label: 'تلفريك', icon: MapPin },
-    'live_shows': { label: 'عروض حية', icon: Tv }
-};
-
-const safeArray = (data: any) => {
-    if (!data) return [];
-    if (Array.isArray(data)) return data;
-    if (typeof data === 'string') { try { return JSON.parse(data); } catch { return []; } }
-    if (typeof data === 'object') return Object.values(data);
-    return [];
-};
-
-// ✅ دالة ذكية لتنظيف وتنسيق بيانات المقارنة (إلغاء أكواد JSON وتحويلها لنص مقروء)
-const formatCompareValue = (val: any) => {
-    if (val === undefined || val === null || val === '') return 'غير محدد / فارغ';
-    
-    if (typeof val === 'string' && val.startsWith('http')) {
-        return <a href={val} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 underline font-bold flex items-center gap-1 w-fit"><Eye size={14}/> عرض المرفق / الرابط</a>;
-    }
-
-    if (Array.isArray(val)) {
-        if (val.length === 0) return 'غير محدد / فارغ';
-        if (val[0] && typeof val[0] === 'object' && 'day' in val[0]) {
-            const activeDays = val.filter((d: any) => d.active);
-            if (activeDays.length === 0) return 'لا يوجد أيام عمل (مغلق دائماً)';
-            return activeDays.map((d: any) => {
-                const shifts = d.shifts?.map((s: any) => `${s.from} - ${s.to}`).join(' و ') || '';
-                return `${d.day}: ${shifts}`;
-            }).join('\n');
-        }
-        return val.join(' ، ');
-    }
-    
-    if (typeof val === 'object') {
-        if (Object.keys(val).length === 0) return 'غير محدد / فارغ';
-        if (val.startDate !== undefined || val.startTime !== undefined) {
-            let res = '';
-            if(val.startDate) res += `من تاريخ: ${val.startDate} `;
-            if(val.endDate) res += `إلى: ${val.endDate}\n`;
-            if(val.startTime) res += `من الساعة: ${val.startTime} `;
-            if(val.endTime) res += `إلى: ${val.endTime}`;
-            return res || JSON.stringify(val);
-        }
-        if (val.rooms !== undefined) {
-            return `غرف: ${val.rooms} | أسرة: ${val.beds} | حمامات: ${val.bathrooms}`;
-        }
-        if (val.floors !== undefined) {
-            return `أدوار: ${val.floors} | غرف نوم: ${val.bedrooms} | مجالس: ${val.livingRooms} | حمامات: ${val.bathrooms}`;
-        }
-        return JSON.stringify(val, null, 2).replace(/["{}\[\]]/g, '').replace(/,/g, '\n').trim();
-    }
-    
-    return String(val);
-};
-
-// دالة فحص ما إذا كان الحقل قد تغير فعلياً لتجنب عرض المربعات الفارغة
-const hasChanged = (oldVal: any, newVal: any) => {
-    const normalize = (v: any) => {
-        if (v === null || v === undefined) return '';
-        if (Array.isArray(v) && v.length === 0) return '';
-        if (typeof v === 'object' && Object.keys(v).length === 0) return '';
-        return JSON.stringify(v);
-    };
-    return normalize(oldVal) !== normalize(newVal);
-};
-
-// --- مكون مساعد لعرض صف المقارنة ---
-const AdminCompareRow = ({ label, originalValue, newValue }: { label: string, originalValue: any, newValue: any }) => (
-    <div className="flex flex-col md:flex-row gap-4 p-4 bg-black/40 border border-white/5 rounded-2xl mb-3 hover:border-white/10 transition">
-        <div className="w-full md:w-1/2 opacity-60 pointer-events-none border-b md:border-b-0 md:border-l border-white/10 pb-4 md:pb-0 md:pl-4">
-            <span className="text-xs text-white/50 block mb-1.5">{label} (البيانات الأصلية)</span>
-            <div className="bg-white/5 p-3 rounded-xl text-sm whitespace-pre-line text-white/80 leading-relaxed dir-rtl text-right min-h-[44px]">
-                {formatCompareValue(originalValue)}
+// ✅ المكون المساعد خارج الدالة للحفاظ على الفوكس (Focus)
+const CompareRow = ({ label, originalValue, originalDisplay, children }: { label: string, originalValue?: any, originalDisplay?: React.ReactNode, children: React.ReactNode }) => (
+    <div className="flex flex-col md:flex-row gap-4 p-4 bg-white/5 border border-white/5 rounded-2xl hover:border-white/10 transition">
+        <div className="w-full md:w-1/3 opacity-60 pointer-events-none border-b md:border-b-0 md:border-l border-white/10 pb-4 md:pb-0 md:pl-4">
+            <span className="text-xs text-white/50 block mb-1.5">{label} (الحالي)</span>
+            <div className="bg-black/30 p-3 rounded-xl text-sm whitespace-pre-line text-white/80 min-h-[44px]">
+                {originalDisplay ? originalDisplay : (originalValue !== undefined && originalValue !== null && originalValue !== '' ? String(originalValue) : 'غير محدد / فارغ')}
             </div>
         </div>
-        <div className="w-full md:w-1/2">
-            <span className="text-xs text-blue-400 block mb-1.5">{label} (التعديل المطلوب)</span>
-            <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-xl text-sm text-blue-100 whitespace-pre-line leading-relaxed dir-rtl text-right min-h-[44px]">
-                {formatCompareValue(newValue)}
-            </div>
+        <div className="w-full md:w-2/3">
+            <span className="text-xs text-[#C89B3C] block mb-1.5">{label} (الجديد)</span>
+            {children}
         </div>
     </div>
 );
 
+export default function EditServicePage() {
+  const router = useRouter();
+  const params = useParams();
+  const serviceId = params.id as string;
 
-export default function ReviewServicesPage() {
-  const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("pending");
-  const [selectedService, setSelectedService] = useState<any | null>(null);
-  
-  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
-  
   const [actionLoading, setActionLoading] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState("");
-  const [actionToConfirm, setActionToConfirm] = useState<'reject' | 'reject_update' | 'reject_stop' | 'reject_delete' | null>(null);
+  const [providerInfo, setProviderInfo] = useState<any>(null);
+  
+  // الخدمة الأصلية
+  const [originalService, setOriginalService] = useState<any>(null);
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState<any>({});
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  // ملف الترخيص المرفوع
+  const [licenseFile, setLicenseFile] = useState<File | null>(null);
 
-  const [useCustomCommission, setUseCustomCommission] = useState(false);
-  const [customCommission, setCustomCommission] = useState("");
-  const [savingCommission, setSavingCommission] = useState(false);
+  // نموذج التعديل الشامل
+  const [editForm, setEditForm] = useState<any>({
+      title: '',
+      description: '',
+      price: '0', // ✅ حقل السعر الأساسي للجميع
+      commercial_license: '',
+      work_schedule: [],
+      details: {}
+  });
 
-  useEffect(() => { 
-      fetchServices(); 
-      fetchCounts();
-  }, [filter]);
-
-  const fetchCounts = async () => {
-      const { data } = await supabase.from('services').select('status');
-      if (data) {
-          const counts = data.reduce((acc: any, curr: any) => {
-              acc[curr.status] = (acc[curr.status] || 0) + 1;
-              return acc;
-          }, {});
-          setStatusCounts(counts);
+  useEffect(() => {
+      if (serviceId) {
+          fetchServiceData();
       }
-  };
+  }, [serviceId]);
 
-  const fetchServices = async () => {
-    setLoading(true);
-    let query = supabase.from('services').select(`*, profiles:provider_id (full_name, email)`).order('created_at', { ascending: false });
-    if (filter !== 'all') query = query.eq('status', filter);
-    else query = query.neq('status', 'deleted');
-    
-    const { data, error } = await query;
-    if (error) alert("خطأ في جلب البيانات: " + error.message);
-    else setServices(data as any[]);
-    setLoading(false);
-  };
-
-  const openModal = (service: any) => {
-    setSelectedService(service);
-    setEditData({ title: service.title, description: service.description, price: service.price, status: service.status });
-    setIsEditing(false); setRejectionReason(""); setActionToConfirm(null);
-    setUseCustomCommission(service.platform_commission !== null && service.platform_commission !== undefined);
-    setCustomCommission(service.platform_commission ? service.platform_commission.toString() : "");
-  };
-
-  const isVideo = (url: string) => url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes('video');
-
-  const handleUpdateCommission = async () => {
-      if (!selectedService) return;
-      if (useCustomCommission && !customCommission) return alert("الرجاء إدخال النسبة.");
-      setSavingCommission(true);
+  const fetchServiceData = async () => {
       try {
-          const newCommissionValue = useCustomCommission ? Number(customCommission) : null;
-          const { error } = await supabase.from('services').update({ platform_commission: newCommissionValue }).eq('id', selectedService.id);
-          if (error) throw error;
-          alert("تم تحديث نسبة العمولة بنجاح ✅");
-          fetchServices(); 
-          setSelectedService({ ...selectedService, platform_commission: newCommissionValue });
-      } catch (err: any) { alert("خطأ: " + err.message); } finally { setSavingCommission(false); }
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+              router.replace('/login');
+              return;
+          }
+
+          const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
+          setProviderInfo(profile);
+
+          const { data: service, error } = await supabase
+              .from('services')
+              .select('*')
+              .eq('id', serviceId)
+              .eq('provider_id', session.user.id)
+              .single();
+
+          if (error || !service) {
+              alert("لم يتم العثور على الخدمة أو لا تملك صلاحية الوصول لها.");
+              router.push('/provider/services');
+              return;
+          }
+
+          setOriginalService(service);
+          
+          // دمج البيانات: إذا كان فيه طلب تعديل سابق لم يوافق عليه، نعرضه، وإلا نعرض الأصلي
+          const initialData = service.pending_updates || service;
+          
+          setEditForm({
+              title: initialData.title || '',
+              description: initialData.description || '',
+              price: initialData.price !== undefined && initialData.price !== null ? initialData.price.toString() : '0',
+              commercial_license: initialData.commercial_license || '',
+              work_schedule: initialData.work_schedule || [],
+              details: JSON.parse(JSON.stringify(initialData.details || {})) // نسخة عميقة
+          });
+
+      } catch (err) {
+          console.error(err);
+      } finally {
+          setLoading(false);
+      }
   };
 
-  const handleAction = async (action: 'approve' | 'reject' | 'approve_update' | 'reject_update' | 'approve_stop' | 'reject_stop' | 'approve_delete' | 'reject_delete') => {
-    if (!selectedService) return;
-    if (action.startsWith('reject') && !rejectionReason.trim()) return alert("الرجاء كتابة سبب الرفض.");
-    if (action === 'approve' && useCustomCommission && !customCommission) return alert("الرجاء إدخال نسبة العمولة المخصصة.");
+  const handleDetailChange = (key: string, value: any, nestedKey?: string, deepNestedKey?: string) => {
+      setEditForm((prev: any) => {
+          const newDetails = { ...prev.details };
+          
+          if (deepNestedKey && nestedKey) {
+              if (!newDetails[key]) newDetails[key] = {};
+              if (!newDetails[key][nestedKey]) newDetails[key][nestedKey] = {};
+              newDetails[key][nestedKey][deepNestedKey] = value;
+          } else if (nestedKey) {
+              if (!newDetails[key]) newDetails[key] = {};
+              newDetails[key][nestedKey] = value;
+          } else {
+              newDetails[key] = value;
+          }
+          
+          return { ...prev, details: newDetails };
+      });
+  };
 
-    setActionLoading(true);
-    try {
-      let updates: any = {};
-      let emailType = ''; 
-      let emailBodyReason = '';
-      const finalReason = `${rejectionReason}\n\n--\n${ADMIN_CONTACT_INFO}`;
+  const handleScheduleChange = (index: number, field: string, value: any, shiftIndex?: number, shiftField?: string) => {
+      setEditForm((prev: any) => {
+          const newSchedule = [...prev.work_schedule];
+          if (shiftIndex !== undefined && shiftField) {
+              newSchedule[index].shifts[shiftIndex][shiftField] = value;
+          } else {
+              newSchedule[index][field] = value;
+          }
+          return { ...prev, work_schedule: newSchedule };
+      });
+  };
 
-      if (action === 'approve') { 
-          updates = { status: 'approved', rejection_reason: null, platform_commission: useCustomCommission ? Number(customCommission) : null }; 
-          emailType = 'service_approved'; 
-      }
-      if (action === 'reject') { 
-          updates = { status: 'rejected', rejection_reason: finalReason }; 
-          emailType = 'service_rejected'; 
-      }
-      if (action === 'approve_update') {
-          updates = { ...selectedService.pending_updates, status: 'approved', pending_updates: null };
-          emailType = 'service_approved';
-          emailBodyReason = "تمت الموافقة على طلب تعديل بيانات الخدمة بنجاح، وتم نشرها بالبيانات الجديدة.";
-      }
-      if (action === 'reject_update') {
-          updates = { status: 'approved', pending_updates: null };
-          emailType = 'service_rejected';
-          emailBodyReason = `نعتذر، تم رفض طلب تعديل بيانات الخدمة للأسباب التالية:\n${finalReason}\n\nستبقى الخدمة معروضة ببياناتها الأصلية.`;
-      }
-      if (action === 'approve_stop') {
-          updates = { status: 'stopped' };
-          emailType = 'service_rejected'; 
-          emailBodyReason = "تمت الموافقة على طلبكم وتم إيقاف الخدمة بنجاح.";
-      }
-      if (action === 'reject_stop') {
-          updates = { status: 'approved' };
-          emailType = 'service_approved';
-          emailBodyReason = `تم رفض طلب إيقاف الخدمة للأسباب التالية:\n${finalReason}\nالخدمة ما زالت نشطة.`;
-      }
-      if (action === 'approve_delete') {
-          updates = { status: 'deleted' };
-          emailType = 'service_rejected';
-          emailBodyReason = "تمت الموافقة على طلبكم وتم أرشفة/حذف الخدمة نهائياً.";
-      }
-      if (action === 'reject_delete') {
-          updates = { status: 'approved', delete_reason: null };
-          emailType = 'service_approved';
-          emailBodyReason = `تم رفض طلب حذف الخدمة للأسباب التالية:\n${finalReason}\nالخدمة ما زالت نشطة على المنصة.`;
+  const submitEditRequest = async () => {
+      if (!editForm.title.trim() || !editForm.description.trim() || editForm.price === '') {
+          return alert("يرجى تعبئة العنوان، الوصف، والسعر بشكل صحيح (اكتب 0 إذا كانت مجانية).");
       }
 
-      const { error: updateError } = await supabase.from('services').update(updates).eq('id', selectedService.id);
-      if (updateError) throw updateError;
+      setActionLoading(true);
+      try {
+          let finalLicenseUrl = editForm.commercial_license;
 
-      const profileData: any = selectedService.profiles;
-      const providerEmail = Array.isArray(profileData) ? profileData[0]?.email : profileData?.email;
-      const providerName = Array.isArray(profileData) ? profileData[0]?.full_name : profileData?.full_name;
-      
-      if (providerEmail) {
-          if (!emailBodyReason && action.startsWith('reject')) emailBodyReason = finalReason;
+          if (licenseFile) {
+              const fileExt = licenseFile.name.split('.').pop();
+              const fileName = `license_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+              const { error: uploadError } = await supabase.storage.from('provider-files').upload(fileName, licenseFile);
+              
+              if (uploadError) throw uploadError;
+              
+              const { data } = supabase.storage.from('provider-files').getPublicUrl(fileName);
+              finalLicenseUrl = data.publicUrl;
+          }
+
+          // ✅ تجهيز الأوبجكت الشامل مع تحويل السعر لرقم لضمان الحفظ الصحيح
+          const pendingUpdates = { 
+              title: editForm.title, 
+              description: editForm.description, 
+              price: Number(editForm.price), // هنا يتم تثبيت السعر الرئيسي
+              commercial_license: finalLicenseUrl,
+              work_schedule: editForm.work_schedule,
+              details: editForm.details
+          };
+
+          const { error } = await supabase
+              .from('services')
+              .update({ 
+                  status: 'update_requested', 
+                  pending_updates: pendingUpdates 
+              })
+              .eq('id', serviceId);
+
+          if (error) throw error;
+
           await fetch('/api/emails/send', { 
               method: 'POST', 
-              headers: { 'Content-Type': 'application/json' }, 
+              headers: {'Content-Type': 'application/json'}, 
               body: JSON.stringify({ 
-                  type: emailType, 
-                  email: providerEmail, 
-                  name: providerName, 
-                  serviceTitle: selectedService.title, 
-                  reason: emailBodyReason 
+                  type: 'new_service_notification', 
+                  providerName: providerInfo?.full_name, 
+                  serviceTitle: `طلب تعديل شامل لبيانات خدمة: ${originalService.title}` 
               }) 
-          }).catch(err => console.error(err));
+          }).catch(e => console.error(e));
+
+          alert("تم إرسال طلب التعديل الشامل للإدارة بنجاح ✅\n(الخدمة الحالية ستبقى معروضة ببياناتها القديمة حتى توافق الإدارة)");
+          router.push('/provider/services');
+          
+      } catch (e: any) { 
+          alert("حدث خطأ أثناء إرسال الطلب: " + e.message); 
+      } finally { 
+          setActionLoading(false); 
       }
-
-      alert("تم تنفيذ الإجراء بنجاح ✅");
-      setSelectedService(null);
-      fetchServices(); 
-      fetchCounts(); 
-
-    } catch (error: any) { 
-      alert("حدث خطأ: " + error.message); 
-    } finally { 
-      setActionLoading(false); 
-      setActionToConfirm(null); 
-    }
   };
 
-  const getTranslatedFeature = (id: string) => {
-      const feat = ALL_FEATURES_DICT[id];
-      if(feat) return <span key={id} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><feat.icon size={14} className="text-[#C89B3C]" /> {feat.label}</span>;
-      return <span key={id} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {id}</span>;
-  };
-
-  const handleDirectEmail = (providerEmail: string, providerName: string, serviceTitle: string) => {
-      const subject = encodeURIComponent(`بخصوص خدمتك: ${serviceTitle}`);
-      const body = encodeURIComponent(`مرحباً ${providerName}،\n\nنحن فريق الدعم في منصة سيّر، ونتواصل معك بخصوص الخدمة المذكورة أعلاه...\n\n`);
-      window.location.href = `mailto:${providerEmail}?subject=${subject}&body=${body}`;
-  };
+  if (loading) {
+      return (
+          <div className="h-screen flex items-center justify-center bg-[#121212]">
+              <Loader2 className="animate-spin text-[#C89B3C] w-12 h-12" />
+          </div>
+      );
+  }
 
   return (
-    <div className={`animate-in fade-in duration-500 pb-10 ${tajawal.className}`} dir="rtl">
-      
-      <header className="flex justify-between items-center mb-8">
-        <div>
-            <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
-               <CheckCircle className="text-[#C89B3C]" /> مراجعة الخدمات
-            </h1>
-            <p className="text-white/60 text-sm">إدارة الطلبات، التعديلات، والحذوفات المقدمة من الشركاء.</p>
-        </div>
-      </header>
-
-      <div className="flex gap-3 mb-6 overflow-x-auto pb-2 custom-scrollbar">
-        {[
-            { key: 'pending', label: 'خدمات جديدة', icon: Clock }, 
-            { key: 'update_requested', label: 'طلبات تعديل', icon: Edit }, 
-            { key: 'stop_requested', label: 'طلبات إيقاف', icon: PauseCircle }, 
-            { key: 'delete_requested', label: 'طلبات حذف نهائي', icon: Trash2 }, 
-            { key: 'approved', label: 'الخدمات المفعلة', icon: CheckCircle }, 
-            { key: 'stopped', label: 'المتوقفة', icon: PauseCircle }, 
-            { key: 'rejected', label: 'المرفوضة', icon: XCircle }, 
-            { key: 'deleted', label: 'المحذوفة', icon: Trash2 }, 
-            { key: 'all', label: 'الكل', icon: Filter }
-        ].map((f) => (
-          <button key={f.key} onClick={() => setFilter(f.key)} className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl border transition whitespace-nowrap ${filter === f.key ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'bg-black/20 text-white/60 border-white/10 hover:bg-white/5'}`}>
-            <f.icon size={16} /> 
-            {f.label}
-            {['pending', 'update_requested', 'stop_requested', 'delete_requested'].includes(f.key) && statusCounts[f.key] > 0 && (
-                <span className="bg-red-500 text-white font-bold text-[10px] w-5 h-5 flex items-center justify-center rounded-full ml-1">
-                    {statusCounts[f.key]}
-                </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {loading ? <div className="flex justify-center p-20"><Loader2 className="animate-spin text-[#C89B3C]" size={40}/></div> : services.length === 0 ? <div className="text-center p-20 bg-white/5 rounded-2xl border border-white/5 text-white/40">لا توجد خدمات في هذا القسم حالياً.</div> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {services.map((service) => (
-            <div key={service.id} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg flex flex-col hover:border-[#C89B3C]/30 transition group relative">
-                
-                {['pending', 'update_requested', 'stop_requested', 'delete_requested'].includes(service.status) && (
-                    <span className="absolute top-4 left-4 flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                    </span>
-                )}
-
-                <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 shrink-0 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C] font-bold text-lg">{service.title.charAt(0)}</div>
-                    <div className="pl-4"><h3 className="font-bold text-white line-clamp-1 text-lg">{service.title}</h3><p className="text-xs text-white/50 flex items-center gap-1"><User size={10}/> {service.profiles?.full_name}</p></div>
-                </div>
-                <div className="bg-black/20 p-3 rounded-xl mb-4 space-y-2 text-sm border border-white/5">
-                   <div className="flex justify-between"><span className="text-white/50">السعر:</span><span className="text-[#C89B3C] font-bold">{service.price === 0 ? 'مجاني' : `${service.price} ﷼`}</span></div>
-                   <div className="flex justify-between">
-                       <span className="text-white/50">النوع:</span>
-                       <span className="text-white bg-white/5 px-2 py-0.5 rounded text-[10px]">
-                           {service.sub_category === 'facility' ? 'مرفق' : service.sub_category === 'lodging' ? 'نزل' : service.sub_category === 'experience' ? 'تجربة' : 'فعالية'}
-                       </span>
-                   </div>
-                   <div className="flex justify-between items-center">
-                       <span className="text-white/50">الحالة:</span>
-                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                           service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
-                           service.status === 'update_requested' ? 'bg-blue-500/20 text-blue-400' :
-                           service.status === 'stop_requested' ? 'bg-orange-500/20 text-orange-400' :
-                           service.status === 'delete_requested' ? 'bg-red-600/20 text-red-500' :
-                           service.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : 
-                           service.status === 'stopped' ? 'bg-gray-500/20 text-gray-400' : 
-                           service.status === 'deleted' ? 'bg-red-900/20 text-red-500' : 
-                           'bg-red-500/20 text-red-400'
-                       }`}>
-                           {
-                               service.status === 'pending' ? 'بانتظار المراجعة' :
-                               service.status === 'update_requested' ? 'طلب تعديل' :
-                               service.status === 'stop_requested' ? 'طلب إيقاف' :
-                               service.status === 'delete_requested' ? 'طلب حذف' :
-                               service.status === 'approved' ? 'نشط' : 
-                               service.status === 'stopped' ? 'متوقفة' : 
-                               service.status === 'deleted' ? 'محذوفة' : 
-                               'مرفوضة'
-                           }
-                       </span>
-                   </div>
-                </div>
-                <div className="mt-auto flex gap-2 w-full">
-                    <button onClick={() => openModal(service)} className="flex-1 py-2.5 bg-white/5 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C] text-sm"><Eye size={16}/> مراجعة الطلب</button>
-                    <button onClick={() => handleDirectEmail(service.profiles?.email, service.profiles?.full_name, service.title)} className="p-2.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-xl transition border border-indigo-500/20" title="مراسلة المزود"><Send size={16}/></button>
-                </div>
+    <div className={`min-h-screen bg-[#121212] p-4 md:p-8 animate-in fade-in duration-500 pb-20 ${tajawal.className}`} dir="rtl">
+        
+        {/* Header & Back Button */}
+        <div className="max-w-6xl mx-auto mb-8 flex items-center gap-4">
+            <button 
+                onClick={() => router.push('/provider/services')} 
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 transition border border-white/10 text-white"
+            >
+                <ArrowRight size={20} />
+            </button>
+            <div>
+                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                    <Edit className="text-blue-400" /> طلب تعديل شامل للخدمة
+                </h1>
+                <p className="text-sm text-white/50 mt-1">تحديث بيانات خدمة: <span className="text-[#C89B3C]">{originalService?.title}</span></p>
             </div>
-          ))}
         </div>
-      )}
 
-      {selectedService && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-[#1e1e1e] w-full max-w-6xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="max-w-6xl mx-auto bg-[#1E1E1E] rounded-3xl border border-blue-500/20 shadow-2xl overflow-hidden">
             
-            <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl">
-              <div>
-                  <h2 className="text-2xl font-bold flex items-center gap-2 text-white">
-                      {selectedService.status === 'update_requested' ? <Edit className="text-blue-400"/> : <FileText className="text-[#C89B3C]" />} 
-                      {selectedService.status === 'update_requested' ? 'مراجعة طلب التعديل' : 'تفاصيل الخدمة'}
-                  </h2>
-                  <p className="text-xs text-white/50 mt-1 font-mono">ID: {selectedService.id}</p>
-              </div>
-              <button onClick={() => setSelectedService(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition"><XCircle size={20}/></button>
+            <div className="bg-blue-500/10 p-5 md:p-6 border-b border-white/5 flex items-start gap-3">
+                <Info className="text-blue-400 shrink-0 mt-0.5" size={20} />
+                <p className="text-sm md:text-base text-blue-100/80 leading-relaxed">
+                    قم بتعديل أي حقل ترغب بتحديثه في الحقول الملونة أدناه. سيتم إرسال كافة التعديلات كطلب واحد للإدارة للمراجعة. <strong className="text-white">ولن تتأثر الخدمة الحالية المعروضة للعملاء حتى يتم الاعتماد.</strong>
+                </p>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+            <div className="p-6 md:p-8 space-y-10">
                 
-                {/* ⚠️ تنبيهات الطلبات قيد الإجراء */}
-                {selectedService.status === 'stop_requested' && (
-                    <div className="bg-orange-500/10 border border-orange-500/20 p-5 rounded-xl mb-6">
-                        <h3 className="text-orange-400 font-bold mb-2 flex items-center gap-2"><PauseCircle size={20}/> طلب إيقاف الخدمة من المزود</h3>
-                        <p className="text-white text-sm">سبب المزود للإيقاف: <span className="font-bold text-white bg-black/40 px-3 py-1.5 rounded-lg mr-2 inline-block">{selectedService.details?.stop_reason || 'غير محدد'}</span></p>
-                    </div>
+                {/* 1. البيانات الأساسية */}
+                <section className="space-y-4">
+                    <h3 className="text-[#C89B3C] font-bold text-lg flex items-center gap-2 border-b border-[#C89B3C]/20 pb-2"><FileText size={18}/> البيانات الأساسية</h3>
+                    <CompareRow label="عنوان الخدمة" originalValue={originalService.title}>
+                        <input value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                    </CompareRow>
+                    
+                    {/* ✅ توحيد عرض السعر الأساسي لجميع الخدمات بما فيها الفعاليات */}
+                    <CompareRow label={originalService.sub_category === 'event' ? "رسوم الدخول للبالغين (ريال)" : "السعر الأساسي (ريال)"} originalValue={originalService.price}>
+                        <input type="number" min="0" value={editForm.price} onChange={e => setEditForm({...editForm, price: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition font-mono dir-ltr text-right" placeholder="0 = مجاني" />
+                    </CompareRow>
+
+                    <CompareRow label="وصف الخدمة" originalValue={originalService.description}>
+                        <textarea rows={4} value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition resize-none leading-relaxed" />
+                    </CompareRow>
+
+                    <CompareRow 
+                        label="الترخيص التجاري (مرفق)" 
+                        originalDisplay={originalService.commercial_license ? (
+                            <a href={originalService.commercial_license} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-blue-400 hover:text-blue-300 w-fit pointer-events-auto">
+                                <Eye size={16}/> عرض المرفق الحالي
+                            </a>
+                        ) : "لا يوجد مرفق"}
+                    >
+                        <div className="relative group/upload w-full">
+                            <input 
+                                type="file" 
+                                accept="image/*,.pdf" 
+                                id="license-upload" 
+                                className="hidden" 
+                                onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                        setLicenseFile(e.target.files[0]);
+                                    }
+                                }} 
+                            />
+                            <label htmlFor="license-upload" className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-white/20 bg-black/40 rounded-xl cursor-pointer hover:border-[#C89B3C] hover:bg-[#C89B3C]/5 transition-all">
+                                {licenseFile ? (
+                                    <div className="flex items-center gap-2 text-[#C89B3C]">
+                                        <CheckCircle size={20} />
+                                        <span className="text-sm font-bold line-clamp-1 px-2">{licenseFile.name}</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center gap-2 text-white/50 group-hover/upload:text-[#C89B3C]">
+                                        <UploadCloud size={24} />
+                                        <span className="text-xs">اضغط لرفع ملف ترخيص جديد (صورة أو PDF)</span>
+                                    </div>
+                                )}
+                            </label>
+                            {!licenseFile && editForm.commercial_license && (
+                                <p className="text-[10px] text-white/40 mt-2 flex items-center gap-1">
+                                    <Info size={12}/> سيتم الاحتفاظ بالمرفق الحالي إذا لم تقم برفع ملف جديد.
+                                </p>
+                            )}
+                        </div>
+                    </CompareRow>
+
+                    <CompareRow label="سياسات وشروط المكان" originalValue={originalService.details?.policies}>
+                        <textarea rows={4} value={editForm.details?.policies || ''} onChange={e => handleDetailChange('policies', e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition resize-none leading-relaxed" placeholder="أدخل الشروط والسياسات..." />
+                    </CompareRow>
+                </section>
+
+                {/* 2. تفاصيل مخصصة (بناءً على نوع الخدمة) */}
+                
+                {/* --- أ. النزل (Lodging) --- */}
+                {originalService.sub_category === 'lodging' && (
+                    <section className="space-y-4">
+                        <h3 className="text-[#C89B3C] font-bold text-lg flex items-center gap-2 border-b border-[#C89B3C]/20 pb-2"><Home size={18}/> تفاصيل النزل السياحي</h3>
+                        
+                        <CompareRow label="مساحة المكان (متر مربع)" originalValue={originalService.details?.area}>
+                            <input type="number" value={editForm.details?.area || ''} onChange={e => handleDetailChange('area', e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                        </CompareRow>
+                        
+                        <CompareRow label="السعة الاستيعابية (أشخاص)" originalValue={originalService.max_capacity}>
+                            <input type="number" value={editForm.details?.max_capacity || originalService.max_capacity} onChange={e => handleDetailChange('max_capacity', e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                        </CompareRow>
+
+                        {originalService.details?.apartment_details && (
+                            <CompareRow label="تفاصيل الشقة (غرف، أسرة، حمامات)" originalValue={`غرف: ${originalService.details.apartment_details.rooms} | أسرة: ${originalService.details.apartment_details.beds} | حمامات: ${originalService.details.apartment_details.bathrooms}`}>
+                                <div className="flex gap-2">
+                                    <input type="number" placeholder="غرف" value={editForm.details?.apartment_details?.rooms || ''} onChange={e => handleDetailChange('apartment_details', e.target.value, 'rooms')} className="w-1/3 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white" />
+                                    <input type="number" placeholder="أسرة" value={editForm.details?.apartment_details?.beds || ''} onChange={e => handleDetailChange('apartment_details', e.target.value, 'beds')} className="w-1/3 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white" />
+                                    <input type="number" placeholder="حمامات" value={editForm.details?.apartment_details?.bathrooms || ''} onChange={e => handleDetailChange('apartment_details', e.target.value, 'bathrooms')} className="w-1/3 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white" />
+                                </div>
+                            </CompareRow>
+                        )}
+                    </section>
                 )}
 
-                {selectedService.status === 'delete_requested' && (
-                    <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-xl mb-6">
-                        <h3 className="text-red-400 font-bold mb-2 flex items-center gap-2"><Trash2 size={20}/> طلب حذف نهائي من المزود</h3>
-                        <p className="text-white text-sm">سبب المزود للحذف: <span className="font-bold text-white bg-black/40 px-3 py-1.5 rounded-lg mr-2 inline-block">{selectedService.delete_reason || 'غير محدد'}</span></p>
-                    </div>
+                {/* --- ب. التجربة السياحية (Experience) --- */}
+                {originalService.sub_category === 'experience' && (
+                    <section className="space-y-4">
+                        <h3 className="text-[#C89B3C] font-bold text-lg flex items-center gap-2 border-b border-[#C89B3C]/20 pb-2"><Compass size={18}/> تفاصيل التجربة</h3>
+                        
+                        <CompareRow label="مدة التجربة" originalValue={originalService.details?.experience_info?.duration}>
+                            <input value={editForm.details?.experience_info?.duration || ''} onChange={e => handleDetailChange('experience_info', e.target.value, 'duration')} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" placeholder="مثال: 3 ساعات" />
+                        </CompareRow>
+
+                        <CompareRow label="مستوى الصعوبة" originalValue={originalService.details?.experience_info?.difficulty}>
+                            <select value={editForm.details?.experience_info?.difficulty || 'سهل'} onChange={e => handleDetailChange('experience_info', e.target.value, 'difficulty')} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition appearance-none">
+                                <option value="سهل" className="bg-[#1e1e1e]">سهل</option>
+                                <option value="متوسط" className="bg-[#1e1e1e]">متوسط</option>
+                                <option value="صعب" className="bg-[#1e1e1e]">صعب</option>
+                            </select>
+                        </CompareRow>
+                        
+                        <CompareRow label="ماذا يجب أن يحضر العميل؟" originalValue={originalService.details?.experience_info?.what_to_bring}>
+                            <textarea rows={3} value={editForm.details?.experience_info?.what_to_bring || ''} onChange={e => handleDetailChange('experience_info', e.target.value, 'what_to_bring')} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition resize-none" />
+                        </CompareRow>
+
+                        <CompareRow label="سياسة إلغاء التجربة" originalValue={originalService.details?.experience_info?.cancellation_policy}>
+                            <textarea rows={3} value={editForm.details?.experience_info?.cancellation_policy || ''} onChange={e => handleDetailChange('experience_info', e.target.value, 'cancellation_policy')} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition resize-none" />
+                        </CompareRow>
+                    </section>
                 )}
 
-                {/* ✅ قسم مراجعة طلب التعديل (المقارنة الذكية) */}
-                {selectedService.status === 'update_requested' && selectedService.pending_updates && (
-                    <div className="mb-8">
-                        <div className="bg-blue-500/10 border border-blue-500/20 p-5 rounded-xl mb-6 flex items-start gap-3">
-                            <Info className="text-blue-400 shrink-0" size={24}/>
-                            <div>
-                                <h3 className="text-blue-400 font-bold mb-2">طلب تعديل بيانات شامل</h3>
-                                <p className="text-blue-100/80 text-sm leading-relaxed">قام المزود بطلب تعديل البيانات الموضحة أدناه. في حال الموافقة سيتم استبدال البيانات القديمة بالجديدة. في حال الرفض ستستمر الخدمة بالظهور بالبيانات الأصلية.</p>
+                {/* --- ج. الفعاليات (Events) --- */}
+                {originalService.sub_category === 'event' && (
+                    <section className="space-y-4">
+                        <h3 className="text-[#C89B3C] font-bold text-lg flex items-center gap-2 border-b border-[#C89B3C]/20 pb-2"><Ticket size={18}/> تفاصيل الفعالية</h3>
+                        
+                        <CompareRow label="تواريخ الفعالية" originalValue={`من: ${originalService.details?.event_info?.dates?.startDate} | إلى: ${originalService.details?.event_info?.dates?.endDate}`}>
+                            <div className="flex gap-2">
+                                <input type="date" value={editForm.details?.event_info?.dates?.startDate || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'startDate')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
+                                <input type="date" value={editForm.details?.event_info?.dates?.endDate || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'endDate')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
                             </div>
-                        </div>
+                        </CompareRow>
 
-                        <div className="space-y-2">
-                            <h3 className="text-lg font-bold text-white mb-4 border-b border-white/10 pb-2">مقارنة التعديلات المطلوبة</h3>
-                            
-                            {(() => {
-                                const oldDet = selectedService.details || {};
-                                const newDet = selectedService.pending_updates.details || {};
-                                const pending = selectedService.pending_updates;
+                        <CompareRow label="ساعات العمل" originalValue={`من: ${originalService.details?.event_info?.dates?.startTime} | إلى: ${originalService.details?.event_info?.dates?.endTime}`}>
+                            <div className="flex gap-2">
+                                <input type="time" value={editForm.details?.event_info?.dates?.startTime || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'startTime')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
+                                <input type="time" value={editForm.details?.event_info?.dates?.endTime || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'endTime')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
+                            </div>
+                        </CompareRow>
 
-                                return (
-                                    <>
-                                        {hasChanged(selectedService.title, pending.title) && <AdminCompareRow label="عنوان الخدمة" originalValue={selectedService.title} newValue={pending.title}/>}
-                                        {hasChanged(selectedService.price, pending.price) && <AdminCompareRow label="السعر (ريال)" originalValue={selectedService.price} newValue={pending.price}/>}
-                                        {hasChanged(selectedService.description, pending.description) && <AdminCompareRow label="الوصف" originalValue={selectedService.description} newValue={pending.description}/>}
-                                        {hasChanged(selectedService.commercial_license, pending.commercial_license) && <AdminCompareRow label="رابط/ملف الترخيص" originalValue={selectedService.commercial_license} newValue={pending.commercial_license}/>}
-                                        {hasChanged(oldDet.policies, newDet.policies) && <AdminCompareRow label="سياسات المكان" originalValue={oldDet.policies} newValue={newDet.policies}/>}
-                                        {hasChanged(oldDet.area, newDet.area) && <AdminCompareRow label="المساحة" originalValue={oldDet.area} newValue={newDet.area}/>}
-                                        {hasChanged(oldDet.max_capacity, newDet.max_capacity) && <AdminCompareRow label="السعة (أشخاص)" originalValue={oldDet.max_capacity} newValue={newDet.max_capacity}/>}
-                                        {hasChanged(oldDet.apartment_details, newDet.apartment_details) && <AdminCompareRow label="تفاصيل الشقة" originalValue={oldDet.apartment_details} newValue={newDet.apartment_details}/>}
-                                        {hasChanged(oldDet.experience_info?.duration, newDet.experience_info?.duration) && <AdminCompareRow label="مدة التجربة" originalValue={oldDet.experience_info?.duration} newValue={newDet.experience_info?.duration}/>}
-                                        {hasChanged(oldDet.experience_info?.difficulty, newDet.experience_info?.difficulty) && <AdminCompareRow label="مستوى الصعوبة" originalValue={oldDet.experience_info?.difficulty} newValue={newDet.experience_info?.difficulty}/>}
-                                        {hasChanged(oldDet.experience_info?.what_to_bring, newDet.experience_info?.what_to_bring) && <AdminCompareRow label="المطلوب إحضاره" originalValue={oldDet.experience_info?.what_to_bring} newValue={newDet.experience_info?.what_to_bring}/>}
-                                        {hasChanged(oldDet.experience_info?.cancellation_policy, newDet.experience_info?.cancellation_policy) && <AdminCompareRow label="سياسة الإلغاء" originalValue={oldDet.experience_info?.cancellation_policy} newValue={newDet.experience_info?.cancellation_policy}/>}
-                                        {hasChanged(oldDet.event_info?.dates, newDet.event_info?.dates) && <AdminCompareRow label="تواريخ وأوقات الفعالية" originalValue={oldDet.event_info?.dates} newValue={newDet.event_info?.dates}/>}
-                                        {hasChanged(oldDet.event_info?.child_price, newDet.event_info?.child_price) && <AdminCompareRow label="سعر الأطفال" originalValue={oldDet.event_info?.child_price} newValue={newDet.event_info?.child_price}/>}
-                                        {hasChanged(selectedService.work_schedule, pending.work_schedule) && <AdminCompareRow label="أوقات الدوام الأسبوعية" originalValue={selectedService.work_schedule} newValue={pending.work_schedule}/>}
-                                    </>
-                                );
-                            })()}
-                        </div>
-                        <div className="h-px bg-white/10 my-8"></div>
-                    </div>
+                        {/* ✅ حقل خاص برسوم الأطفال للفعاليات */}
+                        <CompareRow label="سعر تذكرة الأطفال (ريال)" originalValue={originalService.details?.event_info?.child_price}>
+                            <input type="number" min="0" value={editForm.details?.event_info?.child_price !== undefined ? editForm.details.event_info.child_price : ''} onChange={e => handleDetailChange('event_info', Number(e.target.value), 'child_price')} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white font-mono dir-ltr text-right" placeholder="0 = مجاني" />
+                        </CompareRow>
+                    </section>
                 )}
 
-                {/* ✅ معرض الصور والفيديو (دائماً يظهر) */}
-                {selectedService.details?.images && selectedService.details.images.length > 0 && (
-                    <div className="mb-8">
-                        <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو العرض (الحالية)</h3>
-                        <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                            {selectedService.details.images.map((url: string, i: number) => (
-                                <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition">
-                                    {isVideo(url) ? ( <><video src={url} className="w-full h-full object-cover" muted /><div className="absolute inset-0 flex items-center justify-center bg-black/40"><Video className="text-white/80" size={24}/></div></> ) : ( <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Image ${i}`}/> )}
+                {/* 3. أوقات الدوام (Work Schedule) - إن وجدت */}
+                {originalService.work_schedule && originalService.work_schedule.length > 0 && (
+                    <section className="space-y-4">
+                        <h3 className="text-[#C89B3C] font-bold text-lg flex items-center gap-2 border-b border-[#C89B3C]/20 pb-2"><Clock size={18}/> أوقات الدوام والعمل</h3>
+                        
+                        <div className="bg-white/5 border border-white/5 rounded-2xl p-4 md:p-6 space-y-4">
+                            {editForm.work_schedule.map((day: any, i: number) => (
+                                <div key={i} className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                                    
+                                    <div className="flex items-center gap-4 w-full md:w-1/4">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={day.active} 
+                                            onChange={e => handleScheduleChange(i, 'active', e.target.checked)}
+                                            className="w-5 h-5 accent-[#C89B3C] cursor-pointer"
+                                        />
+                                        <span className={`font-bold ${day.active ? 'text-white' : 'text-white/40 line-through'}`}>{day.day}</span>
+                                    </div>
+                                    
+                                    <div className="flex-1 flex flex-col gap-2">
+                                        {day.active ? day.shifts.map((shift: any, shiftIdx: number) => (
+                                            <div key={shiftIdx} className="flex items-center gap-2 justify-end">
+                                                <span className="text-xs text-white/50">من</span>
+                                                <input type="time" value={shift.from} onChange={e => handleScheduleChange(i, 'shifts', e.target.value, shiftIdx, 'from')} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white/80 focus:border-[#C89B3C] outline-none dir-ltr" />
+                                                <span className="text-xs text-white/50">إلى</span>
+                                                <input type="time" value={shift.to} onChange={e => handleScheduleChange(i, 'shifts', e.target.value, shiftIdx, 'to')} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white/80 focus:border-[#C89B3C] outline-none dir-ltr" />
+                                            </div>
+                                        )) : (
+                                            <span className="text-xs text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg w-fit md:ml-auto">مغلق في هذا اليوم</span>
+                                        )}
+                                    </div>
+
                                 </div>
                             ))}
                         </div>
-                    </div>
+                    </section>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* ========= العمود الأول (اليمين) ========= */}
-                    <div className="space-y-6">
-                        
-                        <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                            <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><User size={16}/> بيانات المزود والتصنيف</h3>
-                            <div className="space-y-2 text-sm">
-                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">اسم المزود:</span> <span className="font-bold">{selectedService.profiles?.full_name}</span></p>
-                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">البريد الإلكتروني:</span> <span className="font-mono">{selectedService.profiles?.email}</span></p>
-                                <p className="flex justify-between border-b border-white/5 pb-2"><span className="text-white/50">القسم الرئيسي:</span> <span className="font-bold">{selectedService.service_category === 'facility' ? 'مرفق أو فعالية' : 'تجربة سياحية'}</span></p>
-                                <p className="flex justify-between"><span className="text-white/50">النوع الفرعي:</span> <span className="bg-white/10 px-2 rounded">{selectedService.sub_category}</span></p>
-                            </div>
-                        </div>
-
-                        <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                            <h3 className="text-[#C89B3C] font-bold text-sm mb-2">البيانات الأساسية الحالية</h3>
-                            <div><p className="text-xs text-white/50 mb-1">العنوان</p><p className="font-bold text-lg">{selectedService.title}</p></div>
-                            {selectedService.sub_category !== 'event' && <div><p className="text-xs text-white/50 mb-1">{selectedService.sub_category === 'lodging' ? 'سعر الليلة' : 'السعر'}</p><p className="font-bold text-[#C89B3C] text-xl font-mono">{selectedService.price === 0 ? 'مجاني' : `${selectedService.price} ﷼`}</p></div>}
-                            <div><p className="text-xs text-white/50 mb-1">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{selectedService.description}</p></div>
-                        </div>
-
-                        {/* ✅ إعدادات عمولة المنصة */}
-                        {(selectedService.status === 'pending' || selectedService.status === 'approved' || selectedService.status === 'update_requested') && (
-                            <div className="bg-black/40 border border-white/10 p-5 rounded-xl">
-                                <div className="flex justify-between items-start mb-4">
-                                    <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Percent size={18}/> إعدادات عمولة المنصة</h3>
-                                    <button onClick={handleUpdateCommission} disabled={savingCommission} className="bg-[#C89B3C] hover:bg-white text-black font-bold text-xs px-4 py-2 rounded-lg transition flex items-center gap-2">
-                                        {savingCommission ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} حفظ النسبة
-                                    </button>
-                                </div>
-                                <div className="flex flex-col gap-3">
-                                    <label className="flex items-center gap-3 cursor-pointer">
-                                        <input type="radio" name="service_commission" checked={!useCustomCommission} onChange={() => setUseCustomCommission(false)} className="accent-[#C89B3C] w-4 h-4" />
-                                        <span className="text-sm text-white/90">اعتماد النسبة العامة للقسم</span>
-                                    </label>
-                                    <label className="flex items-center gap-3 cursor-pointer">
-                                        <input type="radio" name="service_commission" checked={useCustomCommission} onChange={() => setUseCustomCommission(true)} className="accent-[#C89B3C] w-4 h-4" />
-                                        <span className="text-sm text-white/90">تحديد نسبة مخصصة</span>
-                                    </label>
-                                </div>
-                                {useCustomCommission && (
-                                    <div className="mt-4 flex items-center gap-3 animate-in fade-in">
-                                        <input type="number" min="0" max="100" placeholder="النسبة (مثال: 15)" className="w-48 bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-[#C89B3C] outline-none text-white" value={customCommission} onChange={(e) => setCustomCommission(e.target.value)} />
-                                        <span className="text-white/50 text-sm font-bold">% من الإيراد</span>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* ========= العمود الثاني (اليسار) ========= */}
-                    <div className="space-y-6">
-                        
-                        {selectedService.location_lat && selectedService.location_lng && (
-                            <div className="h-64 rounded-xl overflow-hidden border border-white/10 relative shadow-lg">
-                                <Map initialViewState={{ latitude: selectedService.location_lat, longitude: selectedService.location_lng, zoom: 12 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN}>
-                                    <NavigationControl showCompass={false}/>
-                                    <Marker latitude={selectedService.location_lat} longitude={selectedService.location_lng} color="#C89B3C"/>
-                                </Map>
-                            </div>
-                        )}
-
-                        {/* ✅ خدمات المرفق الديناميكية (Facility) */}
-                        {selectedService.sub_category === 'facility' && safeArray(selectedService.details?.facility_services).length > 0 && (
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                                <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Activity size={16}/> الخدمات المتوفرة في المرفق</h3>
-                                <div className="space-y-2">
-                                    {safeArray(selectedService.details.facility_services).map((srv: any, i: number) => (
-                                        <div key={i} className="flex gap-3 bg-white/5 p-3 rounded-lg items-center border border-white/5">
-                                            {srv.image_url ? <Image src={srv.image_url} width={40} height={40} className="rounded object-cover" alt={srv.name}/> : <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center shrink-0"><ImageIcon size={14} className="text-white/20"/></div>}
-                                            <div><p className="text-sm font-bold text-white">{srv.name}</p>{srv.description && <p className="text-xs text-white/50">{srv.description}</p>}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ✅ مميزات النزل (Lodging) */}
-                        {selectedService.sub_category === 'lodging' && (safeArray(selectedService.details?.features).length > 0 || safeArray(selectedService.details?.custom_features).length > 0) && (
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                                <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Sparkles size={16}/> مميزات النزل</h3>
-                                <div className="flex flex-wrap gap-2">
-                                    {safeArray(selectedService.details.features).map((feat: string, i: number) => getTranslatedFeature(feat))}
-                                    {safeArray(selectedService.details.custom_features).map((feat: string, i: number) => <span key={`c-${i}`} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {feat}</span>)}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* سياسات المكان */}
-                        {selectedService.details?.policies && (
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-2">
-                                <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><ShieldAlert size={16}/> سياسات وشروط المكان</h3>
-                                <p className="text-sm text-white/80 whitespace-pre-line bg-white/5 p-3 rounded-lg border border-white/5">{selectedService.details.policies}</p>
-                            </div>
-                        )}
-
-                        {/* ✅ أوقات الدوام للمرافق والنزل */}
-                        {safeArray(selectedService.work_schedule).length > 0 && (
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                                <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Clock size={16}/> أوقات العمل والدوام</h3>
-                                <div className="space-y-2">
-                                    {safeArray(selectedService.work_schedule).map((day: any, i: number) => (
-                                        <div key={i} className="flex justify-between items-center text-sm border-b border-white/5 pb-2 last:border-0 last:pb-0">
-                                            <span className="text-white/70 font-bold">{day.day}</span>
-                                            {day.active ? (
-                                                <div className="flex flex-wrap justify-end gap-1.5">
-                                                    {safeArray(day.shifts).map((s:any, idx:number) => <span key={idx} className="bg-white/10 px-2 py-0.5 rounded text-xs dir-ltr">{s.from} - {s.to}</span>)}
-                                                </div>
-                                            ) : <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">مغلق</span>}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ✅ تفاصيل النزل السياحي (البيانات الجانبية التي تم إخفاؤها مسبقاً للتبسيط) */}
-                        {selectedService.sub_category === 'lodging' && selectedService.details?.lodging_type && (
-                             <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
-                                <h3 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2"><Home size={16}/> تفاصيل النزل السياحي</h3>
-                                <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div><p className="text-xs text-white/50">نوع النزل</p><p className="font-bold">{selectedService.details.lodging_type === 'other' ? selectedService.details.custom_lodging_type : selectedService.details.lodging_type}</p></div>
-                                    <div><p className="text-xs text-white/50">عدد الوحدات/الغرف</p><p>{selectedService.details.number_of_units || 'غير محدد'}</p></div>
-                                    {selectedService.details.area && <div><p className="text-xs text-white/50">المساحة</p><p dir="ltr" className="text-right">{selectedService.details.area} m²</p></div>}
-                                    {selectedService.max_capacity && <div><p className="text-xs text-white/50">السعة (أشخاص)</p><p>{selectedService.max_capacity}</p></div>}
-                                    {selectedService.details.target_audience && <div><p className="text-xs text-white/50">مخصص لـ</p><p>{selectedService.details.target_audience === 'singles' ? 'عزاب' : selectedService.details.target_audience === 'families' ? 'عوايل' : 'الكل'}</p></div>}
-                                </div>
-                                
-                                {selectedService.details.apartment_details && (
-                                    <div className="mt-3 pt-3 border-t border-white/5 grid grid-cols-3 gap-2 text-sm text-center">
-                                        <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">غرف</span>{selectedService.details.apartment_details.rooms}</div>
-                                        <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">أسرة</span>{selectedService.details.apartment_details.beds}</div>
-                                        <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">حمامات</span>{selectedService.details.apartment_details.bathrooms}</div>
-                                    </div>
-                                )}
-                                {selectedService.details.house_details && (
-                                    <div className="mt-3 pt-3 border-t border-white/5 grid grid-cols-4 gap-2 text-sm text-center">
-                                        <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">أدوار</span>{selectedService.details.house_details.floors}</div>
-                                        <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">غرف نوم</span>{selectedService.details.house_details.bedrooms}</div>
-                                        <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">مجالس</span>{selectedService.details.house_details.livingRooms}</div>
-                                        <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">حمامات</span>{selectedService.details.house_details.bathrooms}</div>
-                                    </div>
-                                )}
-
-                                {selectedService.details.deposit_config?.required && (
-                                    <div className="mt-3 bg-orange-500/10 border border-orange-500/20 p-2 rounded-lg text-xs">
-                                        <p className="text-orange-400 font-bold mb-1"><ShieldCheck size={12} className="inline mr-1"/> تأمين مطلوب</p>
-                                        <p className="text-white/80">الدفع: {selectedService.details.deposit_config.paymentTime === 'with_booking' ? 'مع الحجز بالمنصة' : 'نقداً عند الوصول'}</p>
-                                        <p className="text-white/80">الحالة: {selectedService.details.deposit_config.isRefundable ? 'مسترد' : 'غير مسترد'}</p>
-                                    </div>
-                                )}
-                             </div>
-                        )}
-
-                        {/* ✅ تفاصيل التجربة السياحية (Experience) */}
-                        {selectedService.sub_category === 'experience' && selectedService.details?.experience_info && (
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                                <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Compass size={16}/> تفاصيل التجربة السياحية</h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div><p className="text-xs text-white/50">مستوى الصعوبة</p><p className="font-bold text-sm">{selectedService.details.experience_info.difficulty}</p></div>
-                                    <div><p className="text-xs text-white/50">مدة التجربة</p><p className="font-bold text-sm">{selectedService.details.experience_info.duration}</p></div>
-                                    <div><p className="text-xs text-white/50">الفئة المستهدفة</p><p className="font-bold text-sm">{selectedService.details.experience_info.target_audience === 'both' ? 'الكل' : selectedService.details.experience_info.target_audience === 'families' ? 'عوايل' : 'عزاب'}</p></div>
-                                    <div><p className="text-xs text-white/50">دخول الأطفال</p><p className="font-bold text-sm">{selectedService.details.experience_info.children_allowed ? 'مسموح' : 'ممنوع'}</p></div>
-                                </div>
-                                
-                                {safeArray(selectedService.details.experience_info.dates).length > 0 && (
-                                    <div>
-                                        <p className="text-xs text-white/50 mb-1">تواريخ الانعقاد والوقت</p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            <span className="text-xs bg-[#C89B3C] text-black px-2 py-1 rounded font-bold">{selectedService.details.experience_info.start_time}</span>
-                                            {safeArray(selectedService.details.experience_info.dates).map((d: string, i: number) => <span key={i} className="text-xs bg-white/10 px-2 py-1 rounded dir-ltr">{d}</span>)}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {(safeArray(selectedService.details.experience_info.included_services).length > 0 || safeArray(selectedService.details.experience_info.custom_services).length > 0) && (
-                                    <div>
-                                        <p className="text-xs text-white/50 mb-1">الخدمات المشمولة</p>
-                                        <div className="flex flex-wrap gap-1">
-                                            {safeArray(selectedService.details.experience_info.included_services).map((srv: string, i: number) => (
-                                                <span key={i} className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded">{ALL_FEATURES_DICT[srv]?.label || srv}</span>
-                                            ))}
-                                            {safeArray(selectedService.details.experience_info.custom_services).map((srv: string, i: number) => (
-                                                <span key={`cust-${i}`} className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded">{srv}</span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {selectedService.details.experience_info.food_details && (
-                                    <div className="bg-white/5 p-3 rounded-lg text-xs space-y-1">
-                                        <p className="text-[#C89B3C] font-bold mb-1">تفاصيل الطعام</p>
-                                        <p><span className="text-white/50">النوع:</span> {selectedService.details.experience_info.food_details.mealType}</p>
-                                        <p><span className="text-white/50">المشروبات:</span> {selectedService.details.experience_info.food_details.drinks}</p>
-                                        <p><span className="text-white/50">المكونات:</span> {selectedService.details.experience_info.food_details.contents}</p>
-                                        {selectedService.details.experience_info.food_details.calories && <p><span className="text-white/50">السعرات:</span> {selectedService.details.experience_info.food_details.calories}</p>}
-                                    </div>
-                                )}
-
-                                {selectedService.details.experience_info.what_to_bring && <div><p className="text-xs text-white/50">المطلوب إحضاره</p><p className="text-sm bg-white/5 p-2 rounded-lg mt-1">{selectedService.details.experience_info.what_to_bring}</p></div>}
-                                {selectedService.details.experience_info.cancellation_policy && <div><p className="text-xs text-white/50">سياسة الإلغاء</p><p className="text-sm bg-white/5 p-2 rounded-lg mt-1">{selectedService.details.experience_info.cancellation_policy}</p></div>}
-                            </div>
-                        )}
-
-                        {/* ✅ تفاصيل الفعالية (Event) */}
-                        {selectedService.sub_category === 'event' && selectedService.details?.event_info && (
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                                <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Ticket size={16}/> تفاصيل وتواريخ الفعالية</h3>
-                                
-                                <div className="grid grid-cols-2 gap-4 text-sm bg-white/5 p-3 rounded-lg">
-                                    <div><p className="text-xs text-white/50">من تاريخ</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.startDate}</p></div>
-                                    <div><p className="text-xs text-white/50">إلى تاريخ</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.endDate}</p></div>
-                                    <div><p className="text-xs text-white/50">من الساعة</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.startTime}</p></div>
-                                    <div><p className="text-xs text-white/50">إلى الساعة</p><p className="font-bold dir-ltr text-left">{selectedService.details.event_info.dates?.endTime}</p></div>
-                                </div>
-
-                                {(safeArray(selectedService.details.event_info.activities).length > 0 || safeArray(selectedService.details.event_info.custom_activities).length > 0) && (
-                                    <div>
-                                        <p className="text-xs text-white/50 mb-2">الفعاليات الداخلية المتاحة</p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {safeArray(selectedService.details.event_info.activities).map((act: string, i: number) => (
-                                                <span key={i} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{ALL_FEATURES_DICT[act]?.label || act}</span>
-                                            ))}
-                                            {safeArray(selectedService.details.event_info.custom_activities).map((act: string, i: number) => (
-                                                <span key={`cust-${i}`} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{act}</span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {selectedService.commercial_license && (
-                            <div className="bg-[#C89B3C]/10 p-4 rounded-xl border border-[#C89B3C]/20 flex justify-between items-center">
-                                <div><h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><FileText size={16}/> الترخيص التجاري</h3><p className="text-xs text-white/50 mt-1">مرفق من قبل المزود</p></div>
-                                <a href={selectedService.commercial_license} target="_blank" rel="noreferrer" className="bg-[#C89B3C] text-black px-4 py-2 rounded-lg text-xs font-bold hover:bg-white transition flex items-center gap-2"><Eye size={14}/> عرض المرفق</a>
-                            </div>
-                        )}
-
-                    </div>
-                </div>
-
             </div>
 
-            {/* Footer Actions - أزرار الأدمن الديناميكية حسب حالة الطلب */}
-            <div className="p-6 border-t border-white/10 bg-[#151515] rounded-b-3xl">
-                <div className="flex flex-col gap-4">
-                    
-                    {!actionToConfirm && (
-                        <div className="flex flex-wrap gap-4">
-                            
-                            {/* 1. خدمة جديدة */}
-                            {selectedService.status === 'pending' && (
-                                <>
-                                  <button disabled={actionLoading} onClick={() => handleAction('approve')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><CheckCircle size={20}/> الموافقة على نشر الخدمة</button>
-                                  <button onClick={() => setActionToConfirm('reject')} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><XCircle size={20}/> رفض الخدمة</button>
-                                </>
-                            )}
-                            
-                            {/* 2. طلب تعديل */}
-                            {selectedService.status === 'update_requested' && (
-                                <>
-                                  <button disabled={actionLoading} onClick={() => handleAction('approve_update')} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><CheckCircle size={20}/> اعتماد التعديلات ونشرها</button>
-                                  <button onClick={() => setActionToConfirm('reject_update')} className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><XCircle size={20}/> رفض التعديل وإبقاء القديم</button>
-                                </>
-                            )}
-
-                            {/* 3. طلب إيقاف مؤقت */}
-                            {selectedService.status === 'stop_requested' && (
-                                <>
-                                  <button disabled={actionLoading} onClick={() => handleAction('approve_stop')} className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><PauseCircle size={20}/> الموافقة وتأكيد الإيقاف</button>
-                                  <button onClick={() => setActionToConfirm('reject_stop')} className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><XCircle size={20}/> رفض الإيقاف وإعادة التفعيل</button>
-                                </>
-                            )}
-
-                            {/* 4. طلب حذف نهائي */}
-                            {selectedService.status === 'delete_requested' && (
-                                <>
-                                  <button disabled={actionLoading} onClick={() => handleAction('approve_delete')} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><Trash2 size={20}/> الموافقة وحذف الخدمة نهائياً</button>
-                                  <button onClick={() => setActionToConfirm('reject_delete')} className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"><XCircle size={20}/> رفض الحذف</button>
-                                </>
-                            )}
-
-                        </div>
-                    )}
-
-                    {/* حقل تأكيد الرفض مع ذكر السبب */}
-                    {actionToConfirm && (
-                        <div className="animate-in slide-in-from-bottom-2 fade-in space-y-3 bg-red-500/5 p-4 rounded-xl border border-red-500/10">
-                            <h4 className="text-white text-sm font-bold flex items-center gap-2">
-                                <AlertTriangle size={16} className="text-red-400"/>
-                                يرجى توضيح سبب الرفض (سيتم إرساله للمزود عبر الإيميل)
-                            </h4>
-                            <textarea rows={3} placeholder="اكتب الأسباب بوضوح للمزود..." value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-red-500 outline-none" />
-                            <div className="flex gap-3 pt-2">
-                                <button disabled={actionLoading} onClick={() => handleAction(actionToConfirm)} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-lg transition flex justify-center items-center gap-2">
-                                    {actionLoading ? <Loader2 className="animate-spin" size={18}/> : <><Send size={16}/> إرسال الرفض</>}
-                                </button>
-                                <button onClick={() => {setActionToConfirm(null); setRejectionReason("");}} className="px-6 bg-white/10 text-white font-bold py-2.5 rounded-lg hover:bg-white/20 transition">تراجع</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
+            {/* Footer Actions */}
+            <div className="p-6 md:p-8 border-t border-white/10 bg-black/20 flex flex-col md:flex-row justify-end gap-4 mt-auto">
+                <button 
+                    onClick={() => router.push('/provider/services')} 
+                    className="px-8 py-3.5 rounded-xl hover:bg-white/10 transition text-white font-bold border border-transparent hover:border-white/10"
+                >
+                    إلغاء وتراجع
+                </button>
+                <button 
+                    onClick={submitEditRequest} 
+                    disabled={actionLoading} 
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-10 py-3.5 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-70"
+                >
+                    {actionLoading ? <Loader2 className="animate-spin"/> : <><Send size={18}/> إرسال الطلب الشامل للإدارة</>}
+                </button>
             </div>
 
-          </div>
         </div>
-      )}
-
-      {/* تكبير الصور */}
-      {zoomedImage && (
-        <div className="fixed inset-0 z-80 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
-            <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><XCircle size={32} /></button>
-            <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
-                {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> )}
-            </div>
-        </div>
-      )}
-
     </div>
   );
 }

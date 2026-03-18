@@ -145,7 +145,7 @@ export default function AdminLandmarksPage() {
       }
 
       const numValue = parseFloat(cleanValue);
-      setFormData(prev => ({ ...prev, [field]: isNaN(numValue) ? "" : numValue }));
+      setFormData(prev => ({ ...prev, [field]: isNaN(numValue) ? 0 : numValue }));
       
       if (!isNaN(numValue) && map.current && marker.current) {
           const newLat = field === 'lat' ? numValue : formData.lat;
@@ -266,7 +266,7 @@ export default function AdminLandmarksPage() {
 
     try {
       const finalMediaUrls = await uploadFiles();
-      const placeData = { ...formData, media_urls: finalMediaUrls };
+      const placeData = { ...formData, media_urls: finalMediaUrls, price: Number(formData.price) || 0 };
 
       if (formData.type !== 'experience') {
           delete placeData.duration;
@@ -480,7 +480,7 @@ export default function AdminLandmarksPage() {
                           <div className="space-y-2 pt-2 border-t border-white/10 mt-4">
                               <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type !== 'experience' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
                               <div className="relative">
-                                  <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} placeholder="0 = مجاني" className="w-full bg-black/30 border border-white/10 rounded-xl pl-16 pr-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono dir-ltr text-right" />
+                                  <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value) || 0})} placeholder="0 = مجاني" className="w-full bg-black/30 border border-white/10 rounded-xl pl-16 pr-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono dir-ltr text-right" />
                                   <span className="absolute left-4 top-3 text-white/40">SAR</span>
                               </div>
                           </div>
