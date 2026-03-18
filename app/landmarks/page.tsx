@@ -18,7 +18,6 @@ export default function LandmarksPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   
-  // ✅ حالة البحث
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -42,12 +41,8 @@ export default function LandmarksPage() {
     return !!(url.match(/\.(mp4|webm|ogg|mov)$/i) || url.includes('video') || url.includes('mp4'));
   };
 
-  // ✅ منطق الفلترة (شامل النوع الطبيعي والبحث)
   const filteredPlaces = places.filter(place => {
-    // 1. فلتر النوع
     const matchesType = filter === 'all' || place.type === filter;
-    
-    // 2. فلتر البحث
     const query = searchQuery.toLowerCase().trim();
     const matchesSearch = query === "" || 
         place.name.toLowerCase().includes(query) ||
@@ -60,15 +55,9 @@ export default function LandmarksPage() {
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
       
-      {/* HEADER SECTION */}
       <div className="relative h-[40vh] md:h-[45vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
-        <Image 
-          src="/logo.png" 
-          alt="Sayyir Logo" 
-          fill 
-          className="object-contain p-16 md:p-24 opacity-30"
-        />
-        <div className="absolute inset-0 bg-gradientto-b from-black/50 via-black/70 to-[#0a0a0a]" />
+        <Image src="/logo.png" alt="Sayyir Logo" fill className="object-contain p-16 md:p-24 opacity-30" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/70 to-[#0a0a0a]" />
         
         <div className="relative z-10 text-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
           <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-2 md:mb-4 drop-shadow-lg">كنوز عسير</h1>
@@ -82,7 +71,6 @@ export default function LandmarksPage() {
         </Link>
       </div>
 
-      {/* ==================== قسم البحث ======================== */}
       <div className="container mx-auto px-4 -mt-6 md:-mt-8 relative z-30 mb-6 md:mb-8">
         <div className="max-w-md mx-auto relative group">
             <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-3 md:px-4 h-10 md:h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
@@ -103,7 +91,6 @@ export default function LandmarksPage() {
         </div>
       </div>
 
-      {/* FILTER TABS */}
       <div className="container mx-auto px-4 relative z-20 mb-8 md:mb-12">
         <div className="flex justify-start md:justify-center gap-2 md:gap-3 bg-white/5 backdrop-blur-xl p-1.5 md:p-2 rounded-full w-full max-w-full md:w-fit mx-auto border border-white/10 shadow-xl overflow-x-auto custom-scrollbar snap-x">
           <button onClick={() => setFilter('all')} className={`px-4 py-1.5 md:px-6 md:py-2 rounded-full transition text-xs md:text-sm font-bold whitespace-nowrap snap-center shrink-0 ${filter === 'all' ? 'bg-[#C89B3C] text-[#2B1F17]' : 'text-white/60 hover:text-white'}`}>الكل</button>
@@ -113,7 +100,6 @@ export default function LandmarksPage() {
         </div>
       </div>
 
-      {/* GRID */}
       <div className="container mx-auto px-4 pb-16 md:pb-20">
         {loading ? (
           <div className="flex justify-center h-32 md:h-40 items-center"><Loader2 className="animate-spin text-[#C89B3C] w-8 h-8 md:w-10 md:h-10" /></div>
@@ -142,16 +128,18 @@ export default function LandmarksPage() {
   );
 }
 
-// ... (مكون بطاقة المعلم السياحي)
-
 function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => boolean }) {
   const isHeritage = data.type === 'heritage';
   const isNatural = data.type === 'natural';
   const mainMedia = data.media_urls && data.media_urls[0] ? data.media_urls[0] : null;
   const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   
+  // ✅ التعديل هنا: فحص دقيق للسعر لضمان عدم ظهور الشارة للمعالم الفارغة (null)
+  const hasPrice = data.price !== null && data.price !== undefined && data.price !== "";
+  const priceValue = Number(data.price);
+  
   return (
-    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-2rem overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
+    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
         <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black flex items-center justify-center">
           {mainMedia ? (
               isMainMediaVideo ? (
@@ -169,16 +157,13 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
                     alt={data.name} 
                     fill 
                     className="object-cover transition-transform duration-700 group-hover:scale-110"
-                    onError={(e) => {
-                      e.currentTarget.src = "/placeholder.jpg"; 
-                    }}
+                    onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }}
                   />
               )
           ) : (
               <Image src="/placeholder.jpg" alt={data.name} fill className="object-cover"/>
           )}
           
-          {/* شارة التصنيف */}
           <div className="absolute top-3 left-3 md:top-4 md:left-4 backdrop-blur-md bg-black/30 px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border border-white/10 flex items-center gap-1 md:gap-1.5 z-10">
             {isHeritage ? <Landmark className="text-amber-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
              isNatural ? <Trees className="text-teal-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
@@ -188,7 +173,12 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
             </span>
           </div>
 
-          {/* ❌ تم حذف شارة السعر نهائياً من هنا لكي لا تظهر في كروت المعالم ❌ */}
+          {/* ✅ الشارة تظهر فقط إذا كان هناك قيمة مدخلة للسعر (بما في ذلك 0 للفعاليات المجانية) */}
+          {hasPrice && (
+              <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10 ${priceValue > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
+                  {priceValue > 0 ? `${priceValue} ريال` : 'مجاني'}
+              </div>
+          )}
         </div>
         
         <div className="p-4 md:p-6 relative -mt-8 md:-mt-10 z-20">

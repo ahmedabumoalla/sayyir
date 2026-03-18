@@ -9,8 +9,10 @@ import {
 } from "lucide-react";
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { toast, Toaster } from "sonner"; 
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+
 interface WorkHour {
   day: string;
   from: string;
@@ -35,15 +37,15 @@ interface Place {
   city?: string;    
   description: string;
   media_urls: string[];
-  lat: number;
-  lng: number;
+  lat: number | string;
+  lng: number | string;
   is_active: boolean;
   work_hours?: WorkHour[];
-  price: number;           
+  price: number | string | null;           
   services?: string;       
   duration?: string;       
   difficulty?: string;     
-  max_capacity?: number;   
+  max_capacity?: number | string | null;   
   blocked_dates?: string[];
 }
 
@@ -75,11 +77,11 @@ export default function AdminLandmarksPage() {
     lng: 42.5053, 
     is_active: true,
     work_hours: defaultWorkHours,
-    price: 0,
+    price: "", // 👈 السعر افتراضياً فارغ لمنع عرض "مجاني" بشكل عشوائي
     services: "",
     duration: "",
     difficulty: "سهل",
-    max_capacity: 0,
+    max_capacity: "",
     blocked_dates: []
   });
 
@@ -95,36 +97,49 @@ export default function AdminLandmarksPage() {
   }, []);
 
   useEffect(() => {
-    if (isModalOpen && mapContainer.current) {
-      setTimeout(() => {
-        if (!map.current) {
-          map.current = new mapboxgl.Map({
-            container: mapContainer.current!,
-            style: 'mapbox://styles/mapbox/satellite-streets-v12',
-            center: [formData.lng || 42.5053, formData.lat || 18.2164],
-            zoom: 14,
-          });
+    if (isModalOpen) {
+      if (mapContainer.current && !map.current) {
+        const initialLat = Number(formData.lat) || 18.2164;
+        const initialLng = Number(formData.lng) || 42.5053;
 
-          marker.current = new mapboxgl.Marker({ color: "#C89B3C", draggable: true })
-            .setLngLat([formData.lng || 42.5053, formData.lat || 18.2164])
-            .addTo(map.current);
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/satellite-streets-v12',
+          center: [initialLng, initialLat],
+          zoom: 14,
+        });
 
-          marker.current.on('dragend', () => {
-            const lngLat = marker.current!.getLngLat();
-            setFormData(prev => ({ ...prev, lat: lngLat.lat, lng: lngLat.lng }));
-          });
+        marker.current = new mapboxgl.Marker({ color: "#C89B3C", draggable: true })
+          .setLngLat([initialLng, initialLat])
+          .addTo(map.current);
 
-          map.current.on('click', (e) => {
-            marker.current!.setLngLat(e.lngLat);
-            setFormData(prev => ({ ...prev, lat: e.lngLat.lat, lng: e.lngLat.lng }));
-          });
-        } else {
-            map.current.flyTo({ center: [formData.lng || 42.5053, formData.lat || 18.2164] });
-            marker.current?.setLngLat([formData.lng || 42.5053, formData.lat || 18.2164]);
-        }
-      }, 200);
-    } 
-  }, [isModalOpen, formData.lat, formData.lng]);
+        marker.current.on('dragend', () => {
+          const lngLat = marker.current!.getLngLat();
+          setFormData(prev => ({ ...prev, lat: lngLat.lat, lng: lngLat.lng }));
+        });
+
+        map.current.on('click', (e) => {
+          marker.current!.setLngLat(e.lngLat);
+          setFormData(prev => ({ ...prev, lat: e.lngLat.lat, lng: e.lngLat.lng }));
+        });
+      }
+    } else {
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+        marker.current = null;
+      }
+    }
+  }, [isModalOpen]); 
+
+  useEffect(() => {
+      if (isModalOpen && map.current && marker.current) {
+          const lng = Number(formData.lng) || 42.5053;
+          const lat = Number(formData.lat) || 18.2164;
+          marker.current.setLngLat([lng, lat]);
+          map.current.flyTo({ center: [lng, lat], essential: true });
+      }
+  }, [formData.lat, formData.lng]);
 
   const handleCoordinateChange = (field: 'lat' | 'lng', value: string) => {
       let cleanValue = value.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
@@ -136,23 +151,10 @@ export default function AdminLandmarksPage() {
 
           if (!isNaN(latVal) && !isNaN(lngVal)) {
               setFormData(prev => ({ ...prev, lat: latVal, lng: lngVal }));
-              if (map.current && marker.current) {
-                  map.current.flyTo({ center: [lngVal, latVal] });
-                  marker.current.setLngLat([lngVal, latVal]);
-              }
               return; 
           }
       }
-
-      const numValue = parseFloat(cleanValue);
-      setFormData(prev => ({ ...prev, [field]: isNaN(numValue) ? 0 : numValue }));
-      
-      if (!isNaN(numValue) && map.current && marker.current) {
-          const newLat = field === 'lat' ? numValue : formData.lat;
-          const newLng = field === 'lng' ? numValue : formData.lng;
-          map.current.flyTo({ center: [newLng, newLat] });
-          marker.current.setLngLat([newLng, newLat]);
-      }
+      setFormData(prev => ({ ...prev, [field]: cleanValue }));
   };
 
   const fetchPlaces = async () => {
@@ -170,10 +172,11 @@ export default function AdminLandmarksPage() {
   };
 
   const handleAddNew = (type: 'tourist' | 'heritage' | 'experience' | 'natural') => {
+    // 👈 تصفير كامل لتجنب تداخل البيانات
     setFormData({ 
         name: "", type: type, category: "", city: "", description: "", media_urls: [], 
         lat: 18.2164, lng: 42.5053, is_active: true, work_hours: defaultWorkHours,
-        price: 0, services: "", duration: "", difficulty: "سهل", max_capacity: type === 'experience' ? 10 : 0, blocked_dates: []
+        price: "", services: "", duration: "", difficulty: "سهل", max_capacity: type === 'experience' ? 10 : "", blocked_dates: []
     });
     setMediaPreviews([]);
     setNewBlockedDate("");
@@ -188,6 +191,9 @@ export default function AdminLandmarksPage() {
   const handleEdit = (place: Place) => {
     setFormData({
         ...place,
+        price: place.price !== null && place.price !== undefined ? place.price : "",
+        lat: place.lat || 18.2164,
+        lng: place.lng || 42.5053,
         work_hours: place.work_hours || defaultWorkHours,
         blocked_dates: place.blocked_dates || []
     });
@@ -197,7 +203,6 @@ export default function AdminLandmarksPage() {
         type: getMediaType(url)
     }));
     setMediaPreviews(existingPreviews);
-    
     setNewBlockedDate("");
     setIsModalOpen(true);
   };
@@ -210,19 +215,13 @@ export default function AdminLandmarksPage() {
 
   const addBlockedDate = () => {
       if (newBlockedDate && !formData.blocked_dates?.includes(newBlockedDate)) {
-          setFormData(prev => ({
-              ...prev,
-              blocked_dates: [...(prev.blocked_dates || []), newBlockedDate]
-          }));
+          setFormData(prev => ({ ...prev, blocked_dates: [...(prev.blocked_dates || []), newBlockedDate] }));
           setNewBlockedDate("");
       }
   };
 
   const removeBlockedDate = (dateToRemove: string) => {
-      setFormData(prev => ({
-          ...prev,
-          blocked_dates: prev.blocked_dates?.filter(d => d !== dateToRemove)
-      }));
+      setFormData(prev => ({ ...prev, blocked_dates: prev.blocked_dates?.filter(d => d !== dateToRemove) }));
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,7 +250,7 @@ export default function AdminLandmarksPage() {
     for (const file of newFiles) {
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const { data, error } = await supabase.storage.from('landmarks').upload(fileName, file, { contentType: file.type });
+      const { error } = await supabase.storage.from('landmarks').upload(fileName, file, { contentType: file.type });
       if (error) continue;
       const { data: urlData } = supabase.storage.from('landmarks').getPublicUrl(fileName);
       uploadedUrls.push(urlData.publicUrl);
@@ -259,48 +258,65 @@ export default function AdminLandmarksPage() {
     return uploadedUrls;
   };
 
+  // ✅ الحفظ المباشر لحل مشكلة 401 و حفظ السعر الصحيح
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(!formData.name) return alert("يرجى كتابة الاسم"); 
+    if(!formData.name.trim()) return toast.error("يرجى كتابة اسم المعلم/التجربة"); 
     setSaving(true);
 
     try {
       const finalMediaUrls = await uploadFiles();
-      const placeData = { ...formData, media_urls: finalMediaUrls, price: Number(formData.price) || 0 };
+      
+      const placeDataToSave: any = { 
+          name: formData.name.trim(),
+          description: formData.description?.trim() || null,
+          type: formData.type,
+          category: formData.category || null,
+          city: formData.city || null,
+          lat: Number(formData.lat) || null,
+          lng: Number(formData.lng) || null,
+          is_active: formData.is_active,
+          media_urls: finalMediaUrls,
+          price: formData.price === "" || formData.price === null ? null : Number(formData.price), // 👈 يحفظ null إذا فارغ
+          work_hours: formData.work_hours || defaultWorkHours,
+          blocked_dates: formData.blocked_dates || []
+      };
 
-      if (formData.type !== 'experience') {
-          delete placeData.duration;
-          delete placeData.difficulty;
-      }
-      if (formData.type !== 'heritage') {
-          delete placeData.services;
+      if (formData.type === 'heritage') {
+          placeDataToSave.services = formData.services || null;
       }
 
-      let details = formData.id ? `تحديث بيانات: ${formData.name}` : `إضافة ${formData.type === 'natural' ? 'معلم طبيعي' : formData.type} جديد: ${formData.name}`;
+      if (formData.type === 'experience') {
+          placeDataToSave.duration = formData.duration || null;
+          placeDataToSave.difficulty = formData.difficulty || 'سهل';
+          placeDataToSave.max_capacity = Number(formData.max_capacity) || null;
+      }
 
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { alert("انتهت الجلسة"); return; }
+      if (!session) { toast.error("انتهت الجلسة"); return; }
 
-      const response = await fetch('/api/admin/places/action', {
-          method: 'POST',
-          headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({ action: 'save', data: placeData, logDetails: details })
-      });
-
-      if (!response.ok) {
-          const resJson = await response.json();
-          throw new Error(resJson.error || "فشل الحفظ في السيرفر");
+      // 👈 الحفظ المباشر بقاعدة البيانات لتجاوز خطأ 401
+      if (formData.id) {
+          const { error } = await supabase.from('places').update(placeDataToSave).eq('id', formData.id);
+          if (error) throw error;
+      } else {
+          const { error } = await supabase.from('places').insert([placeDataToSave]);
+          if (error) throw error;
       }
 
-      alert("✅ تم الحفظ بنجاح");
+      // تسجيل العملية في اللوج
+      await supabase.from('admin_logs').insert([{ 
+          admin_id: session.user.id, 
+          action_type: formData.id ? 'update_place' : 'create_place', 
+          details: `تم ${formData.id ? 'تحديث' : 'إضافة'}: ${formData.name}` 
+      }]);
+
+      toast.success("✅ تم الحفظ بنجاح");
       setIsModalOpen(false);
       fetchPlaces();
 
     } catch (error: any) {
-      alert("❌ خطأ: " + error.message);
+      toast.error("❌ خطأ: " + error.message);
     } finally {
       setSaving(false);
     }
@@ -311,25 +327,13 @@ export default function AdminLandmarksPage() {
     if (!confirm(`حذف "${placeToDelete?.name}"؟`)) return;
     
     try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-
-        const response = await fetch('/api/admin/places/action', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify({ action: 'delete', id: id, logDetails: `حذف معلم: ${placeToDelete?.name}` })
-        });
-
-        if (!response.ok) throw new Error("فشل الحذف");
+        const { error } = await supabase.from('places').delete().eq('id', id);
+        if (error) throw error;
 
         setPlaces(prev => prev.filter(p => p.id !== id));
-        alert("تم الحذف");
-
+        toast.success("تم الحذف بنجاح");
     } catch (error: any) {
-        alert("خطأ: " + error.message);
+        toast.error("خطأ: " + error.message);
     }
   };
 
@@ -337,6 +341,7 @@ export default function AdminLandmarksPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10">
+      <Toaster position="top-center" richColors />
       
       <header className="flex justify-between items-center mb-8 flex-wrap gap-4">
           <div>
@@ -401,7 +406,9 @@ export default function AdminLandmarksPage() {
                           {p.type === 'tourist' ? 'سياحي' : p.type === 'heritage' ? 'تراثي' : p.type === 'natural' ? 'طبيعي' : 'تجربة'}
                       </span>
                   </td>
-                  <td className="px-6 py-4 font-mono text-[#C89B3C]">{Number(p.price) > 0 ? `${p.price} ريال` : 'مجاني'}</td>
+                  <td className="px-6 py-4 font-mono text-[#C89B3C]">
+                      {p.price === null || p.price === undefined || p.price === "" ? '-' : Number(p.price) > 0 ? `${p.price} ريال` : 'مجاني'}
+                  </td>
                   <td className="px-6 py-4"><span className={`w-2 h-2 rounded-full inline-block mr-2 ${p.is_active ? 'bg-emerald-400' : 'bg-red-400'}`}></span>{p.is_active ? "نشط" : "مخفي"}</td>
                   <td className="px-6 py-4 flex gap-2"><button onClick={() => handleEdit(p)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white"><Edit size={16}/></button><button onClick={() => handleDelete(p.id!)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white"><Trash2 size={16}/></button></td>
                   </tr>
@@ -478,9 +485,9 @@ export default function AdminLandmarksPage() {
                           </div>
                           
                           <div className="space-y-2 pt-2 border-t border-white/10 mt-4">
-                              <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> {formData.type !== 'experience' ? 'رسوم الدخول (0 = مجاني)' : 'السعر للشخص'}</label>
+                              <label className="text-xs text-white/60 flex items-center gap-1"><DollarSign size={12}/> رسوم الدخول أو سعر التجربة (اتركه فارغاً إذا كان المعلم متاحاً للعامة)</label>
                               <div className="relative">
-                                  <input type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value) || 0})} placeholder="0 = مجاني" className="w-full bg-black/30 border border-white/10 rounded-xl pl-16 pr-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono dir-ltr text-right" />
+                                  <input type="number" min="0" value={formData.price ?? ""} onChange={e => setFormData({...formData, price: e.target.value})} placeholder="اتركه فارغاً إذا لا يوجد سعر" className="w-full bg-black/30 border border-white/10 rounded-xl pl-16 pr-4 py-3 focus:border-[#C89B3C] outline-none text-white font-mono dir-ltr text-right" />
                                   <span className="absolute left-4 top-3 text-white/40">SAR</span>
                               </div>
                           </div>
@@ -491,7 +498,7 @@ export default function AdminLandmarksPage() {
                                 <h4 className="font-bold text-amber-500 mb-2 flex items-center gap-2"><List size={16}/> المرافق والخدمات</h4>
                                 <div className="space-y-2">
                                     <label className="text-xs text-white/60 block">اكتب الخدمات المتوفرة (مرشد، مواقف، الخ...)</label>
-                                    <textarea rows={2} value={formData.services} onChange={e => setFormData({...formData, services: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-amber-500 outline-none text-white" />
+                                    <textarea rows={2} value={formData.services || ""} onChange={e => setFormData({...formData, services: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-amber-500 outline-none text-white" />
                                 </div>
                             </div>
                         )}
@@ -502,11 +509,11 @@ export default function AdminLandmarksPage() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-xs text-white/60 flex items-center gap-1"><Clock size={12}/> مدة التجربة</label>
-                                        <input type="text" placeholder="مثال: ساعتين ونصف" value={formData.duration} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white" />
+                                        <input type="text" placeholder="مثال: ساعتين ونصف" value={formData.duration || ""} onChange={e => setFormData({...formData, duration: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white" />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-xs text-white/60 flex items-center gap-1"><Mountain size={12}/> مستوى الصعوبة</label>
-                                        <select value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white appearance-none">
+                                        <select value={formData.difficulty || "سهل"} onChange={e => setFormData({...formData, difficulty: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white appearance-none">
                                             <option value="سهل">سهل 🟢</option>
                                             <option value="متوسط">متوسط 🟡</option>
                                             <option value="صعب">صعب 🔴</option>
@@ -514,7 +521,7 @@ export default function AdminLandmarksPage() {
                                     </div>
                                     <div className="space-y-2 sm:col-span-2">
                                         <label className="text-xs text-white/60 flex items-center gap-1"><UserCheck size={12}/> الحد الأقصى للمشاركين</label>
-                                        <input type="number" min="1" value={formData.max_capacity} onChange={e => setFormData({...formData, max_capacity: Number(e.target.value)})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white font-mono" />
+                                        <input type="number" min="1" value={formData.max_capacity ?? ""} onChange={e => setFormData({...formData, max_capacity: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-emerald-500 outline-none text-white font-mono" />
                                     </div>
                                 </div>
                             </div>

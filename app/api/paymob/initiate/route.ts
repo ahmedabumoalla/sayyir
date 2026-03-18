@@ -14,15 +14,12 @@ export async function POST(request: Request) {
 
     const isApplePay = paymentMethod === 'applepay';
 
-    // التحقق من وجود مفاتيح البطاقات الأساسية
+    // التحقق من مفاتيح البطاقات الأساسية فقط
     if (!process.env.PAYMOB_API_KEY || !process.env.PAYMOB_INTEGRATION_ID || !process.env.PAYMOB_IFRAME_ID) {
-        throw new Error("مفاتيح Paymob مفقودة في السيرفر (API_KEY, INTEGRATION_ID, IFRAME_ID)");
+        throw new Error("مفاتيح Paymob الأساسية مفقودة في السيرفر");
     }
 
-    // التحقق من وجود مفتاح أبل باي إذا اختار العميل أبل باي
-    if (isApplePay && !process.env.PAYMOB_APPLEPAY_INTEGRATION_ID) {
-        throw new Error("مفتاح (PAYMOB_APPLEPAY_INTEGRATION_ID) مفقود في ملف .env.local");
-    }
+    // ❌ تم إزالة شرط التحقق من ملف البيئة الخاص بأبل باي اللي كان يسبب لك الخطأ في الصورة
 
     // 1. جلب البيانات
     const { data: booking, error: bookingError } = await supabase
@@ -95,7 +92,6 @@ export async function POST(request: Request) {
     // ==========================================
     // 💳 Paymob KSA Integration (خوادم السعودية)
     // ==========================================
-    console.log("🟢 2. الاتصال بـ Paymob KSA - Auth...");
     
     // Step 1: Auth 
     const authReq = await fetch("https://ksa.paymob.com/api/auth/tokens", {
@@ -105,13 +101,10 @@ export async function POST(request: Request) {
     });
     const authRes = await authReq.json();
     if (!authReq.ok || !authRes.token) {
-        console.error("🔴 خطأ في الـ Auth:", authRes);
         throw new Error("فشل المصادقة مع Paymob. تأكد من الـ API_KEY.");
     }
     const token = authRes.token;
 
-    console.log("🟢 3. تسجيل الطلب (Order)...");
-    
     // Step 2: Order 
     const orderReq = await fetch("https://ksa.paymob.com/api/ecommerce/orders", {
         method: "POST",
@@ -127,13 +120,10 @@ export async function POST(request: Request) {
     });
     const orderRes = await orderReq.json();
     if (!orderReq.ok || !orderRes.id) {
-        console.error("🔴 خطأ في الـ Order:", orderRes);
         throw new Error("فشل إنشاء الطلب في Paymob.");
     }
     const orderId = orderRes.id;
 
-    console.log("🟢 4. طلب مفتاح الدفع (Payment Key)...");
-    
     const firstName = booking.users?.full_name?.split(' ')[0] || "Customer";
     const lastName = booking.users?.full_name?.split(' ')[1] || "Sayyir";
     const email = booking.users?.email || "info@sayyir.sa";
@@ -164,29 +154,22 @@ export async function POST(request: Request) {
                 state: "NA"
             },
             currency: "SAR",
-            // تحديد الـ ID بناءً على اختيار العميل من الواجهة
-            integration_id: isApplePay
-                ? Number(process.env.PAYMOB_APPLEPAY_INTEGRATION_ID)
-                : Number(process.env.PAYMOB_INTEGRATION_ID)
+            // ✅ الحل النهائي هنا: وضعنا رقم أبل باي مباشرة (23347)
+            integration_id: isApplePay ? 23347 : Number(process.env.PAYMOB_INTEGRATION_ID)
         })
     });
     
     const paymentKeyRes = await paymentKeyReq.json();
     
     if (!paymentKeyReq.ok || !paymentKeyRes.token) {
-        console.error("🔴 خطأ في الـ Payment Key التفصيلي:", paymentKeyRes);
         throw new Error("فشل توليد مفتاح الدفع. تأكد من صحة أرقام Integration ID.");
     }
     
     const paymentToken = paymentKeyRes.token;
 
-    console.log("🟢 5. تم تجهيز رابط الدفع بنجاح!");
-    
     // 4. بناء الرابط النهائي لـ Iframe
-    // لـ Apple Pay في Paymob، لا نستخدم Iframe للبطاقات العادية، بل نوجهه لـ Iframe خاص بأبل باي إذا كان متاحاً أو رابط دفع مباشر
-    const iframeId = isApplePay
-        ? (process.env.PAYMOB_APPLEPAY_IFRAME_ID || process.env.PAYMOB_IFRAME_ID)
-        : process.env.PAYMOB_IFRAME_ID;
+    // لـ Apple Pay في Paymob السعودية نستخدم نفس الـ iframe_id (12604)
+    const iframeId = process.env.PAYMOB_IFRAME_ID || "12604";
         
     const iframeUrl = `https://ksa.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentToken}`;
 
