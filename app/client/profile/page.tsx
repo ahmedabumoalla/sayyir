@@ -35,10 +35,31 @@ export default function ClientProfilePage() {
   const handleUpdateProfile = async () => {
     if (!profile.full_name.trim()) return alert("الاسم مطلوب");
     setUpdating(true);
-    const { error } = await supabase.from("profiles").update({ full_name: profile.full_name, phone: profile.phone }).eq("id", profile.id);
-    if (error) alert("فشل التحديث: " + error.message);
-    else alert("تم تحديث بياناتك بنجاح ✅");
-    setUpdating(false);
+
+    try {
+        // 1. تحديث جدول profiles وحل مشكلة 409 (إذا كان الجوال فارغ يرسله null وليس "")
+        const phoneToSave = profile.phone.trim() === "" ? null : profile.phone.trim();
+        
+        const { error: profileError } = await supabase.from("profiles").update({ 
+            full_name: profile.full_name, 
+            phone: phoneToSave 
+        }).eq("id", profile.id);
+
+        if (profileError) throw profileError;
+
+        // 2. تحديث اسم المستخدم في نظام المصادقة (Auth) بدون رقم الجوال لمنع خطأ 422
+        const { error: authError } = await supabase.auth.updateUser({
+            data: { full_name: profile.full_name }
+        });
+
+        if (authError) throw authError;
+
+        alert("تم تحديث بياناتك بنجاح ✅");
+    } catch (err: any) {
+        alert("فشل التحديث: " + err.message);
+    } finally {
+        setUpdating(false);
+    }
   };
 
   const handleUpdatePassword = async () => {

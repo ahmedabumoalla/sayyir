@@ -77,7 +77,7 @@ export default function AdminLandmarksPage() {
     lng: 42.5053, 
     is_active: true,
     work_hours: defaultWorkHours,
-    price: "", // 👈 السعر افتراضياً فارغ لمنع عرض "مجاني" بشكل عشوائي
+    price: "",
     services: "",
     duration: "",
     difficulty: "سهل",
@@ -167,12 +167,13 @@ export default function AdminLandmarksPage() {
   const fetchLookups = async () => {
     const { data: cities } = await supabase.from('cities').select('*').order('name');
     if (cities) setCitiesList(cities);
-    const { data: cats } = await supabase.from('categories').select('*').eq('type', 'place').order('name');
+    
+    // ✅ تم تعديل جلب التصنيفات لجلب كل التصنيفات الديناميكية من الإعدادات لتعرض بأيقوناتها
+    const { data: cats } = await supabase.from('categories').select('*').order('name');
     if (cats) setCategoriesList(cats);
   };
 
   const handleAddNew = (type: 'tourist' | 'heritage' | 'experience' | 'natural') => {
-    // 👈 تصفير كامل لتجنب تداخل البيانات
     setFormData({ 
         name: "", type: type, category: "", city: "", description: "", media_urls: [], 
         lat: 18.2164, lng: 42.5053, is_active: true, work_hours: defaultWorkHours,
@@ -258,10 +259,13 @@ export default function AdminLandmarksPage() {
     return uploadedUrls;
   };
 
-  // ✅ الحفظ المباشر لحل مشكلة 401 و حفظ السعر الصحيح
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if(!formData.name.trim()) return toast.error("يرجى كتابة اسم المعلم/التجربة"); 
+    
+    // ✅ تحقق إضافي لضمان اختيار التصنيف
+    if(!formData.category) return toast.error("يرجى اختيار التصنيف من القائمة"); 
+
     setSaving(true);
 
     try {
@@ -277,7 +281,7 @@ export default function AdminLandmarksPage() {
           lng: Number(formData.lng) || null,
           is_active: formData.is_active,
           media_urls: finalMediaUrls,
-          price: formData.price === "" || formData.price === null ? null : Number(formData.price), // 👈 يحفظ null إذا فارغ
+          price: formData.price === "" || formData.price === null ? null : Number(formData.price),
           work_hours: formData.work_hours || defaultWorkHours,
           blocked_dates: formData.blocked_dates || []
       };
@@ -295,7 +299,6 @@ export default function AdminLandmarksPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { toast.error("انتهت الجلسة"); return; }
 
-      // 👈 الحفظ المباشر بقاعدة البيانات لتجاوز خطأ 401
       if (formData.id) {
           const { error } = await supabase.from('places').update(placeDataToSave).eq('id', formData.id);
           if (error) throw error;
@@ -304,7 +307,6 @@ export default function AdminLandmarksPage() {
           if (error) throw error;
       }
 
-      // تسجيل العملية في اللوج
       await supabase.from('admin_logs').insert([{ 
           admin_id: session.user.id, 
           action_type: formData.id ? 'update_place' : 'create_place', 
@@ -464,14 +466,37 @@ export default function AdminLandmarksPage() {
                                   <label className="text-xs text-white/60">الاسم</label>
                                   <input required type="text" placeholder="اكتب الاسم هنا..." value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white" />
                               </div>
-                              <div className="space-y-2">
-                                  <label className="text-xs text-white/60">التصنيف</label>
-                                  <select required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
-                                  <option value="">اختر...</option>
-                                  {categoriesList.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
-                                  </select>
+                              
+                              {/* ✅ قسم التصنيفات الديناميكي الجديد المزود بالأيقونات */}
+                              <div className="space-y-2 md:col-span-2">
+                                  <label className="text-xs text-white/60 mb-2 block">التصنيف (اختر من التصنيفات المعتمدة)</label>
+                                  <div className="flex flex-wrap gap-2">
+                                      {categoriesList.map(cat => (
+                                          <button 
+                                              key={cat.id} 
+                                              type="button" 
+                                              onClick={() => setFormData({...formData, category: cat.name})}
+                                              className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${
+                                                  formData.category === cat.name 
+                                                  ? 'bg-[#C89B3C]/20 border-[#C89B3C] text-[#C89B3C] shadow-lg shadow-[#C89B3C]/10' 
+                                                  : 'bg-black/30 border-white/10 text-white/60 hover:bg-white/5 hover:text-white hover:border-white/30'
+                                              }`}
+                                          >
+                                              {cat.icon_url ? (
+                                                  <img src={cat.icon_url} alt={cat.name} className="w-5 h-5 object-contain drop-shadow-md" />
+                                              ) : (
+                                                  <List size={16} />
+                                              )}
+                                              <span className="text-sm font-bold">{cat.name}</span>
+                                          </button>
+                                      ))}
+                                      {categoriesList.length === 0 && (
+                                          <span className="text-xs text-white/40 bg-white/5 px-3 py-2 rounded-lg">لا توجد تصنيفات مضافة في الإعدادات.</span>
+                                      )}
+                                  </div>
                               </div>
-                              <div className="space-y-2">
+
+                              <div className="space-y-2 md:col-span-2 mt-2">
                                   <label className="text-xs text-white/60">المدينة</label>
                                   <select required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:border-[#C89B3C] outline-none text-white appearance-none">
                                           <option value="">اختر...</option>

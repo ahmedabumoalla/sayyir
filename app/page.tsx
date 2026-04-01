@@ -76,8 +76,8 @@ export default function HomePage() {
   const [dashboardLink, setDashboardLink] = useState("/client/dashboard");
 
   const [landmarksData, setLandmarksData] = useState<any[]>([]);
-  const [facilitiesData, setFacilitiesData] = useState<any[]>([]);
   const [experiencesData, setExperiencesData] = useState<any[]>([]);
+  const [eventsData, setEventsData] = useState<any[]>([]); 
   const [partners, setPartners] = useState<any[]>([]); 
   const [announcements, setAnnouncements] = useState<any[]>([]); 
   
@@ -173,16 +173,13 @@ export default function HomePage() {
       const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
       if (places) setLandmarksData(places);
 
-      const { data: facilities } = await supabase.from('services').select('*').in('service_category', ['facility', 'lodging']).eq('status', 'approved').limit(6);
-      if (facilities) setFacilitiesData(facilities);
-
-      const { data: providerExp } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('status', 'approved');
+      const { data: providerExp } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'experience').eq('status', 'approved');
       const { data: adminExp } = await supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);
 
       const formattedProvider = (providerExp || []).map((item: any) => ({
         id: item.id, title: item.title, description: item.description, price: item.price,
-        image: item.image_url ? item.image_url : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder.jpg"),
-        activity_type: item.activity_type || 'تجربة مميزة', duration: item.duration, difficulty_level: item.difficulty_level, meeting_point: item.meeting_point, source: 'service'
+        image: item.images && item.images.length > 0 ? item.images[0] : (item.image_url ? item.image_url : "/placeholder.jpg"),
+        activity_type: item.activity_type || 'تجربة مميزة', duration: item.details?.experience_info?.duration || item.duration, difficulty_level: item.details?.experience_info?.difficulty || item.difficulty_level, meeting_point: item.city || 'عسير', source: 'service'
       }));
 
       const formattedAdmin = (adminExp || []).map((item: any) => ({
@@ -193,6 +190,18 @@ export default function HomePage() {
 
       const allExperiences = [...formattedProvider, ...formattedAdmin];
       setExperiencesData(allExperiences.slice(0, 6));
+
+      const { data: providerEvents } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'event').eq('status', 'approved');
+      const formattedEvents = (providerEvents || []).map((item: any) => ({
+        id: item.id, title: item.title, description: item.description, price: item.price,
+        image: item.images && item.images.length > 0 ? item.images[0] : (item.image_url ? item.image_url : "/placeholder.jpg"),
+        activity_type: 'فعالية مشوقة', 
+        duration: item.details?.event_info?.dates?.startTime ? `تبدأ ${item.details.event_info.dates.startTime}` : '', 
+        difficulty_level: null, 
+        meeting_point: item.city || 'عسير', 
+        source: 'service'
+      }));
+      setEventsData(formattedEvents.slice(0, 6));
 
       const { data: info } = await supabase.from('platform_settings').select('*').single();
       if (info) setPlatformInfo(info);
@@ -358,11 +367,6 @@ export default function HomePage() {
                 <DynamicShowcase title="أبرز المعالم المختارة" linkHref="/landmarks" data={landmarksData} dataType="places" />
               </div>
           )}
-          {facilitiesData.length > 0 && (
-              <div className="container mx-auto px-4">
-                <DynamicShowcase title="أرقى المرافق والخدمات" linkHref="/facilities" data={facilitiesData} dataType="services" />
-              </div>
-          )}
           {experiencesData.length > 0 && (
               <div className="container mx-auto px-4">
                 <div className="flex flex-row items-center justify-between mb-8 w-full">
@@ -377,6 +381,25 @@ export default function HomePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {experiencesData.map((exp) => (
                         <ExperienceCard key={exp.id} data={exp} />
+                    ))}
+                </div>
+              </div>
+          )}
+          {/* ✅ قسم الفعاليات المستقل الجديد */}
+          {eventsData.length > 0 && (
+              <div className="container mx-auto px-4 mt-24">
+                <div className="flex flex-row items-center justify-between mb-8 w-full">
+                    <h2 className="text-3xl font-bold text-white flex items-center gap-2">
+                        <span className="w-2 h-8 bg-red-500 rounded-full inline-block"></span>
+                        أحدث الفعاليات
+                    </h2>
+                    <Link href="/events" className="text-red-400 hover:text-white transition flex items-center gap-2 text-sm font-bold">
+                        عرض الكل <ArrowRight size={16} className="rotate-180" /> 
+                    </Link>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {eventsData.map((ev) => (
+                        <ExperienceCard key={ev.id} data={ev} />
                     ))}
                 </div>
               </div>
@@ -535,9 +558,9 @@ export default function HomePage() {
 }
 
 const isVideo = (url: string | null) => {
-    if (!url) return false;
-    const lowerUrl = url.toLowerCase();
-    return lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') || lowerUrl.includes('.ogg') || lowerUrl.includes('video'); 
+  if (!url) return false;
+  const lowerUrl = url.toLowerCase();
+  return lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') || lowerUrl.includes('.ogg') || lowerUrl.includes('video'); 
 };
 
 function ExperienceCard({ data }: { data: any }) {
@@ -548,7 +571,7 @@ function ExperienceCard({ data }: { data: any }) {
     <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
       <div className="relative h-64 w-full overflow-hidden shrink-0 bg-black">
         {mediaIsVideo ? (
-            <video src={data.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" autoPlay muted loop playsInline />
+            <video src={`${data.image}#t=0.001`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100" autoPlay muted loop playsInline preload="metadata" />
         ) : (
             <img src={data.image} alt={data.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" onError={(e) => { e.currentTarget.src = "/logo.png"; e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; }} />
         )}
@@ -577,7 +600,7 @@ function ExperienceCard({ data }: { data: any }) {
         <p className="text-white/60 text-sm line-clamp-3 mb-6 flex-1 leading-relaxed">{data.description}</p>
         
         <Link href={linkHref} className="w-full block mt-auto">
-            <button className="w-full py-3 rounded-xl bg-[#C89B3C] text-black font-bold hover:bg-[#b38a35] transition-all flex items-center justify-center gap-2">احجز تجربتك <ArrowRight size={18} className="rotate-180"/></button>
+            <button className="w-full py-3 rounded-xl bg-[#C89B3C] text-black font-bold hover:bg-[#b38a35] transition-all flex items-center justify-center gap-2">احجز وتعرف على التفاصيل <ArrowRight size={18} className="rotate-180"/></button>
         </Link>
       </div>
     </div>

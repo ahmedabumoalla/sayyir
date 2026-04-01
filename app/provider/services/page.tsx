@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation"; // 👈 تم إضافة الـ Router
+import { useRouter } from "next/navigation"; 
 import { 
-  Plus, Loader2, X, MapPin, 
-  Clock, Eye, Wifi, Car, Waves, Sparkles, Box, User, 
-  Tv, Wind, ShieldCheck, Coffee, Flame, HeartPulse,
+  Plus, Loader2, X, MapPin, CheckCircle, 
+  Clock, Eye, Wifi, Car, Waves, Sparkles, Box, User, XCircle,
+  Tv, Wind, ShieldCheck, Coffee, Flame, HeartPulse, PlayCircle,
   Mountain, Calendar, Image as ImageIcon, FileText, PauseCircle, AlertTriangle, Info,
-  Utensils, Video, CheckSquare, Activity, Users, Tent, Building, Home, Compass, Ticket, ShieldAlert, Edit, Trash2, Send
+  Utensils, Video, CheckSquare, Activity, Users, Tent, Building, Home, Compass, Ticket, ShieldAlert, Edit, Trash2, Send, Filter
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -62,15 +62,19 @@ const safeArray = (data: any) => {
 };
 
 export default function ProviderServicesPage() {
-  const router = useRouter(); // 👈 تفعيل الـ Router
+  const router = useRouter();
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [providerInfo, setProviderInfo] = useState<any>(null);
   const [viewService, setViewService] = useState<any>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
+  // الفلترة وإحصائيات الحالات
+  const [filter, setFilter] = useState("all");
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+
   // حالات النوافذ المنبثقة للإجراءات الجديدة
-  const [actionModal, setActionModal] = useState<'stop' | 'delete' | null>(null); // 👈 تم حذف الـ edit من هنا
+  const [actionModal, setActionModal] = useState<'stop' | 'delete' | null>(null); 
   const [actionLoading, setActionLoading] = useState(false);
 
   // بيانات نماذج الطلبات
@@ -90,7 +94,16 @@ export default function ProviderServicesPage() {
     
     const { data: srvs, error } = await supabase.from('services').select('*').eq('provider_id', session.user.id).order('created_at', { ascending: false });
     if (error) console.error("Error fetching services:", error);
-    if (srvs) setServices(srvs);
+    
+    if (srvs) {
+        setServices(srvs);
+        // حساب عدد الخدمات لكل حالة للفلتر
+        const counts = srvs.reduce((acc: any, curr: any) => {
+            acc[curr.status] = (acc[curr.status] || 0) + 1;
+            return acc;
+        }, {});
+        setStatusCounts(counts);
+    }
     setLoading(false);
   };
 
@@ -171,33 +184,59 @@ export default function ProviderServicesPage() {
       }
   };
 
+  // فلترة الخدمات للعرض
+  const filteredServices = services.filter(s => filter === "all" || s.status === filter);
+
   return (
     <div className={`space-y-8 animate-in fade-in p-6 ${tajawal.className}`} dir="rtl">
-       <div className="flex justify-between items-center mb-8">
+       <div className="flex justify-between items-center mb-2">
           <div>
              <h1 className="text-2xl font-bold text-white">إدارة خدماتي</h1>
-             <p className="text-white/50 text-sm">أضف خدماتك وتجاربك أو اطلب تعديلها وإيقافها.</p>
+             <p className="text-white/50 text-sm mt-1">أضف خدماتك وتجاربك أو اطلب تعديلها وإيقافها.</p>
           </div>
           <Link href="/provider/services/add" className="bg-[#C89B3C] text-black px-5 py-2.5 rounded-xl font-bold hover:bg-[#b38a35] transition flex items-center gap-2 shadow-lg">
-              <Plus size={18}/> خدمة جديدة
+              <Plus size={18}/> <span className="hidden sm:inline">خدمة جديدة</span>
           </Link>
        </div>
 
+       {/* شريط الفلترة */}
+       <div className="flex gap-3 mb-6 overflow-x-auto pb-2 custom-scrollbar">
+        {[
+            { key: 'all', label: 'الكل', icon: Filter },
+            { key: 'approved', label: 'المفعلة والنشطة', icon: CheckCircle }, 
+            { key: 'pending', label: 'بانتظار المراجعة', icon: Clock }, 
+            { key: 'update_requested', label: 'طلبات التعديل', icon: Edit }, 
+            { key: 'stop_requested', label: 'طلبات الإيقاف', icon: PauseCircle }, 
+            { key: 'stopped', label: 'المتوقفة', icon: PauseCircle }, 
+            { key: 'rejected', label: 'المرفوضة', icon: XCircle }, 
+        ].map((f) => (
+          <button key={f.key} onClick={() => setFilter(f.key)} className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl border transition whitespace-nowrap ${filter === f.key ? 'bg-[#C89B3C] text-black border-[#C89B3C] font-bold' : 'bg-black/20 text-white/60 border-white/10 hover:bg-white/5'}`}>
+            <f.icon size={16} /> 
+            {f.label}
+            {f.key !== 'all' && statusCounts[f.key] > 0 && (
+                <span className="bg-red-500 text-white font-bold text-[10px] w-5 h-5 flex items-center justify-center rounded-full ml-1">
+                    {statusCounts[f.key]}
+                </span>
+            )}
+          </button>
+        ))}
+      </div>
+
        {/* قائمة الخدمات (الكروت) */}
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           {services.length === 0 && !loading && (
+           {filteredServices.length === 0 && !loading && (
                <div className="col-span-full text-center py-20 bg-white/5 rounded-3xl border border-white/5 text-white/30">
-                   لا توجد خدمات مضافة بعد. ابدأ بإضافة خدمتك الأولى!
+                   لا توجد خدمات تطابق هذا الفلتر.
                </div>
            )}
            {loading ? (
                <div className="col-span-full flex justify-center py-20"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div>
            ) : (
-               services.map(s => {
+               filteredServices.map(s => {
                    const badge = getStatusBadge(s.status);
                    return (
                        <div key={s.id} onClick={() => setViewService(s)} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg relative group hover:border-[#C89B3C]/50 transition cursor-pointer flex flex-col h-full">
-                           <div className="absolute top-4 left-4">
+                           <div className="absolute top-4 left-4 z-10">
                                <span className={`px-2 py-1 rounded text-[10px] font-bold shadow-lg ${badge.class}`}>
                                    {badge.text}
                                </span>
@@ -231,7 +270,7 @@ export default function ProviderServicesPage() {
             <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
                
                {/* Header */}
-               <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl">
+               <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl shrink-0">
                   <div>
                       <h2 className="text-2xl font-bold flex items-center gap-2 text-white">إدارة وتفاصيل الخدمة</h2>
                   </div>
@@ -267,7 +306,6 @@ export default function ProviderServicesPage() {
                               {viewService.status === 'update_requested' && viewService.pending_updates && (
                                   <div className="mt-3 bg-black/30 p-3 rounded-lg text-xs space-y-1 border border-white/5">
                                       <p className="text-white/50 mb-2">التعديلات المقترحة:</p>
-                                      {/* هنا يمكنك عرض نبذة عن التعديلات إذا لزم الأمر */}
                                       <p className="text-[#C89B3C]">يمكنك مراجعة التعديلات المعلقة من صفحة التعديل.</p>
                                   </div>
                               )}
@@ -279,7 +317,6 @@ export default function ProviderServicesPage() {
                   {viewService.status === 'approved' && (
                       <div className="flex flex-wrap gap-3 mb-8 bg-black/20 p-4 rounded-xl border border-white/5">
                           <p className="w-full text-sm text-white/50 mb-1">خيارات إدارة الخدمة:</p>
-                          {/* 👇 هنا تم تعديل زر طلب التعديل ليأخذك لصفحة جديدة */}
                           <button onClick={() => router.push(`/provider/services/${viewService.id}/edit`)} className="bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 px-5 py-2.5 rounded-lg text-sm font-bold transition flex items-center gap-2"><Edit size={16}/> طلب تعديل البيانات</button>
                           <button onClick={() => handleOpenAction('stop', viewService)} className="bg-orange-600/20 text-orange-400 hover:bg-orange-600 hover:text-white border border-orange-500/30 px-5 py-2.5 rounded-lg text-sm font-bold transition flex items-center gap-2"><PauseCircle size={16}/> طلب إيقاف مؤقت</button>
                           <button onClick={() => handleOpenAction('delete', viewService)} className="mr-auto bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white border border-red-500/30 px-5 py-2.5 rounded-lg text-sm font-bold transition flex items-center gap-2"><Trash2 size={16}/> طلب حذف نهائي</button>
@@ -292,8 +329,15 @@ export default function ProviderServicesPage() {
                           <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو العرض</h3>
                           <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
                               {viewService.details.images.map((url: string, i: number) => (
-                                  <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition">
-                                      {isVideo(url) ? ( <><video src={url} className="w-full h-full object-cover" muted /><div className="absolute inset-0 flex items-center justify-center bg-black/40"><Video className="text-white/80" size={24}/></div></> ) : ( <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Image ${i}`}/> )}
+                                  <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition bg-black/40 flex items-center justify-center">
+                                      {isVideo(url) ? ( 
+                                        <>
+                                          <video src={`${url}#t=0.001`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition duration-500" muted playsInline preload="metadata"/>
+                                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"><PlayCircle className="text-white/80" size={32}/></div>
+                                        </> 
+                                      ) : ( 
+                                        <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Image ${i}`}/> 
+                                      )}
                                   </div>
                               ))}
                           </div>
@@ -303,25 +347,27 @@ export default function ProviderServicesPage() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       {/* ========= العمود الأول (اليمين) ========= */}
                       <div className="space-y-6">
+                          
                           {/* البيانات الأساسية */}
                           <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                               <h3 className="text-[#C89B3C] font-bold text-sm mb-2">البيانات الأساسية</h3>
                               <div><p className="text-xs text-white/50 mb-1">العنوان</p><p className="font-bold text-lg">{viewService.title}</p></div>
                               
-                              {viewService.sub_category !== 'event' && (
+                              {/* ✅ عرض السعر بدقة للبالغين والأطفال */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div>
-                                      <p className="text-xs text-white/50 mb-1">{viewService.sub_category === 'lodging' ? 'سعر الليلة' : 'السعر'}</p>
+                                      <p className="text-xs text-white/50 mb-1">{viewService.sub_category === 'lodging' ? 'سعر الليلة' : viewService.sub_category === 'event' ? 'تذكرة البالغين' : 'السعر'}</p>
                                       <p className="font-bold text-[#C89B3C] text-xl font-mono">{viewService.price === 0 ? 'مجاني' : `${viewService.price} ﷼`}</p>
                                   </div>
-                              )}
+                                  
+                                  {viewService.sub_category === 'event' && viewService.details?.event_info?.child_price !== undefined && (
+                                      <div>
+                                          <p className="text-xs text-white/50 mb-1">تذكرة الأطفال</p>
+                                          <p className="font-bold text-[#C89B3C] text-xl font-mono">{viewService.details.event_info.child_price === 0 ? 'مجاني' : `${viewService.details.event_info.child_price} ﷼`}</p>
+                                      </div>
+                                  )}
+                              </div>
                               
-                              {viewService.sub_category === 'event' && viewService.details?.event_info?.child_price !== undefined && (
-                                  <div>
-                                      <p className="text-xs text-white/50 mb-1">رسوم الأطفال</p>
-                                      <p className="font-bold text-[#C89B3C] text-lg font-mono">{viewService.details.event_info.child_price === 0 ? 'مجاني' : `${viewService.details.event_info.child_price} ﷼`}</p>
-                                  </div>
-                              )}
-
                               <div><p className="text-xs text-white/50 mb-1">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{viewService.description}</p></div>
                           </div>
 
@@ -413,34 +459,6 @@ export default function ProviderServicesPage() {
                               </div>
                           )}
 
-                          {/* ✅ تفاصيل الفعالية (Event) */}
-                          {viewService.sub_category === 'event' && viewService.details?.event_info && (
-                              <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Ticket size={16}/> تفاصيل وتواريخ الفعالية</h3>
-                                  
-                                  <div className="grid grid-cols-2 gap-4 text-sm bg-white/5 p-3 rounded-lg">
-                                      <div><p className="text-xs text-white/50">من تاريخ</p><p className="font-bold dir-ltr">{viewService.details.event_info.dates?.startDate}</p></div>
-                                      <div><p className="text-xs text-white/50">إلى تاريخ</p><p className="font-bold dir-ltr">{viewService.details.event_info.dates?.endDate}</p></div>
-                                      <div><p className="text-xs text-white/50">من الساعة</p><p className="font-bold dir-ltr">{viewService.details.event_info.dates?.startTime}</p></div>
-                                      <div><p className="text-xs text-white/50">إلى الساعة</p><p className="font-bold dir-ltr">{viewService.details.event_info.dates?.endTime}</p></div>
-                                  </div>
-
-                                  {(safeArray(viewService.details.event_info.activities).length > 0 || safeArray(viewService.details.event_info.custom_activities).length > 0) && (
-                                      <div>
-                                          <p className="text-xs text-white/50 mb-2">الفعاليات الداخلية المتاحة</p>
-                                          <div className="flex flex-wrap gap-1.5">
-                                              {safeArray(viewService.details.event_info.activities).map((act: string, i: number) => (
-                                                  <span key={i} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{ALL_FEATURES_DICT[act]?.label || act}</span>
-                                              ))}
-                                              {safeArray(viewService.details.event_info.custom_activities).map((act: string, i: number) => (
-                                                  <span key={`cust-${i}`} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{act}</span>
-                                              ))}
-                                          </div>
-                                      </div>
-                                  )}
-                              </div>
-                          )}
-
                       </div>
 
                       {/* ========= العمود الثاني (اليسار) ========= */}
@@ -453,7 +471,7 @@ export default function ProviderServicesPage() {
                                       <NavigationControl showCompass={false}/>
                                       <Marker latitude={viewService.location_lat} longitude={viewService.location_lng} color="#C89B3C"/>
                                   </Map>
-                                  <a href={`http://googleusercontent.com/maps.google.com/4${viewService.location_lat},${viewService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-[#C89B3C] hover:text-black transition"><MapPin size={14}/> عرض في الخرائط</a>
+                                  <a href={`http://googleusercontent.com/maps.google.com/maps?q=${viewService.location_lat},${viewService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-[#C89B3C] hover:text-black transition"><MapPin size={14}/> عرض في الخرائط</a>
                               </div>
                           )}
 
@@ -507,6 +525,41 @@ export default function ProviderServicesPage() {
                                           </div>
                                       ))}
                                   </div>
+                              </div>
+                          )}
+
+                          {/* ✅ تفاصيل الفعالية (Event) */}
+                          {viewService.sub_category === 'event' && viewService.details?.event_info && (
+                              <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
+                                  <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Ticket size={16}/> تفاصيل وتواريخ الفعالية</h3>
+                                  
+                                  <div className="grid grid-cols-2 gap-4 text-sm bg-white/5 p-3 rounded-lg">
+                                      <div><p className="text-xs text-white/50">من تاريخ</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.startDate}</p></div>
+                                      <div><p className="text-xs text-white/50">إلى تاريخ</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.endDate}</p></div>
+                                      <div><p className="text-xs text-white/50">من الساعة</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.startTime}</p></div>
+                                      <div><p className="text-xs text-white/50">إلى الساعة</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.endTime}</p></div>
+                                  </div>
+
+                                  {(safeArray(viewService.details.event_info.activities).length > 0 || safeArray(viewService.details.event_info.custom_activities).length > 0) && (
+                                      <div>
+                                          <p className="text-xs text-white/50 mb-2">الفعاليات الداخلية المتاحة</p>
+                                          <div className="flex flex-wrap gap-1.5">
+                                              {safeArray(viewService.details.event_info.activities).map((act: string, i: number) => (
+                                                  <span key={i} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{ALL_FEATURES_DICT[act]?.label || act}</span>
+                                              ))}
+                                              {safeArray(viewService.details.event_info.custom_activities).map((act: string, i: number) => (
+                                                  <span key={`cust-${i}`} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{act}</span>
+                                              ))}
+                                          </div>
+                                      </div>
+                                  )}
+                              </div>
+                          )}
+
+                          {viewService.commercial_license && (
+                              <div className="bg-[#C89B3C]/10 p-4 rounded-xl border border-[#C89B3C]/20 flex justify-between items-center">
+                                  <div><h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><FileText size={16}/> الترخيص التجاري</h3><p className="text-xs text-white/50 mt-1">مرفق من قبل المزود</p></div>
+                                  <a href={viewService.commercial_license} target="_blank" rel="noreferrer" className="bg-[#C89B3C] text-black px-4 py-2 rounded-lg text-xs font-bold hover:bg-white transition flex items-center gap-2"><Eye size={14}/> عرض المرفق</a>
                               </div>
                           )}
 
@@ -586,7 +639,11 @@ export default function ProviderServicesPage() {
         <div className="fixed inset-0 z-80 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><X size={32} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
-                {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> )}
+                {isVideo(zoomedImage) ? ( 
+                    <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> 
+                ) : ( 
+                    <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> 
+                )}
             </div>
         </div>
        )}

@@ -13,6 +13,7 @@ import {
 import { Tajawal } from "next/font/google";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { toast, Toaster } from "sonner";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -131,7 +132,6 @@ const AdminCompareRow = ({ label, originalValue, newValue }: { label: string, or
     </div>
 );
 
-// ✅ دوال استخراج بيانات المزود لتجنب أخطاء المصفوفات
 const getProviderName = (service: any) => {
     if (!service || !service.profiles) return 'غير معروف';
     if (Array.isArray(service.profiles)) return service.profiles[0]?.full_name || 'غير معروف';
@@ -144,6 +144,12 @@ const getProviderEmail = (service: any) => {
     return service.profiles.email || '';
 };
 
+// ✅ جعل الدالة دقيقة وقوية لالتقاط الفيديوهات المرفوعة
+const isVideo = (url: string | null) => {
+    if (!url) return false;
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') || lowerUrl.includes('.ogg') || lowerUrl.includes('.mov') || lowerUrl.includes('video');
+};
 
 export default function ReviewServicesPage() {
   const [services, setServices] = useState<any[]>([]);
@@ -172,7 +178,6 @@ export default function ReviewServicesPage() {
       fetchCounts();
   }, [filter]);
 
-  // ✅ تم تغليف دالة الإحصائيات لضمان عدم إيقاف التطبيق لو حدث خطأ
   const fetchCounts = async () => {
       try {
           const { data, error } = await supabase.from('services').select('status');
@@ -192,11 +197,9 @@ export default function ReviewServicesPage() {
       }
   };
 
-  // ✅ تم تغليف الجلب الرئيسي لحل مشكلة التعليق الدائم (Infinite Loading)
   const fetchServices = async () => {
     try {
         setLoading(true);
-        // تم تصحيح صياغة الجلب (Join) لتكون متوافقة مع كل نسخ قاعدة البيانات
         let query = supabase.from('services').select(`*, profiles (full_name, email)`).order('created_at', { ascending: false });
         
         if (filter !== 'all') query = query.eq('status', filter);
@@ -214,7 +217,7 @@ export default function ReviewServicesPage() {
         console.error("Unexpected Error:", err);
         alert("حدث خطأ غير متوقع أثناء جلب بيانات الخدمات.");
     } finally {
-        setLoading(false); // ✅ هذا السطر الآن سيعمل دائماً ويفك التعليق!
+        setLoading(false); 
     }
   };
 
@@ -229,8 +232,6 @@ export default function ReviewServicesPage() {
     setCustomCommission(service.platform_commission ? service.platform_commission.toString() : "");
   };
 
-  const isVideo = (url: string) => url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes('video');
-
   const handleUpdateCommission = async () => {
       if (!selectedService) return;
       if (useCustomCommission && !customCommission) return alert("الرجاء إدخال النسبة.");
@@ -239,115 +240,56 @@ export default function ReviewServicesPage() {
           const newCommissionValue = useCustomCommission ? Number(customCommission) : null;
           const { error } = await supabase.from('services').update({ platform_commission: newCommissionValue }).eq('id', selectedService.id);
           if (error) throw error;
-          alert("تم تحديث نسبة العمولة بنجاح ✅");
+          toast.success("تم تحديث نسبة العمولة بنجاح ✅");
           fetchServices(); 
           setSelectedService({ ...selectedService, platform_commission: newCommissionValue });
-      } catch (err: any) { alert("خطأ: " + err.message); } finally { setSavingCommission(false); }
+      } catch (err: any) { toast.error("خطأ: " + err.message); } finally { setSavingCommission(false); }
   };
 
   const handleAction = async (action: 'approve' | 'reject' | 'approve_update' | 'reject_update' | 'approve_stop' | 'reject_stop' | 'approve_delete' | 'reject_delete' | 'admin_stop' | 'admin_reactivate') => {
     if (!selectedService) return;
     
-    if (action.startsWith('reject') && action !== 'reject_stop' && action !== 'reject_delete' && !rejectionReason.trim()) return alert("الرجاء كتابة سبب الرفض.");
-    if ((action === 'reject_stop' || action === 'reject_delete') && !rejectionReason.trim()) return alert("الرجاء كتابة سبب الرفض.");
-    
-    if (action === 'approve' && useCustomCommission && !customCommission) return alert("الرجاء إدخال نسبة العمولة المخصصة.");
+    if (action.startsWith('reject') && action !== 'reject_stop' && action !== 'reject_delete' && !rejectionReason.trim()) return toast.error("الرجاء كتابة سبب الرفض.");
+    if ((action === 'reject_stop' || action === 'reject_delete') && !rejectionReason.trim()) return toast.error("الرجاء كتابة سبب الرفض.");
+    if (action === 'approve' && useCustomCommission && !customCommission) return toast.error("الرجاء إدخال نسبة العمولة المخصصة.");
 
     if (action === 'admin_stop') {
-        if (!stopReason.trim()) return alert("يجب توضيح سبب الإيقاف للمزود.");
-        if (stopType === 'temporary' && !stopUntil) return alert("يجب تحديد تاريخ الانتهاء للإيقاف المؤقت.");
+        if (!stopReason.trim()) return toast.error("يجب توضيح سبب الإيقاف.");
+        if (stopType === 'temporary' && !stopUntil) return toast.error("يجب تحديد تاريخ الانتهاء.");
     }
 
     setActionLoading(true);
     try {
       let updates: any = {};
-      let emailType = ''; 
-      let emailBodyReason = '';
-      const finalReason = `${rejectionReason || stopReason}\n\n--\n${ADMIN_CONTACT_INFO}`;
 
-      if (action === 'approve') { 
-          updates = { status: 'approved', rejection_reason: null, platform_commission: useCustomCommission ? Number(customCommission) : null }; 
-          emailType = 'service_approved'; 
-      }
-      if (action === 'reject') { 
-          updates = { status: 'rejected', rejection_reason: finalReason }; 
-          emailType = 'service_rejected'; 
-      }
-      if (action === 'approve_update') {
-          updates = { ...selectedService.pending_updates, status: 'approved', pending_updates: null };
-          emailType = 'service_approved';
-          emailBodyReason = "تمت الموافقة على طلب تعديل بيانات الخدمة بنجاح، وتم نشرها بالبيانات الجديدة.";
-      }
-      if (action === 'reject_update') {
-          updates = { status: 'approved', pending_updates: null };
-          emailType = 'service_rejected';
-          emailBodyReason = `نعتذر، تم رفض طلب تعديل بيانات الخدمة للأسباب التالية:\n${finalReason}\n\nستبقى الخدمة معروضة ببياناتها الأصلية.`;
-      }
-      if (action === 'approve_stop') {
-          updates = { status: 'stopped' };
-          emailType = 'service_rejected'; 
-          emailBodyReason = "تمت الموافقة على طلبكم وتم إيقاف الخدمة بنجاح.";
-      }
-      if (action === 'reject_stop') {
-          updates = { status: 'approved' };
-          emailType = 'service_approved';
-          emailBodyReason = `تم رفض طلب إيقاف الخدمة للأسباب التالية:\n${finalReason}\nالخدمة ما زالت نشطة.`;
-      }
-      if (action === 'approve_delete') {
-          updates = { status: 'deleted' };
-          emailType = 'service_rejected';
-          emailBodyReason = "تمت الموافقة على طلبكم وتم أرشفة/حذف الخدمة نهائياً.";
-      }
-      if (action === 'reject_delete') {
-          updates = { status: 'approved', delete_reason: null };
-          emailType = 'service_approved';
-          emailBodyReason = `تم رفض طلب حذف الخدمة للأسباب التالية:\n${finalReason}\nالخدمة ما زالت نشطة على المنصة.`;
-      }
+      if (action === 'approve') updates = { status: 'approved', rejection_reason: null, platform_commission: useCustomCommission ? Number(customCommission) : null }; 
+      if (action === 'reject') updates = { status: 'rejected', rejection_reason: `${rejectionReason}\n\n${ADMIN_CONTACT_INFO}` }; 
+      if (action === 'approve_update') updates = { ...selectedService.pending_updates, status: 'approved', pending_updates: null };
+      if (action === 'reject_update') updates = { status: 'approved', pending_updates: null };
+      if (action === 'approve_stop') updates = { status: 'stopped' };
+      if (action === 'reject_stop') updates = { status: 'approved' };
+      if (action === 'approve_delete') updates = { status: 'deleted' };
+      if (action === 'reject_delete') updates = { status: 'approved', delete_reason: null };
       
       if (action === 'admin_stop') {
           updates = { 
               status: 'stopped', 
               stop_dates: { type: stopType, reason: stopReason, until: stopType === 'temporary' ? stopUntil : null, stopped_at: new Date().toISOString() } 
           };
-          emailType = 'service_rejected'; 
-          emailBodyReason = `تم إيقاف خدمتك (${stopType === 'temporary' ? `مؤقتاً حتى ${stopUntil}` : 'نهائياً والمطالبة بالأرشفة'}) من قبل إدارة المنصة للأسباب التالية:\n${stopReason}\n\n${ADMIN_CONTACT_INFO}`;
       }
 
-      if (action === 'admin_reactivate') {
-          updates = { status: 'approved', stop_dates: null };
-          emailType = 'service_approved';
-          emailBodyReason = "تم إعادة تفعيل خدمتك بنجاح وهي الآن متاحة للعملاء في المنصة.";
-      }
+      if (action === 'admin_reactivate') updates = { status: 'approved', stop_dates: null };
 
       const { error: updateError } = await supabase.from('services').update(updates).eq('id', selectedService.id);
       if (updateError) throw updateError;
 
-      // استخدام الدالة المساعدة لضمان جلب إيميل واسم المزود بشكل صحيح
-      const providerEmail = getProviderEmail(selectedService);
-      const providerName = getProviderName(selectedService);
-      
-      if (providerEmail) {
-          if (!emailBodyReason && (action.startsWith('reject') || action === 'admin_stop')) emailBodyReason = finalReason;
-          await fetch('/api/emails/send', { 
-              method: 'POST', 
-              headers: { 'Content-Type': 'application/json' }, 
-              body: JSON.stringify({ 
-                  type: emailType, 
-                  email: providerEmail, 
-                  name: providerName, 
-                  serviceTitle: selectedService.title, 
-                  reason: emailBodyReason 
-              }) 
-          }).catch(err => console.error(err));
-      }
-
-      alert("تم تنفيذ الإجراء بنجاح ✅");
+      toast.success("تم تنفيذ الإجراء وتحديث الخدمة بنجاح ✅");
       setSelectedService(null);
       fetchServices(); 
       fetchCounts(); 
 
     } catch (error: any) { 
-      alert("حدث خطأ: " + error.message); 
+      toast.error("حدث خطأ: " + error.message); 
     } finally { 
       setActionLoading(false); 
       setActionToConfirm(null); 
@@ -360,17 +302,9 @@ export default function ReviewServicesPage() {
       return <span key={id} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {id}</span>;
   };
 
-  const handleDirectEmail = (service: any) => {
-      const email = getProviderEmail(service);
-      const name = getProviderName(service);
-      const subject = encodeURIComponent(`بخصوص خدمتك: ${service.title}`);
-      const body = encodeURIComponent(`مرحباً ${name}،\n\nنحن فريق الدعم في منصة سيّر، ونتواصل معك بخصوص الخدمة المذكورة أعلاه...\n\n`);
-      window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
-  };
-
   return (
     <div className={`animate-in fade-in duration-500 pb-10 ${tajawal.className}`} dir="rtl">
-      
+      <Toaster position="top-center" richColors />
       <header className="flex justify-between items-center mb-8">
         <div>
             <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
@@ -406,59 +340,85 @@ export default function ReviewServicesPage() {
 
       {loading ? <div className="flex justify-center p-20"><Loader2 className="animate-spin text-[#C89B3C]" size={40}/></div> : services.length === 0 ? <div className="text-center p-20 bg-white/5 rounded-2xl border border-white/5 text-white/40">لا توجد خدمات في هذا القسم حالياً.</div> : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {services.map((service) => (
-            <div key={service.id} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg flex flex-col hover:border-[#C89B3C]/30 transition group relative">
-                
-                {['pending', 'update_requested', 'stop_requested', 'delete_requested'].includes(service.status) && (
-                    <span className="absolute top-4 left-4 flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                    </span>
-                )}
+          {services.map((service) => {
+            // ✅ 1. تحديث الصور والفيديو في الكرت الخارجي بشكل صحيح
+            const mainMedia = service.images && service.images.length > 0 ? service.images[0] : (service.image_url || null);
+            const mediaIsVideo = isVideo(mainMedia);
 
-                <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 shrink-0 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C] font-bold text-lg">{service.title.charAt(0)}</div>
-                    <div className="pl-4"><h3 className="font-bold text-white line-clamp-1 text-lg">{service.title}</h3><p className="text-xs text-white/50 flex items-center gap-1"><User size={10}/> {getProviderName(service)}</p></div>
+            // ✅ 2. التأكد من السعر الجديد
+            const currentPrice = service.status === 'update_requested' && service.pending_updates?.price !== undefined 
+                ? service.pending_updates.price 
+                : service.price;
+
+            return (
+                <div key={service.id} className="bg-[#252525] border border-white/5 rounded-2xl overflow-hidden p-5 shadow-lg flex flex-col hover:border-[#C89B3C]/30 transition group relative">
+                    
+                    {['pending', 'update_requested', 'stop_requested', 'delete_requested'].includes(service.status) && (
+                        <span className="absolute top-4 left-4 flex h-3 w-3 z-20">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                        </span>
+                    )}
+
+                    <div className="relative w-full h-40 mb-4 rounded-xl overflow-hidden bg-black flex items-center justify-center shrink-0">
+                        {mainMedia ? (
+                            mediaIsVideo ? (
+                                <>
+                                    <video src={`${mainMedia}#t=0.001`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition duration-500" autoPlay muted loop playsInline preload="metadata"/>
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"><PlayCircle className="text-white/80" size={32}/></div>
+                                </>
+                            ) : (
+                                <Image src={mainMedia} alt={service.title} fill className="object-cover transition-transform duration-700 group-hover:scale-110" />
+                            )
+                        ) : (
+                            <ImageIcon className="text-white/20" size={40}/>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 shrink-0 rounded-full bg-[#C89B3C]/10 flex items-center justify-center text-[#C89B3C] font-bold text-lg">{service.title.charAt(0)}</div>
+                        <div className="pl-4"><h3 className="font-bold text-white line-clamp-1 text-lg">{service.title}</h3><p className="text-xs text-white/50 flex items-center gap-1"><User size={10}/> {getProviderName(service)}</p></div>
+                    </div>
+                    
+                    <div className="bg-black/20 p-3 rounded-xl mb-4 space-y-2 text-sm border border-white/5">
+                    <div className="flex justify-between"><span className="text-white/50">السعر:</span><span className="text-[#C89B3C] font-bold">{Number(currentPrice) > 0 ? `${currentPrice} ﷼` : 'مجاني'}</span></div>
+                    <div className="flex justify-between">
+                        <span className="text-white/50">النوع:</span>
+                        <span className="text-white bg-white/5 px-2 py-0.5 rounded text-[10px]">
+                            {service.sub_category === 'facility' ? 'مرفق' : service.sub_category === 'lodging' ? 'نزل' : service.sub_category === 'experience' ? 'تجربة' : 'فعالية'}
+                        </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <span className="text-white/50">الحالة:</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                            service.status === 'update_requested' ? 'bg-blue-500/20 text-blue-400' :
+                            service.status === 'stop_requested' ? 'bg-orange-500/20 text-orange-400' :
+                            service.status === 'delete_requested' ? 'bg-red-600/20 text-red-500' :
+                            service.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : 
+                            service.status === 'stopped' ? 'bg-gray-500/20 text-gray-400' : 
+                            service.status === 'deleted' ? 'bg-red-900/20 text-red-500' : 
+                            'bg-red-500/20 text-red-400'
+                        }`}>
+                            {
+                                service.status === 'pending' ? 'بانتظار المراجعة' :
+                                service.status === 'update_requested' ? 'طلب تعديل' :
+                                service.status === 'stop_requested' ? 'طلب إيقاف' :
+                                service.status === 'delete_requested' ? 'طلب حذف' :
+                                service.status === 'approved' ? 'نشط' : 
+                                service.status === 'stopped' ? 'متوقفة' : 
+                                service.status === 'deleted' ? 'محذوفة' : 
+                                'مرفوضة'
+                            }
+                        </span>
+                    </div>
+                    </div>
+                    <div className="mt-auto flex gap-2 w-full">
+                        <button onClick={() => openModal(service)} className="flex-1 py-2.5 bg-white/5 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C] text-sm"><Eye size={16}/> مراجعة الطلب</button>
+                    </div>
                 </div>
-                <div className="bg-black/20 p-3 rounded-xl mb-4 space-y-2 text-sm border border-white/5">
-                   <div className="flex justify-between"><span className="text-white/50">السعر:</span><span className="text-[#C89B3C] font-bold">{Number(service.price) > 0 ? `${service.price} ﷼` : 'مجاني'}</span></div>
-                   <div className="flex justify-between">
-                       <span className="text-white/50">النوع:</span>
-                       <span className="text-white bg-white/5 px-2 py-0.5 rounded text-[10px]">
-                           {service.sub_category === 'facility' ? 'مرفق' : service.sub_category === 'lodging' ? 'نزل' : service.sub_category === 'experience' ? 'تجربة' : 'فعالية'}
-                       </span>
-                   </div>
-                   <div className="flex justify-between items-center">
-                       <span className="text-white/50">الحالة:</span>
-                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                           service.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
-                           service.status === 'update_requested' ? 'bg-blue-500/20 text-blue-400' :
-                           service.status === 'stop_requested' ? 'bg-orange-500/20 text-orange-400' :
-                           service.status === 'delete_requested' ? 'bg-red-600/20 text-red-500' :
-                           service.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' : 
-                           service.status === 'stopped' ? 'bg-gray-500/20 text-gray-400' : 
-                           service.status === 'deleted' ? 'bg-red-900/20 text-red-500' : 
-                           'bg-red-500/20 text-red-400'
-                       }`}>
-                           {
-                               service.status === 'pending' ? 'بانتظار المراجعة' :
-                               service.status === 'update_requested' ? 'طلب تعديل' :
-                               service.status === 'stop_requested' ? 'طلب إيقاف' :
-                               service.status === 'delete_requested' ? 'طلب حذف' :
-                               service.status === 'approved' ? 'نشط' : 
-                               service.status === 'stopped' ? 'متوقفة' : 
-                               service.status === 'deleted' ? 'محذوفة' : 
-                               'مرفوضة'
-                           }
-                       </span>
-                   </div>
-                </div>
-                <div className="mt-auto flex gap-2 w-full">
-                    <button onClick={() => openModal(service)} className="flex-1 py-2.5 bg-white/5 hover:bg-[#C89B3C] hover:text-black font-bold rounded-xl transition flex justify-center items-center gap-2 border border-white/5 group-hover:border-[#C89B3C] text-sm"><Eye size={16}/> مراجعة الطلب</button>
-                    <button onClick={() => handleDirectEmail(service)} className="p-2.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-xl transition border border-indigo-500/20" title="مراسلة المزود"><Send size={16}/></button>
-                </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -547,19 +507,38 @@ export default function ReviewServicesPage() {
                     </div>
                 )}
 
-                {/* ✅ معرض الصور والفيديو (دائماً يظهر) */}
-                {selectedService.details?.images && selectedService.details.images.length > 0 && (
-                    <div className="mb-8">
-                        <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو العرض (الحالية)</h3>
-                        <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                            {selectedService.details.images.map((url: string, i: number) => (
-                                <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition">
-                                    {isVideo(url) ? ( <><video src={url} className="w-full h-full object-cover" muted /><div className="absolute inset-0 flex items-center justify-center bg-black/40"><Video className="text-white/80" size={24}/></div></> ) : ( <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Image ${i}`}/> )}
-                                </div>
-                            ))}
+                {/* ✅ 3. إصلاح جذري لمعرض الصور والفيديو في تفاصيل الإدارة */}
+                {(() => {
+                    const displayImages = selectedService.images?.length > 0 
+                        ? selectedService.images 
+                        : (selectedService.details?.images?.length > 0 
+                            ? selectedService.details.images 
+                            : (selectedService.image_url ? [selectedService.image_url] : []));
+
+                    if (displayImages.length === 0) return null;
+
+                    return (
+                        <div className="mb-8">
+                            <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو العرض (الحالية)</h3>
+                            <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                                {displayImages.map((url: string, i: number) => (
+                                    <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition bg-black/40">
+                                        {isVideo(url) ? ( 
+                                            <>
+                                                <video src={`${url}#t=0.001`} className="w-full h-full object-cover" autoPlay muted loop playsInline preload="metadata" />
+                                                <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition">
+                                                    <PlayCircle className="text-white/80" size={32}/>
+                                                </div>
+                                            </> 
+                                        ) : ( 
+                                            <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Image ${i}`}/> 
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* ========= العمود الأول (اليمين) ========= */}
@@ -578,13 +557,30 @@ export default function ReviewServicesPage() {
                         <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                             <h3 className="text-[#C89B3C] font-bold text-sm mb-2">البيانات الأساسية الحالية</h3>
                             <div><p className="text-xs text-white/50 mb-1">العنوان</p><p className="font-bold text-lg">{selectedService.title}</p></div>
-                            <div>
-                                <p className="text-xs text-white/50 mb-1">
-                                    {selectedService.sub_category === 'lodging' ? 'سعر الليلة' : selectedService.sub_category === 'event' ? 'تذكرة البالغين' : 'السعر'}
-                                </p>
-                                <p className="font-bold text-[#C89B3C] text-xl font-mono">
-                                    {Number(selectedService.price) > 0 ? `${selectedService.price} ﷼` : 'مجاني'}
-                                </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-xs text-white/50 mb-1">
+                                        {selectedService.sub_category === 'lodging' ? 'سعر الليلة' : selectedService.sub_category === 'event' ? 'تذكرة البالغين' : 'السعر'}
+                                    </p>
+                                    <p className="font-bold text-[#C89B3C] text-xl font-mono">
+                                        {Number(selectedService.status === 'update_requested' && selectedService.pending_updates?.price !== undefined ? selectedService.pending_updates.price : selectedService.price) > 0 
+                                            ? `${selectedService.status === 'update_requested' && selectedService.pending_updates?.price !== undefined ? selectedService.pending_updates.price : selectedService.price} ﷼` 
+                                            : 'مجاني'
+                                        }
+                                    </p>
+                                </div>
+                                
+                                {selectedService.sub_category === 'event' && (selectedService.status === 'update_requested' ? selectedService.pending_updates?.details?.event_info?.child_price : selectedService.details?.event_info?.child_price) !== undefined && (
+                                    <div>
+                                        <p className="text-xs text-white/50 mb-1">تذكرة الأطفال</p>
+                                        <p className="font-bold text-[#C89B3C] text-xl font-mono">
+                                            {Number(selectedService.status === 'update_requested' ? selectedService.pending_updates?.details?.event_info?.child_price : selectedService.details?.event_info?.child_price) > 0 
+                                                ? `${selectedService.status === 'update_requested' ? selectedService.pending_updates?.details?.event_info?.child_price : selectedService.details?.event_info?.child_price} ﷼` 
+                                                : 'مجاني'
+                                            }
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                             <div><p className="text-xs text-white/50 mb-1">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{selectedService.description}</p></div>
                         </div>
@@ -683,7 +679,7 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* ✅ تفاصيل النزل السياحي (البيانات الجانبية التي تم إخفاؤها مسبقاً للتبسيط) */}
+                        {/* ✅ تفاصيل النزل السياحي */}
                         {selectedService.sub_category === 'lodging' && selectedService.details?.lodging_type && (
                              <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2"><Home size={16}/> تفاصيل النزل السياحي</h3>
@@ -928,12 +924,16 @@ export default function ReviewServicesPage() {
         </div>
       )}
 
-      {/* تكبير الصور */}
+      {/* تكبير الصور وفيديو */}
       {zoomedImage && (
         <div className="fixed inset-0 z-80 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><XCircle size={32} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
-                {isVideo(zoomedImage) ? ( <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> ) : ( <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> )}
+                {isVideo(zoomedImage) ? ( 
+                    <video src={zoomedImage} controls autoPlay playsInline className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> 
+                ) : ( 
+                    <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> 
+                )}
             </div>
         </div>
       )}

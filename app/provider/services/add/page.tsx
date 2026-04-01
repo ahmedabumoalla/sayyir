@@ -8,7 +8,7 @@ import {
   ChevronRight, Save, Loader2, MapPin, Image as ImageIcon, 
   Home, Compass, Building, Tent, Info, Plus, Trash2, 
   ShieldCheck, UploadCloud, Clock, CheckSquare, X,
-  Activity, Ticket, FileText, Utensils
+  Activity, Ticket, FileText, Utensils, PlayCircle, Video
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
@@ -114,6 +114,13 @@ const TimePicker12H = ({ value, onChange }: { value: string, onChange: (val: str
     );
 };
 
+// ✅ مساعدة لمعرفة إذا الرابط فيديو لكي يعرضه بشكل صحيح في الـ Preview
+const isVideoLink = (url: string | null) => {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    return lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.ogg') || lower.includes('.mov') || lower.includes('video');
+};
+
 export default function AddServicePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -184,7 +191,6 @@ export default function AddServicePage() {
   const [exactLat, setExactLat] = useState("");
   const [exactLng, setExactLng] = useState("");
 
-  // تحديث الخريطة عند تغيير الإحداثيات يدوياً
   useEffect(() => {
       const lat = parseFloat(exactLat);
       const lng = parseFloat(exactLng);
@@ -193,7 +199,6 @@ export default function AddServicePage() {
       }
   }, [exactLat, exactLng]);
 
-  // --- دوال التحكم في الواجهة ---
   const removeImage = (index: number) => setImages(images.filter((_, i) => i !== index));
   const handleHouseFeatureToggle = (id: string) => setHouseFeatures(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
 
@@ -201,23 +206,35 @@ export default function AddServicePage() {
     if (!e.target.files || e.target.files.length === 0) return;
     setUploadingImage(true);
     try {
-      const file = await compressImage(e.target.files[0]);
-      const fileExt = file.name.split('.').pop();
+      const originalFile = e.target.files[0];
+      const isVideoFile = originalFile.type.startsWith('video/');
+      
+      const finalFile = isVideoFile ? originalFile : await compressImage(originalFile);
+      
+      const fileExt = finalFile.name.split('.').pop();
       const fileName = `places/${Date.now()}_${Math.random()}.${fileExt}`;
-      const { error } = await supabase.storage.from('provider-files').upload(fileName, file);
+      
+      const { error } = await supabase.storage.from('provider-files').upload(fileName, finalFile, {
+          contentType: originalFile.type 
+      });
+      
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from('provider-files').getPublicUrl(fileName);
       setImages([...images, publicUrl]);
-    } catch (error) { alert("حدث خطأ أثناء رفع الصورة."); } 
+    } catch (error) { 
+      alert("حدث خطأ أثناء رفع المرفق."); 
+    } 
     finally { setUploadingImage(false); }
   };
 
   const uploadSingleFile = async (file: File, folder: string) => {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${folder}/${Date.now()}_${Math.random()}.${fileExt}`;
-      const { error } = await supabase.storage.from('provider-files').upload(fileName, file);
-      if (error) throw error;
-      return supabase.storage.from('provider-files').getPublicUrl(fileName).data.publicUrl;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${folder}/${Date.now()}_${Math.random()}.${fileExt}`;
+    const { error } = await supabase.storage.from('provider-files').upload(fileName, file, {
+        contentType: file.type
+    });
+    if (error) throw error;
+    return supabase.storage.from('provider-files').getPublicUrl(fileName).data.publicUrl;
   };
 
   const addFacilityService = () => {
@@ -226,9 +243,9 @@ export default function AddServicePage() {
       setFacServName(""); setFacServDesc(""); setFacServImg(null);
   };
 
-  // --- الإرسال والحفظ ---
   const handleSubmit = async () => {
-      if (!title || !description || (!price && subCategory !== 'event') || !mainCategory || !subCategory) {
+      // ✅ تعديل التحقق لضمان أن الفعاليات تتطلب سعراً، ولو كان 0 يكتبه المزود
+      if (!title || !description || price === "" || !mainCategory || !subCategory) {
           return alert("الرجاء تعبئة جميع الحقول الأساسية المطلوبة.");
       }
 
@@ -286,8 +303,9 @@ export default function AddServicePage() {
               };
           }
           else if (subCategory === 'event') {
+              // ✅ حفظ سعر الأطفال بشكل صحيح أو تركه فارغاً إذا لم يحدده
               details.event_info = {
-                  child_price: Number(childPrice),
+                  child_price: childPrice === "" ? null : Number(childPrice),
                   dates: eventDates,
                   activities: eventActivities,
                   custom_activities: customEventActivitiesList
@@ -301,7 +319,8 @@ export default function AddServicePage() {
               service_type: mainCategory === 'experience_event' ? 'experience' : 'general',
               title,
               description,
-              price: subCategory === 'event' ? 0 : Number(price),
+              // ✅ حفظ السعر الأساسي للجميع كـ Number
+              price: Number(price),
               commercial_license: licenseUrl,
               location_lat: finalLat,
               location_lng: finalLng,
@@ -346,7 +365,6 @@ export default function AddServicePage() {
 
         <div className="max-w-4xl mx-auto space-y-6 pb-20">
             
-            {/* 1. التصنيف الرئيسي */}
             <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-xl">
                 <h2 className="text-lg font-bold mb-5 flex items-center gap-2"><Compass className="text-[#C89B3C]"/> 1. حدد القسم الرئيسي</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -383,7 +401,6 @@ export default function AddServicePage() {
             {subCategory && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                     
-                    {/* 2. البيانات الأساسية */}
                     <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-xl space-y-5">
                         <h2 className="text-lg font-bold flex items-center gap-2"><Info className="text-[#C89B3C]"/> 2. البيانات الأساسية</h2>
                         
@@ -409,6 +426,7 @@ export default function AddServicePage() {
                                 <div className="space-y-2">
                                     <label className="text-sm text-white/70 font-bold">رسوم الدخول للأطفال (اختياري)</label>
                                     <div className="relative">
+                                        {/* ✅ تأكيد حفظ سعر الطفل */}
                                         <input type="number" min="0" value={childPrice} onChange={e => setChildPrice(e.target.value)} placeholder="0 = مجاني" className="w-full bg-black/40 border border-white/10 rounded-xl pl-16 pr-4 py-3 text-white focus:border-[#C89B3C] outline-none dir-ltr text-right"/>
                                         <span className="absolute left-4 top-3 text-white/40">SAR</span>
                                     </div>
@@ -791,13 +809,21 @@ export default function AddServicePage() {
                         <label className="text-sm text-white/70 font-bold flex items-center gap-2"><ImageIcon size={18} className="text-[#C89B3C]"/> صور وفيديو العرض الأساسية *</label>
                         <div className="flex flex-wrap gap-4">
                             {images.map((url, i) => (
-                                <div key={i} className="relative w-32 h-32 rounded-xl overflow-hidden border border-white/10 group">
-                                    <Image src={url} fill className="object-cover" alt="Preview"/>
+                                <div key={i} className="relative w-32 h-32 rounded-xl overflow-hidden border border-white/10 group bg-black/40 flex items-center justify-center">
+                                    {/* ✅ الحل النهائي لعرض الفيديو في الـ Preview دون أن يكون مكسوراً */}
+                                    {isVideoLink(url) ? (
+                                        <>
+                                            <video src={`${url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/30"><Video className="text-white/80" size={24}/></div>
+                                        </>
+                                    ) : (
+                                        <Image src={url} fill className="object-cover" alt="Preview"/>
+                                    )}
                                     <button onClick={() => removeImage(i)} className="absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition"><Trash2 size={16} className="text-white"/></button>
                                 </div>
                             ))}
                             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-2 hover:bg-white/5 hover:border-[#C89B3C]/50 transition text-white/50">
-                                {uploadingImage ? <Loader2 className="animate-spin" /> : <><UploadCloud size={24} /> <span className="text-xs">رفع صورة</span></>}
+                                {uploadingImage ? <Loader2 className="animate-spin" /> : <><UploadCloud size={24} /> <span className="text-xs">رفع مرفق</span></>}
                             </button>
                             <input type="file" hidden ref={fileInputRef} accept="image/*,video/*" onChange={handleImageUpload} />
                         </div>
