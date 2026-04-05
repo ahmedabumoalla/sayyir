@@ -145,7 +145,7 @@ export default function AiGuidePage() {
           </div>
         </div>
 
-        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#C89B3C] to-[#b38a35] flex items-center justify-center shadow-lg shadow-[#C89B3C]/20">
+        <div className="w-10 h-10 rounded-full bg-linear-to-tr from-[#C89B3C] to-[#b38a35] flex items-center justify-center shadow-lg shadow-[#C89B3C]/20">
           <Bot size={24} className="text-[#2B1F17]" />
         </div>
       </header>
@@ -164,7 +164,7 @@ export default function AiGuidePage() {
               }`}
             >
               <div
-                className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center mt-1 ${
+                className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center mt-1 ${
                   msg.role === "user" ? "bg-white/10" : "bg-[#C89B3C]/20"
                 }`}
               >
@@ -215,7 +215,7 @@ export default function AiGuidePage() {
         {loading && (
           <div className="flex justify-start animate-in fade-in">
             <div className="flex max-w-[80%] gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#C89B3C]/20 flex-shrink-0 flex items-center justify-center mt-1">
+              <div className="w-8 h-8 rounded-full bg-[#C89B3C]/20 shrink-0 flex items-center justify-center mt-1">
                 <Bot size={16} className="text-[#C89B3C]" />
               </div>
               <div className="bg-white/5 border border-white/10 p-4 rounded-2xl rounded-tr-none flex items-center gap-2">
@@ -274,7 +274,7 @@ export default function AiGuidePage() {
           <button
             onClick={handleSend}
             disabled={(!input.trim() && !selectedImage) || loading}
-            className={`p-3 rounded-xl transition flex-shrink-0 ${
+            className={`p-3 rounded-xl transition shrink-0 ${
               (input.trim() || selectedImage) && !loading
                 ? "bg-[#C89B3C] text-[#2B1F17] hover:bg-[#b38a35] shadow-lg shadow-[#C89B3C]/20"
                 : "bg-white/10 text-white/30 cursor-not-allowed"

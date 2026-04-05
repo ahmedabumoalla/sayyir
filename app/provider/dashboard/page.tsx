@@ -131,7 +131,7 @@ export default function ProviderDashboard() {
       className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700 max-w-7xl mx-auto"
       dir="rtl"
     >
-      <section className="relative overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-[#1a1a1a] via-[#141414] to-[#0f0f0f] shadow-2xl">
+      <section className="relative overflow-hidden rounded-[32px] border border-white/10 bg-linear-to-br from-[#1a1a1a] via-[#141414] to-[#0f0f0f] shadow-2xl">
         <div className="absolute inset-0 opacity-[0.06] bg-[radial-gradient(circle_at_top_right,rgba(200,155,60,1),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.6),transparent_18%)]" />
         <div className="absolute -top-24 left-0 h-60 w-60 rounded-full bg-[#C89B3C]/10 blur-3xl" />
         <div className="absolute -bottom-24 right-0 h-60 w-60 rounded-full bg-[#C89B3C]/5 blur-3xl" />
@@ -163,7 +163,7 @@ export default function ProviderDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Link
                 href="/provider/services"
-                className="group rounded-2xl border border-white/10 bg-white/[0.04] p-4 hover:border-[#C89B3C]/40 hover:bg-white/[0.06] transition"
+                className="group rounded-2xl border border-white/10 bg-white/4 p-4 hover:border-[#C89B3C]/40 hover:bg-white/6 transition"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="w-11 h-11 rounded-2xl bg-[#C89B3C]/10 text-[#C89B3C] flex items-center justify-center">
@@ -179,7 +179,7 @@ export default function ProviderDashboard() {
 
               <Link
                 href="/provider/bookings"
-                className="group rounded-2xl border border-white/10 bg-white/[0.04] p-4 hover:border-[#C89B3C]/40 hover:bg-white/[0.06] transition"
+                className="group rounded-2xl border border-white/10 bg-white/4 p-4 hover:border-[#C89B3C]/40 hover:bg-white/6 transition"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="w-11 h-11 rounded-2xl bg-white/10 text-white flex items-center justify-center">
@@ -195,7 +195,7 @@ export default function ProviderDashboard() {
 
               <Link
                 href="/provider/assistant"
-                className="group rounded-2xl border border-[#C89B3C]/25 bg-gradient-to-br from-[#C89B3C]/12 to-transparent p-4 hover:border-[#C89B3C]/50 transition relative overflow-hidden"
+                className="group rounded-2xl border border-[#C89B3C]/25 bg-linear-to-br from-[#C89B3C]/12 to-transparent p-4 hover:border-[#C89B3C]/50 transition relative overflow-hidden"
               >
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition bg-[radial-gradient(circle_at_top_left,rgba(200,155,60,0.18),transparent_45%)]" />
                 <div className="relative z-10">
@@ -219,7 +219,7 @@ export default function ProviderDashboard() {
 
           <div className="xl:col-span-4">
             <div className="grid grid-cols-2 gap-4 h-full">
-              <div className="col-span-2 rounded-[28px] border border-white/10 bg-white/[0.04] p-5 flex items-center justify-between shadow-lg">
+              <div className="col-span-2 rounded-[28px] border border-white/10 bg-white/4 p-5 flex items-center justify-between shadow-lg">
                 <div>
                   <div className="text-white/45 text-xs mb-2">إجمالي الأداء</div>
                   <div className="text-3xl font-extrabold text-white">
@@ -234,7 +234,7 @@ export default function ProviderDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <div className="rounded-3xl border border-white/10 bg-white/4 p-5">
                 <div className="flex items-center justify-between mb-4">
                   <Wallet className="text-emerald-400" size={20} />
                   <span className="text-2xl font-bold text-white">
@@ -244,7 +244,7 @@ export default function ProviderDashboard() {
                 <div className="text-white/60 text-sm">إجمالي الأرباح</div>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <div className="rounded-3xl border border-white/10 bg-white/4 p-5">
                 <div className="flex items-center justify-between mb-4">
                   <Star className="text-[#C89B3C]" size={20} />
                   <span className="text-2xl font-bold text-white">
@@ -254,7 +254,7 @@ export default function ProviderDashboard() {
                 <div className="text-white/60 text-sm">الخدمات المفعلة</div>
               </div>
 
-              <div className="col-span-2 rounded-3xl border border-purple-500/20 bg-purple-500/[0.06] p-5 flex items-center justify-between">
+              <div className="col-span-2 rounded-3xl border border-purple-500/20 bg-purple-500/6 p-5 flex items-center justify-between">
                 <div>
                   <div className="text-purple-400 text-sm font-bold mb-1">
                     جودة الخدمة
@@ -401,7 +401,7 @@ export default function ProviderDashboard() {
         <div className="lg:col-span-4 space-y-6">
           <Link
             href="/provider/assistant"
-            className="group block rounded-[28px] overflow-hidden border border-[#C89B3C]/20 bg-gradient-to-br from-[#1d1710] via-[#171717] to-[#101010] shadow-2xl"
+            className="group block rounded-[28px] overflow-hidden border border-[#C89B3C]/20 bg-linear-to-br from-[#1d1710] via-[#171717] to-[#101010] shadow-2xl"
           >
             <div className="relative p-6">
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition bg-[radial-gradient(circle_at_top_right,rgba(200,155,60,0.18),transparent_35%)]" />
@@ -433,7 +433,7 @@ export default function ProviderDashboard() {
             </div>
           </Link>
 
-          <div className="bg-gradient-to-br from-[#C89B3C]/20 to-[#252525] rounded-[28px] border border-[#C89B3C]/20 p-6 flex flex-col justify-center text-center shadow-2xl">
+          <div className="bg-linear-to-br from-[#C89B3C]/20 to-[#252525] rounded-[28px] border border-[#C89B3C]/20 p-6 flex flex-col justify-center text-center shadow-2xl">
             <h3 className="text-xl font-bold text-white mb-2">زيادة الدخل؟</h3>
             <p className="text-white/60 text-sm mb-6 leading-7">
               أضف خدمات جديدة، حسّن عرضك، وارفع فرص ظهورك للعملاء للحصول على
