@@ -38,10 +38,20 @@ export default function LocationsSettingsPage() {
       setLoading(true);
       const { data: citiesData } = await supabase.from('cities').select('*').order('name');
       if (citiesData) setCities(citiesData);
-
+      const fixUrl = (url: string) => {
+        if (!url) return "";
+        if (url.includes("supabase")) return url;
+      
+        return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/images/${url}`;
+      };
       const { data: catsData } = await supabase.from('categories').select('*').order('type');
-      if (catsData) setCategories(catsData);
-      setLoading(false);
+      if (catsData) {
+        const fixed = catsData.map(c => ({
+          ...c,
+          icon_url: fixUrl(c.icon_url)
+        }));
+        setCategories(fixed);
+      }      setLoading(false);
   };
 
   // ================= مدن =================
@@ -88,8 +98,13 @@ export default function LocationsSettingsPage() {
           const { error: uploadError } = await supabase.storage.from('images').upload(`icons/${fileName}`, file);
           if (uploadError) throw uploadError;
 
-          const { data } = supabase.storage.from('images').getPublicUrl(`icons/${fileName}`);
-          setCatForm({ ...catForm, icon_url: data.publicUrl });
+          const path = `icons/${fileName}`;
+          const { data } = supabase.storage.from('images').getPublicUrl(path);
+          
+          setCatForm({
+            ...catForm,
+            icon_url: data.publicUrl
+          });
       } catch (err: any) {
           alert("خطأ في رفع الأيقونة: " + err.message);
       } finally {
@@ -171,9 +186,18 @@ export default function LocationsSettingsPage() {
               {categories.map((cat) => (
                   <div key={cat.id} className="flex justify-between items-center p-4 bg-black/40 rounded-xl border border-white/5 hover:border-white/10 transition">
                       <div className="flex items-center gap-4">
-                          {cat.icon_url ? (
-                              <img src={cat.icon_url} alt={cat.name} className="w-10 h-10 object-contain drop-shadow-lg" />
-                          ) : (
+                      {cat.icon_url ? (
+  <Image
+    src={cat.icon_url}
+    alt={cat.name}
+    width={56}
+    height={56}
+    className="w-14 h-14 object-contain drop-shadow-xl rounded-lg bg-white/5 p-1"
+    onError={(e) => {
+      (e.target as HTMLImageElement).src = "/placeholder-icon.png";
+    }}
+  />
+) : (
                               <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center text-white/30"><ImageIcon size={20}/></div>
                           )}
                           <div>
@@ -235,7 +259,7 @@ export default function LocationsSettingsPage() {
                       {/* أيقونة الخريطة */}
                       <div>
                           <label className="block text-xs text-white/60 mb-2">أيقونة الماركر على الخريطة (PNG/SVG)</label>
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-5">
                               <div className="relative w-16 h-16 rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center bg-black/20 hover:border-[#C89B3C] transition cursor-pointer overflow-hidden group">
                                   {uploadingIcon ? (
                                       <Loader2 className="animate-spin text-[#C89B3C]" size={20}/>

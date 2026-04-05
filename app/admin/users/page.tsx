@@ -93,10 +93,11 @@ export default function UsersManagement() {
     if (!session) { router.replace("/login"); return; }
     setCurrentUserId(session.user.id);
 
+    // ✅ تم التعديل هنا: جلب السوبر أدمن والأدمن العادي لضمان عدم اختفاء أي شخص من القائمة
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('is_admin', true) 
+      .or('is_admin.eq.true,is_super_admin.eq.true') 
       .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
@@ -122,7 +123,6 @@ export default function UsersManagement() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "حدث خطأ أثناء الإرسال");
 
-      // تحديث البروفايل في حال تم إنشاء الحساب بنجاح
       await supabase
         .from('profiles')
         .update({ 
