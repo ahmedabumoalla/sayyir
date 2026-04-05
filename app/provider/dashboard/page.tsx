@@ -35,11 +35,16 @@ export default function ProviderDashboard() {
   }, []);
 
   const fetchStats = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    if (session) {
+      if (!session) {
+        setLoading(false);
+        return;
+      }
+
       const { data: profile } = await supabase
         .from("profiles")
         .select("full_name")
@@ -98,9 +103,11 @@ export default function ProviderDashboard() {
         services_count: servicesCount || 0,
         rating: calculatedRating,
       });
+    } catch (error) {
+      console.error("Provider dashboard error:", error);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const welcomeName = useMemo(() => {
@@ -124,7 +131,6 @@ export default function ProviderDashboard() {
       className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700 max-w-7xl mx-auto"
       dir="rtl"
     >
-      {/* Hero */}
       <section className="relative overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-[#1a1a1a] via-[#141414] to-[#0f0f0f] shadow-2xl">
         <div className="absolute inset-0 opacity-[0.06] bg-[radial-gradient(circle_at_top_right,rgba(200,155,60,1),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.6),transparent_18%)]" />
         <div className="absolute -top-24 left-0 h-60 w-60 rounded-full bg-[#C89B3C]/10 blur-3xl" />
@@ -266,7 +272,6 @@ export default function ProviderDashboard() {
         </div>
       </section>
 
-      {/* Stats cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-[#252525] p-6 rounded-2xl border border-white/5 relative overflow-hidden group hover:border-emerald-500/30 transition hover:-translate-y-1 shadow-lg">
           <div className="absolute top-0 left-0 p-4 opacity-10 group-hover:opacity-20 transition">
@@ -328,7 +333,6 @@ export default function ProviderDashboard() {
         </div>
       </div>
 
-      {/* Main content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 bg-[#252525] rounded-[28px] border border-white/5 p-6 shadow-lg">
           <div className="flex items-center justify-between mb-6">

@@ -1,116 +1,211 @@
-import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import OpenAI from 'openai';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
-// إعداد عميل Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!; 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-// إعداد عملاء الذكاء الاصطناعي
-const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+
+type GuideRequestBody = {
+  text?: string;
+  image?: string; // data URL base64
+};
+
+function buildSystemPrompt() {
+  return `
+أنت مساعد ذكي داخل منصة "سيّر" ومتخصص في السياحة والتراث والخدمات في منطقة عسير.
+اكتب بالعربية الفصيحة السهلة.
+كن عمليًا ومختصرًا وواضحًا.
+إذا سأل المستخدم عن تخطيط رحلة، اقترح برنامجًا منظمًا.
+إذا أرسل صورة، حللها بصريًا وقدّم وصفًا ذكيًا وتاريخيًا أو سياحيًا قدر الإمكان.
+لا تذكر أنك تستخدم أكثر من نموذج.
+لا تذكر تفاصيل تقنية أو APIs.
+إذا تعذر فهم الصورة، قل ذلك بلطف واقترح على المستخدم إرسال صورة أوضح.
+`.trim();
+}
+
+function extractBase64Parts(dataUrl: string) {
+  const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
+  if (!match) return null;
+  return {
+    mimeType: match[1],
+    data: match[2],
+  };
+}
+
+async function callOpenAI({
+  text,
+  image,
+  timeoutMs = 9000,
+}: {
+  text: string;
+  image?: string;
+  timeoutMs?: number;
+}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const input: any[] = [
+      {
+        role: "system",
+        content: [{ type: "input_text", text: buildSystemPrompt() }],
+      },
+    ];
+
+    const userContent: any[] = [];
+    if (text?.trim()) {
+      userContent.push({ type: "input_text", text });
+    }
+
+    if (image) {
+      userContent.push({
+        type: "input_image",
+        image_url: image,
+      });
+    }
+
+    input.push({
+      role: "user",
+      content: userContent.length ? userContent : [{ type: "input_text", text: "حلل هذه الصورة." }],
+    });
+
+    const response = await openai.responses.create(
+      {
+        model: OPENAI_MODEL,
+        input,
+      },
+      {
+        signal: controller.signal,
+      }
+    );
+
+    const reply =
+      response.output_text?.trim() ||
+      "عذرًا، لم أتمكن من تجهيز الرد الآن.";
+
+    return {
+      provider: "openai",
+      reply,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callGemini({
+  text,
+  image,
+  timeoutMs = 12000,
+}: {
+  text: string;
+  image?: string;
+  timeoutMs?: number;
+}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const parts: any[] = [];
+
+    parts.push({
+      text: `${buildSystemPrompt()}\n\n${text?.trim() || "حلل هذه الصورة."}`,
+    });
+
+    if (image) {
+      const parsed = extractBase64Parts(image);
+      if (parsed) {
+        parts.push({
+          inlineData: {
+            mimeType: parsed.mimeType,
+            data: parsed.data,
+          },
+        });
+      }
+    }
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts,
+            },
+          ],
+        }),
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error?.message || "Gemini request failed");
+    }
+
+    const reply =
+      data?.candidates?.[0]?.content?.parts
+        ?.map((p: any) => p.text || "")
+        .join("")
+        .trim() || "عذرًا، لم أتمكن من تجهيز الرد الآن.";
+
+    return {
+      provider: "gemini",
+      reply,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export async function POST(req: Request) {
-  const { text, image } = await req.json();
-
-  // 1. جلب البيانات الحقيقية (للتسويق)
-  const { data: places } = await supabase
-    .from('places')
-    .select('name, type, description, city')
-    .eq('is_active', true)
-    .limit(10); 
-
-  const { data: services } = await supabase
-    .from('services')
-    .select('title, service_type, price, description')
-    .eq('status', 'approved')
-    .limit(10);
-
-  const platformData = `
-    [قائمة المعالم السياحية المتاحة]:
-    ${places?.map(p => `- ${p.name} (${p.type}) في ${p.city}: ${p.description}`).join('\n')}
-
-    [قائمة الخدمات والتجارب المدفوعة]:
-    ${services?.map(s => `- ${s.title} (نوع: ${s.service_type}, السعر: ${s.price} ريال): ${s.description}`).join('\n')}
-  `;
-
-  // 2. التعليمات (تم التعديل لمنع الرموز)
-  const SYSTEM_INSTRUCTION = `
-    أنت "مرشد سيّر"، خوي السائح في عسير وأفضل مرشد محلي.
-    
-    شخصيتك:
-    - تتكلم بلهجة سعودية بيضاء محببة (استخدم: "يا هلا"، "أبشر"، "تضبطك"، "لا تفوتك").
-    - لست روبوت، أنت مثل الصديق اللي ينصح خويه.
-    - مرح وذكي.
-
-    قواعدك الصارمة (Business Logic):
-    1. هدفك الأول: اقتراح خطط تعتمد **حصراً** على البيانات المزودة في الأسفل.
-    2. ممنوع تقترح أماكن غير موجودة في القائمة، ركز على اللي عندنا عشان المستخدم يحجز.
-    3. حاول دائماً تذكر الأسعار وتقول له "تقدر تحجزها الحين من التطبيق".
-    4. إذا طلب "جدول"، ادمج له معلم سياحي مع تجربة مدفوعة أو مطعم.
-    
-    🛑 قاعدة هامة جداً (التنسيق):
-    5. ممنوع منعاً باتاً استخدام علامات النجمة (**) أو الرموز الغريبة لتنسيق النص. 
-    - اكتب النص كرسالة دردشة طبيعية صافية (Plain Text) تماماً كما يكتب البشر في واتساب.
-    - لا تستخدم قوائم نقطية معقدة، اجعل الكلام انسيابياً.
-
-    البيانات المتاحة في التطبيق (استخدمها في ردك):
-    ${platformData}
-  `;
-
-  // 3. التنفيذ (Gemini First -> OpenAI Backup)
   try {
-    const model = geminiClient.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
-    let result;
-    if (image) {
-        const base64Data = image.split(',')[1];
-        const imagePart = { inlineData: { data: base64Data, mimeType: "image/jpeg" } };
-        const userPrompt = text || "وش تشوف في الصورة؟ واقترح لي فعاليات قريبة من عندنا.";
-        result = await model.generateContent([SYSTEM_INSTRUCTION + "\nسؤال المستخدم: " + userPrompt, imagePart]);
-    } else {
-        result = await model.generateContent(SYSTEM_INSTRUCTION + "\nسؤال المستخدم: " + text);
+    const body = (await req.json()) as GuideRequestBody;
+    const text = body?.text?.trim() || "";
+    const image = body?.image;
+
+    if (!text && !image) {
+      return NextResponse.json(
+        { error: "النص أو الصورة مطلوبان." },
+        { status: 400 }
+      );
     }
 
-    const response = await result.response;
-    const answer = response.text();
-
-    return NextResponse.json({ reply: answer });
-
-  } catch (geminiError) {
-    console.error("⚠️ Gemini Failed, Switching to OpenAI...", geminiError);
-
+    // الاستراتيجية:
+    // 1) OpenAI أولاً
+    // 2) إذا فشل أو تأخر -> Gemini
     try {
-        const messages: any[] = [{ role: "system", content: SYSTEM_INSTRUCTION }];
-
-        if (image) {
-            messages.push({
-                role: "user",
-                content: [
-                    { type: "text", text: text || "حلل الصورة واقترح فعاليات." },
-                    { type: "image_url", image_url: { url: image } }
-                ],
-            });
-        } else {
-            messages.push({ role: "user", content: text });
-        }
-
-        const completion = await openaiClient.chat.completions.create({
-            model: "gpt-4o",
-            messages: messages,
-            max_tokens: 400,
-        });
-
-        return NextResponse.json({ reply: completion.choices[0].message.content });
-
+      const openaiResult = await callOpenAI({ text, image, timeoutMs: 9000 });
+      return NextResponse.json({
+        reply: openaiResult.reply,
+        provider: openaiResult.provider,
+      });
     } catch (openaiError) {
-        console.error("🔥 All AI Failed:", openaiError);
-        return NextResponse.json(
-            { reply: "يا ساتر! السيرفرات عليها ضغط، بس لا تشيل هم.. جرب بعد شوي وأبشر بالسعد! 😅" }, 
-            { status: 500 }
-        );
+      console.error("OpenAI failed, falling back to Gemini:", openaiError);
     }
+
+    const geminiResult = await callGemini({ text, image, timeoutMs: 12000 });
+
+    return NextResponse.json({
+      reply: geminiResult.reply,
+      provider: geminiResult.provider,
+    });
+  } catch (error: any) {
+    console.error("Guide route error:", error);
+    return NextResponse.json(
+      {
+        error: "تعذر الاتصال بمزودي الذكاء الاصطناعي حاليًا.",
+      },
+      { status: 500 }
+    );
   }
 }
