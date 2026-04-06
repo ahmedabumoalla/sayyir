@@ -5,16 +5,15 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
-  ArrowRight, Loader2, Compass, Clock, Activity, MapPin, PlayCircle, Search, X
+  ArrowRight, Loader2, Compass, Clock, Activity, MapPin, PlayCircle, Search, X, Heart
 } from "lucide-react";
+import { toast } from "sonner";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
 export default function ExperiencesPage() {
   const [experiences, setExperiences] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // ✅ حالة البحث الجديدة
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -24,65 +23,39 @@ export default function ExperiencesPage() {
   const fetchAllExperiences = async () => {
     try {
       setLoading(true);
-
-      // 1. جلب تجارب المزودين
-      const providerQuery = supabase
-        .from('services')
-        .select('*')
-        .eq('service_category', 'experience')
-        .eq('status', 'approved');
-
-      // 2. جلب تجارب الأدمن
-      const adminQuery = supabase
-        .from('places')
-        .select('*')
-        .eq('type', 'experience')
-        .eq('is_active', true);
-
+      const providerQuery = supabase.from('services').select('*').eq('service_category', 'experience').eq('status', 'approved');
+      const adminQuery = supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);
       const [providerRes, adminRes] = await Promise.all([providerQuery, adminQuery]);
 
-      if (providerRes.error) console.error("Error fetching provider experiences:", providerRes.error);
-      if (adminRes.error) console.error("Error fetching admin experiences:", adminRes.error);
+      const today = new Date().toISOString().split('T')[0];
 
-      // 3. توحيد البيانات
-      const providerItems = (providerRes.data || []).map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        price: item.price,
-        image: item.image_url 
-                ? item.image_url 
-                : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder-experience.jpg"),
-        activity_type: item.activity_type || 'تجربة مميزة',
-        duration: item.duration,
-        difficulty_level: item.difficulty_level,
-        meeting_point: item.meeting_point,
-        source: 'service' // ✅ مصدر: خدمة
-      }));
+      // ✅ فلترة لإخفاء التجارب المنتهية
+      const providerItems = (providerRes.data || [])
+        .filter((item: any) => {
+            const expDates = item.details?.experience_info?.dates;
+            if (expDates && Array.isArray(expDates) && expDates.length > 0) {
+                // نتحقق إذا كان أحدث تاريخ في المصفوفة ما زال قائماً أو في المستقبل
+                const latestDate = expDates.sort()[expDates.length - 1];
+                return latestDate >= today;
+            }
+            return true; // إذا لم يحدد تواريخ، يتم عرضها دائمًا
+        })
+        .map((item: any) => ({
+            id: item.id, title: item.title, description: item.description, price: item.price,
+            image: item.image_url ? item.image_url : (item.menu_items && item.menu_items.length > 0 ? item.menu_items[0].image : "/placeholder-experience.jpg"),
+            activity_type: item.activity_type || 'تجربة مميزة', duration: item.duration, difficulty_level: item.difficulty_level, meeting_point: item.meeting_point, source: 'service'
+        }));
 
       const adminItems = (adminRes.data || []).map((item: any) => ({
-        id: item.id,
-        title: item.name,
-        description: item.description,
-        price: item.price || 0,
+        id: item.id, title: item.name, description: item.description, price: item.price || 0,
         image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "/placeholder-experience.jpg",
-        activity_type: item.category || 'تجربة سياحية',
-        duration: item.duration,
-        difficulty_level: item.difficulty,
-        meeting_point: item.city || 'عسير',
-        source: 'place' // ✅ مصدر: مكان (أدمن)
+        activity_type: item.category || 'تجربة سياحية', duration: item.duration, difficulty_level: item.difficulty, meeting_point: item.city || 'عسير', source: 'place'
       }));
 
       setExperiences([...providerItems, ...adminItems]);
-
-    } catch (err) {
-      console.error("خطأ في جلب البيانات:", err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error("خطأ في جلب البيانات:", err); } finally { setLoading(false); }
   };
 
-  // ✅ منطق الفلترة المعتمد على البحث
   const filteredExperiences = experiences.filter(item => 
     item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -90,9 +63,8 @@ export default function ExperiencesPage() {
   );
 
   return (
-    <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
+    <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`} dir="rtl">
       
-      {/* HEADER */}
       <div className="relative h-[40vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
         <div className="absolute inset-0 bg-black/40" />
         <div className="absolute inset-0 bg-gradientto-b from-black/20 via-black/60 to-[#0a0a0a]" />
@@ -109,55 +81,33 @@ export default function ExperiencesPage() {
         </Link>
       </div>
 
-      {/* ==================== قسم البحث ======================== */}
       <div className="container mx-auto px-4 -mt-8 relative z-30 mb-8">
         <div className="max-w-md mx-auto relative group">
             <div className="relative flex items-center bg-[#1a1a1a]/80 backdrop-blur-xl border border-white/20 rounded-full px-4 h-12 shadow-2xl transition focus-within:bg-[#1a1a1a] focus-within:border-[#C89B3C]/50">
                 <Search className="text-white/50 ml-3 shrink-0" size={20} />
-                <input
-                    type="text"
-                    placeholder="ابحث عن هايكنج، تخييم، جلسات..."
-                    className="bg-transparent border-none outline-none text-white w-full text-sm placeholder-white/40 h-full"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery && (
-                    <button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition">
-                        <X size={16} />
-                    </button>
-                )}
+                <input type="text" placeholder="ابحث عن هايكنج، تخييم، جلسات..." className="bg-transparent border-none outline-none text-white w-full text-sm placeholder-white/40 h-full" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                {searchQuery && (<button onClick={() => setSearchQuery("")} className="text-white/30 hover:text-white transition"><X size={16} /></button>)}
             </div>
         </div>
       </div>
 
-      {/* LIST */}
       <div className="container mx-auto px-4 py-16">
         {loading ? (
-          <div className="flex justify-center h-60 items-center">
-            <Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" />
-          </div>
+          <div className="flex justify-center h-60 items-center"><Loader2 className="animate-spin text-[#C89B3C] w-10 h-10" /></div>
         ) : filteredExperiences.length === 0 ? (
           <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center gap-4">
             {experiences.length === 0 ? (
-                <>
-                    <Compass size={48} className="mx-auto text-white/20 mb-4"/>
-                    <h3 className="text-2xl font-bold text-white/50">لا توجد تجارب متاحة حالياً</h3>
-                    <p className="text-white/30 mt-2">ترقبوا تجارب جديدة ومميزة قريباً!</p>
-                </>
+                <><Compass size={48} className="mx-auto text-white/20 mb-4"/><h3 className="text-2xl font-bold text-white/50">لا توجد تجارب متاحة حالياً</h3></>
             ) : (
-                <>
-                    <Search size={48} className="text-white/20" />
-                    <p className="text-white/40">لا توجد نتائج تطابق بحثك.</p>
-                    <button onClick={() => setSearchQuery("")} className="text-[#C89B3C] text-sm hover:underline">
-                        عرض جميع التجارب
-                    </button>
-                </>
+                <><Search size={48} className="text-white/20" /><p className="text-white/40">لا توجد نتائج تطابق بحثك.</p></>
             )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
             {filteredExperiences.map((exp) => (
-              <ExperienceCard key={`${exp.source}-${exp.id}`} data={exp} />
+                <Link key={`${exp.source}-${exp.id}`} href={exp.source === 'place' ? `/place/${exp.id}` : `/service/${exp.id}`} className="block transition-transform hover:-translate-y-2">
+                    <ExperienceCard data={exp} />
+                </Link>
             ))}
           </div>
         )}
@@ -166,97 +116,103 @@ export default function ExperiencesPage() {
   );
 }
 
-// دالة التحقق من الفيديو
 const isVideo = (url: string | null) => {
     if (!url) return false;
     const lowerUrl = url.toLowerCase();
-    return lowerUrl.includes('.mp4') || 
-           lowerUrl.includes('.webm') || 
-           lowerUrl.includes('.ogg') || 
-           lowerUrl.includes('video'); 
+    return lowerUrl.includes('.mp4') || lowerUrl.includes('.webm') || lowerUrl.includes('.ogg') || lowerUrl.includes('video'); 
 };
 
 function ExperienceCard({ data }: { data: any }) {
-  const linkHref = data.source === 'place' 
-      ? `/place/${data.id}`   
-      : `/service/${data.id}`; 
-
-  const buttonText = data.source === 'service' ? 'احجز تجربتك' : 'استكشف التجربة';
   const mediaIsVideo = isVideo(data.image);
-  
-  // ✅ التعديل هنا: تحويل السعر لرقم لضمان المقارنة الصحيحة
   const priceValue = Number(data.price) || 0;
 
   return (
-    <div className="group relative bg-[#1a1a1a] rounded-3xl overflow-hidden border border-white/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col h-full">
-      <div className="relative h-64 w-full overflow-hidden shrink-0 bg-black">
+    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/30 flex flex-col">
+      <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black shrink-0">
         
+        <FavoriteButton itemId={data.id} itemType={data.source === 'place' ? 'place' : 'service'} />
+
         {mediaIsVideo ? (
-            <video 
-                src={data.image} 
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                autoPlay 
-                muted 
-                loop 
-                playsInline 
-            />
+            <video src={data.image} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500" autoPlay muted loop playsInline />
         ) : (
-            <img 
-              src={data.image} 
-              alt={data.title} 
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-              onError={(e) => {
-                e.currentTarget.src = "/logo.png"; 
-                e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; 
-              }}
-            />
+            <img src={data.image} alt={data.title} className="w-full h-full object-cover opacity-80 transition-transform duration-700 group-hover:scale-110" onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }} />
         )}
         
-        <div className="absolute inset-0 bg-gradientto-t from-black/80 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
-        {/* ✅ التعديل هنا: إظهار السعر وإظهار مجاني بخلفية مختلفة */}
-        <div className={`absolute top-4 left-4 backdrop-blur-md px-4 py-2 rounded-xl z-10 border shadow-lg ${priceValue > 0 ? 'bg-black/60 border-[#C89B3C]/50' : 'bg-emerald-500/90 border-emerald-400'}`}>
-            <span className={`font-bold text-lg ${priceValue > 0 ? 'text-[#C89B3C]' : 'text-white'}`}>
-                {priceValue > 0 ? <>{priceValue} ﷼ <span className="text-xs text-white/60 font-normal">/ للشخص</span></> : 'مجاني'}
-            </span>
-        </div>
-        
-        <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 border border-white/10 z-10">
-            {mediaIsVideo ? <PlayCircle size={12} className="text-[#C89B3C]"/> : <Compass size={12} />} 
+        <div className="absolute top-4 left-4 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold text-white flex items-center gap-1.5 border border-white/10 z-10 shadow-lg">
+            {mediaIsVideo ? <PlayCircle size={14} className="text-[#C89B3C]"/> : <Compass size={14} className="text-[#C89B3C]"/>} 
             {data.activity_type}
+        </div>
+
+        <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10 ${priceValue > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
+            {priceValue > 0 ? <>{priceValue} ﷼ <span className="text-[10px] opacity-70 font-normal">/ للشخص</span></> : 'مجاني'}
         </div>
       </div>
       
-      <div className="p-6 flex flex-col flex-1">
-        <div className="flex justify-between items-start mb-2">
-            <h3 className="text-2xl font-bold group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3>
-        </div>
-        
-        <div className="flex flex-wrap gap-4 mb-4 text-xs text-white/50 bg-white/5 p-3 rounded-xl border border-white/5">
-            {data.duration && (
-                <div className="flex items-center gap-1"><Clock size={14} className="text-[#C89B3C]"/> {data.duration}</div>
-            )}
-            {data.difficulty_level && (
-                <div className="flex items-center gap-1">
-                    <Activity size={14} className="text-[#C89B3C]"/> 
-                    {data.difficulty_level === 'easy' ? 'سهل' : data.difficulty_level === 'medium' ? 'متوسط' : data.difficulty_level === 'hard' ? 'صعب' : data.difficulty_level}
-                </div>
-            )}
-            {data.meeting_point && (
-                <div className="flex items-center gap-1 line-clamp-1"><MapPin size={14} className="text-[#C89B3C]"/> {data.meeting_point}</div>
-            )}
-        </div>
+      <div className="p-4 md:p-6 flex flex-col flex-1 relative -mt-8 md:-mt-10 z-20">
+        <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-4 md:p-5 rounded-xl md:rounded-2xl shadow-xl flex-1 flex flex-col">
+            <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-[#C89B3C] transition line-clamp-1">{data.title}</h3>
+            
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+                {data.duration && (<div className="flex items-center gap-1 text-white/50 text-[10px] md:text-xs bg-white/5 px-2 py-1 rounded-lg border border-white/5"><Clock size={12} className="text-[#C89B3C]"/> {data.duration}</div>)}
+                {data.difficulty_level && (<div className="flex items-center gap-1 text-white/50 text-[10px] md:text-xs bg-white/5 px-2 py-1 rounded-lg border border-white/5"><Activity size={12} className="text-[#C89B3C]"/> {data.difficulty_level === 'easy' ? 'سهل' : data.difficulty_level === 'medium' ? 'متوسط' : data.difficulty_level === 'hard' ? 'صعب' : data.difficulty_level}</div>)}
+                {data.meeting_point && (<div className="flex items-center gap-1 text-white/50 text-[10px] md:text-xs bg-white/5 px-2 py-1 rounded-lg border border-white/5 max-w-[120px] line-clamp-1"><MapPin size={12} className="text-[#C89B3C] shrink-0"/> {data.meeting_point}</div>)}
+            </div>
 
-        <p className="text-white/60 text-sm line-clamp-3 mb-6 flex-1 leading-relaxed">
-            {data.description}
-        </p>
-        
-        <Link href={linkHref} className="w-full block mt-auto">
-            <button className="w-full py-3 rounded-xl bg-[#C89B3C] text-black font-bold hover:bg-[#b38a35] transition-all flex items-center justify-center gap-2">
-               {buttonText} <ArrowRight size={18}/>
-            </button>
-        </Link>
+            <p className="text-white/60 text-xs leading-relaxed line-clamp-2 mb-4 flex-1">
+              {data.description}
+            </p>
+
+            <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
+               <span className="text-xs text-[#C89B3C] font-bold flex items-center gap-1 hover:text-white transition">استكشف التجربة <ArrowRight size={12} className="rotate-180"/></span>
+            </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+function FavoriteButton({ itemId, itemType }: { itemId: string, itemType: 'service' | 'place' }) {
+  const [isFav, setIsFav] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkFav = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setLoading(false); return; }
+      
+      const column = itemType === 'place' ? 'place_id' : 'service_id';
+      const { data } = await supabase.from('favorites').select('id').eq('user_id', session.user.id).eq(column, itemId).single();
+      if (data) setIsFav(true);
+      setLoading(false);
+    };
+    checkFav();
+  }, [itemId, itemType]);
+
+  const toggleFav = async (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return toast.error("يجب تسجيل الدخول لإضافة المفضلة");
+
+    const column = itemType === 'place' ? 'place_id' : 'service_id';
+    
+    if (isFav) {
+       setIsFav(false);
+       await supabase.from('favorites').delete().eq('user_id', session.user.id).eq(column, itemId);
+       toast.success("تمت الإزالة من المفضلة");
+    } else {
+       setIsFav(true);
+       await supabase.from('favorites').insert({ user_id: session.user.id, [column]: itemId });
+       toast.success("تمت الإضافة للمفضلة");
+    }
+  };
+
+  if (loading) return <div className="absolute top-4 right-4 p-2 bg-black/40 rounded-full z-20"><Loader2 size={16} className="animate-spin text-white/50" /></div>;
+
+  return (
+    <button onClick={toggleFav} className="absolute top-4 right-4 p-2.5 bg-black/40 backdrop-blur-md rounded-full transition border border-white/10 z-20 hover:scale-110">
+      <Heart size={18} className={isFav ? "fill-red-500 text-red-500 animate-in zoom-in" : "text-white"} />
+    </button>
   );
 }

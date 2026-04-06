@@ -114,7 +114,6 @@ const TimePicker12H = ({ value, onChange }: { value: string, onChange: (val: str
     );
 };
 
-// ✅ مساعدة لمعرفة إذا الرابط فيديو لكي يعرضه بشكل صحيح في الـ Preview
 const isVideoLink = (url: string | null) => {
     if (!url) return false;
     const lower = url.toLowerCase();
@@ -127,6 +126,29 @@ export default function AddServicePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const facilityServiceFileRef = useRef<HTMLInputElement>(null);
   const todayDate = new Date().toISOString().split('T')[0];
+
+  // --- جلب السياسات الديناميكية للمنصة ---
+  const [platformPolicies, setPlatformPolicies] = useState<any[]>([]);
+  const [acceptedPolicies, setAcceptedPolicies] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const fetchPolicies = async () => {
+        const { data, error } = await supabase
+            .from('registration_fields')
+            .select('*')
+            .eq('scope', 'service')
+            .eq('field_type', 'policy')
+            .order('sort_order', { ascending: true });
+            
+        if (!error && data) {
+            setPlatformPolicies(data);
+            const initialAcceptance: Record<string, boolean> = {};
+            data.forEach(p => initialAcceptance[p.id] = false);
+            setAcceptedPolicies(initialAcceptance);
+        }
+    };
+    fetchPolicies();
+  }, []);
 
   // 1. التصنيفات
   const [mainCategory, setMainCategory] = useState<'facility_lodging' | 'experience_event' | null>(null);
@@ -150,7 +172,9 @@ export default function AddServicePage() {
   const [newLodgingFeature, setNewLodgingFeature] = useState("");
   const [targetAudience, setTargetAudience] = useState<'singles' | 'families' | 'both'>('both');
   const [capacity, setCapacity] = useState("");
-  const [depositConfig, setDepositConfig] = useState({ required: false, isRefundable: true, paymentTime: 'with_booking' });
+  
+  // ✅ تم إضافة amount إلى إعدادات التأمين
+  const [depositConfig, setDepositConfig] = useState({ required: false, isRefundable: true, paymentTime: 'with_booking', amount: "" });
 
   // 4. المرفق (Facility)
   const [facilityServices, setFacilityServices] = useState<any[]>([]);
@@ -182,7 +206,9 @@ export default function AddServicePage() {
   // 7. مشتركة
   const [images, setImages] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [commercialLicense, setCommercialLicense] = useState<File | null>(null);
+  
+  // ✅ التراخيص تم تعديلها لتصبح مصفوفة لدعم أكثر من ملف
+  const [commercialLicenses, setCommercialLicenses] = useState<File[]>([]);
   const [policies, setPolicies] = useState("");
   const [workDays, setWorkDays] = useState(["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"].map(d => ({ day: d, active: true, shifts: [{ from: "08:00", to: "23:59" }] })));
 
@@ -243,21 +269,34 @@ export default function AddServicePage() {
       setFacServName(""); setFacServDesc(""); setFacServImg(null);
   };
 
+  const handlePolicyToggle = (policyId: string) => {
+      setAcceptedPolicies(prev => ({ ...prev, [policyId]: !prev[policyId] }));
+  };
+
   const handleSubmit = async () => {
-      // ✅ تعديل التحقق لضمان أن الفعاليات تتطلب سعراً، ولو كان 0 يكتبه المزود
       if (!title || !description || price === "" || !mainCategory || !subCategory) {
           return alert("الرجاء تعبئة جميع الحقول الأساسية المطلوبة.");
       }
 
       if (subCategory === 'lodging' && !lodgingType) return alert("الرجاء تحديد نوع النزل.");
 
+      for (const policy of platformPolicies) {
+          if (policy.is_required && !acceptedPolicies[policy.id]) {
+              return alert(`يجب الموافقة على: "${policy.label}" قبل الإرسال.`);
+          }
+      }
+
       setLoading(true);
       try {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) throw new Error("غير مصرح");
 
-          let licenseUrl = null;
-          if (commercialLicense) licenseUrl = await uploadSingleFile(commercialLicense, 'licenses');
+          // ✅ رفع المستندات المتعددة
+          let licenseUrls: string[] = [];
+          if (commercialLicenses.length > 0) {
+              licenseUrls = await Promise.all(commercialLicenses.map(file => uploadSingleFile(file, 'licenses')));
+          }
+          const licenseString = licenseUrls.length > 0 ? licenseUrls.join(',') : null;
 
           const processedFacServices = await Promise.all(facilityServices.map(async (fs) => {
               let url = null;
@@ -268,7 +307,19 @@ export default function AddServicePage() {
           const finalLat = exactLat ? parseFloat(exactLat) : location.lat;
           const finalLng = exactLng ? parseFloat(exactLng) : location.lng;
 
-          const details: any = { images };
+          const acceptedPoliciesLog = platformPolicies
+              .filter(policy => acceptedPolicies[policy.id]) 
+              .map(policy => ({
+                  policy_id: policy.id,
+                  title: policy.label,
+                  policy_text: policy.options?.[0] || "",
+                  accepted_at: new Date().toISOString() 
+              }));
+
+          const details: any = { 
+              images,
+              platform_policies_log: acceptedPoliciesLog
+          };
 
           if (subCategory === 'facility') {
               details.facility_services = processedFacServices;
@@ -303,7 +354,6 @@ export default function AddServicePage() {
               };
           }
           else if (subCategory === 'event') {
-              // ✅ حفظ سعر الأطفال بشكل صحيح أو تركه فارغاً إذا لم يحدده
               details.event_info = {
                   child_price: childPrice === "" ? null : Number(childPrice),
                   dates: eventDates,
@@ -319,10 +369,8 @@ export default function AddServicePage() {
               service_type: mainCategory === 'experience_event' ? 'experience' : 'general',
               title,
               description,
-              // ✅ حفظ السعر الأساسي للجميع كـ Number
               price: Number(price),
-              commercial_license: licenseUrl,
-              location_lat: finalLat,
+              commercial_license: licenseUrls,              location_lat: finalLat,
               location_lng: finalLng,
               status: 'pending',
               image_url: images[0] || null,
@@ -426,7 +474,6 @@ export default function AddServicePage() {
                                 <div className="space-y-2">
                                     <label className="text-sm text-white/70 font-bold">رسوم الدخول للأطفال (اختياري)</label>
                                     <div className="relative">
-                                        {/* ✅ تأكيد حفظ سعر الطفل */}
                                         <input type="number" min="0" value={childPrice} onChange={e => setChildPrice(e.target.value)} placeholder="0 = مجاني" className="w-full bg-black/40 border border-white/10 rounded-xl pl-16 pr-4 py-3 text-white focus:border-[#C89B3C] outline-none dir-ltr text-right"/>
                                         <span className="absolute left-4 top-3 text-white/40">SAR</span>
                                     </div>
@@ -434,16 +481,43 @@ export default function AddServicePage() {
                             )}
                         </div>
 
+                        {/* ✅ قسم المستندات المتعددة والمعاينة */}
                         <div className="space-y-2 pt-2 border-t border-white/5">
-                            <label className="text-sm text-white/70 font-bold block mb-1">ترخيص أو هوية وطنية (اختياري)</label>
-                            <div className="relative border border-dashed border-white/20 rounded-xl p-3 text-center cursor-pointer hover:border-[#C89B3C] transition bg-black/20">
-                                <input type="file" accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => setCommercialLicense(e.target.files?.[0] || null)} />
-                                <span className="text-xs text-white/50">{commercialLicense ? commercialLicense.name : "اضغط لرفع ملف الترخيص (PDF/Image)"}</span>
+                            <label className="text-sm text-white/70 font-bold block mb-1">المستندات، التراخيص أو الهوية الوطنية (اختياري)</label>
+                            <div className="relative border border-dashed border-white/20 rounded-xl p-4 text-center hover:border-[#C89B3C] transition bg-black/20">
+                                <input type="file" multiple accept=".pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => {
+                                    if (e.target.files) {
+                                        setCommercialLicenses([...commercialLicenses, ...Array.from(e.target.files)]);
+                                    }
+                                }} />
+                                <div className="flex flex-col items-center gap-2 text-white/50">
+                                    <UploadCloud size={24} className="text-[#C89B3C]" />
+                                    <span className="text-xs">اضغط هنا أو اسحب الملفات لرفع المستندات (PDF / صور)</span>
+                                </div>
                             </div>
+                            
+                            {/* معاينة الملفات المرفوعة */}
+                            {commercialLicenses.length > 0 && (
+                                <div className="flex flex-wrap gap-3 mt-3">
+                                    {commercialLicenses.map((file, idx) => (
+                                        <div key={idx} className="relative bg-black/40 border border-white/10 rounded-xl p-2 flex flex-col items-center justify-center w-24 h-24 group">
+                                            <button type="button" onClick={() => setCommercialLicenses(commercialLicenses.filter((_, i) => i !== idx))} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition z-20 shadow-lg">
+                                                <X size={12}/>
+                                            </button>
+                                            {file.type.startsWith('image/') ? (
+                                                <img src={URL.createObjectURL(file)} className="w-full h-full object-cover rounded-lg" alt="preview" />
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center text-white/50 gap-1 text-center w-full h-full">
+                                                    <FileText size={24} className="text-blue-400" />
+                                                    <span className="text-[9px] w-full truncate px-1" title={file.name}>{file.name}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
-
-                    {/* 3. الإعدادات الخاصة بكل قسم */}
 
                     {/* أ. المرفق (Facility) */}
                     {subCategory === 'facility' && (
@@ -555,7 +629,7 @@ export default function AddServicePage() {
                                         </div>
                                     )}
 
-                                    {/* المميزات المتوفرة (ديناميكية حسب النوع) */}
+                                    {/* المميزات المتوفرة */}
                                     <div className="space-y-3 pt-2">
                                         <label className="text-sm text-white/70 font-bold">الخدمات والمميزات المتوفرة:</label>
                                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -581,7 +655,7 @@ export default function AddServicePage() {
                                         </div>
                                     </div>
 
-                                    {/* التأمين (يظهر للجميع) */}
+                                    {/* ✅ إعدادات التأمين المحدثة مع حقل المبلغ */}
                                     <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                                         <h3 className="font-bold text-[#C89B3C] mb-1 flex items-center gap-2"><ShieldCheck size={16}/> سياسة التأمين</h3>
                                         <label className="flex items-center gap-3 cursor-pointer">
@@ -591,6 +665,10 @@ export default function AddServicePage() {
                                         
                                         {depositConfig.required && (
                                             <div className="pl-8 space-y-4 mt-2 animate-in fade-in">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-white/50 block">مبلغ التأمين (ريال)</label>
+                                                    <input type="number" min="1" value={depositConfig.amount} onChange={e => setDepositConfig({...depositConfig, amount: e.target.value})} className="w-full sm:w-64 bg-black/40 border border-white/10 rounded-lg p-2.5 text-white outline-none text-xs focus:border-[#C89B3C]" placeholder="مثال: 500" />
+                                                </div>
                                                 <label className="flex items-center gap-3 cursor-pointer text-sm text-white/80">
                                                     <input type="checkbox" checked={depositConfig.isRefundable} onChange={e => setDepositConfig({...depositConfig, isRefundable: e.target.checked})} className="w-4 h-4 accent-[#C89B3C]"/>
                                                     التأمين مسترد (في حال عدم وجود تلفيات)
@@ -613,6 +691,7 @@ export default function AddServicePage() {
                                 <label className="text-sm text-white/70 font-bold block mb-2">سياسات المكان (اختياري)</label>
                                 <textarea rows={3} value={policies} onChange={e => setPolicies(e.target.value)} placeholder="شروط الإلغاء، سياسة التدخين..." className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white outline-none resize-none text-sm"/>
                             </div>
+                            
                             <div className="space-y-3 pt-2">
                                 <label className="text-sm text-white/70 font-bold block">أوقات العمل (أيام الاستقبال)</label>
                                 <div className="grid grid-cols-1 gap-2 bg-black/20 p-4 rounded-xl border border-white/5"> 
@@ -758,11 +837,12 @@ export default function AddServicePage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-1">
                                         <label className="text-xs text-white/50">تاريخ بدء الفعالية</label>
-                                        <input type="date" value={eventDates.startDate} onChange={e => setEventDates({...eventDates, startDate: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white outline-none scheme-dark"/>
+                                        {/* ✅ تطبيق min لتاريخ اليوم */}
+                                        <input type="date" min={todayDate} value={eventDates.startDate} onChange={e => setEventDates({...eventDates, startDate: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white outline-none scheme-dark"/>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-xs text-white/50">تاريخ انتهاء الفعالية</label>
-                                        <input type="date" value={eventDates.endDate} onChange={e => setEventDates({...eventDates, endDate: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white outline-none scheme-dark"/>
+                                        <input type="date" min={todayDate} value={eventDates.endDate} onChange={e => setEventDates({...eventDates, endDate: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white outline-none scheme-dark"/>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-xs text-white/50">من الساعة (يومياً)</label>
@@ -810,16 +890,15 @@ export default function AddServicePage() {
                         <div className="flex flex-wrap gap-4">
                             {images.map((url, i) => (
                                 <div key={i} className="relative w-32 h-32 rounded-xl overflow-hidden border border-white/10 group bg-black/40 flex items-center justify-center">
-                                    {/* ✅ الحل النهائي لعرض الفيديو في الـ Preview دون أن يكون مكسوراً */}
                                     {isVideoLink(url) ? (
                                         <>
                                             <video src={`${url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                                             <div className="absolute inset-0 flex items-center justify-center bg-black/30"><Video className="text-white/80" size={24}/></div>
                                         </>
                                     ) : (
-                                        <Image src={url} fill className="object-cover" alt="Preview"/>
+                                        <img src={url} className="w-full h-full object-cover" alt="Preview"/>
                                     )}
-                                    <button onClick={() => removeImage(i)} className="absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition"><Trash2 size={16} className="text-white"/></button>
+                                    <button onClick={() => removeImage(i)} className="absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition z-20"><Trash2 size={16} className="text-white"/></button>
                                 </div>
                             ))}
                             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-2 hover:bg-white/5 hover:border-[#C89B3C]/50 transition text-white/50">
@@ -853,9 +932,41 @@ export default function AddServicePage() {
                         </div>
                     </div>
 
+                    {/* ✅ 6. السياسات المطلوبة من المنصة (يوافق عليها المزود) */}
+                    {platformPolicies.length > 0 && (
+                        <div className="bg-black/40 p-6 rounded-3xl border border-white/10 shadow-xl space-y-4">
+                            <h2 className="text-lg font-bold flex items-center gap-2"><ShieldCheck className="text-[#C89B3C]"/> سياسات وشروط المنصة</h2>
+                            <p className="text-sm text-white/50 mb-4">يرجى قراءة والموافقة على سياسات المنصة التالية لتمكين إرسال الخدمة.</p>
+                            
+                            <div className="space-y-4">
+                                {platformPolicies.map((policy) => (
+                                    <div key={policy.id} className={`p-5 rounded-2xl border transition ${acceptedPolicies[policy.id] ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/5 bg-[#1a1a1a]'}`}>
+                                        <h3 className="font-bold text-white mb-2">{policy.label} {policy.is_required && <span className="text-red-400 text-xs">(مطلوب)</span>}</h3>
+                                        {policy.options?.[0] && (
+                                            <div className="bg-black/30 p-4 rounded-xl text-sm text-white/70 whitespace-pre-wrap leading-relaxed border border-white/5 mb-4 max-h-40 overflow-y-auto custom-scrollbar">
+                                                {policy.options[0]}
+                                            </div>
+                                        )}
+                                        <label className="flex items-center gap-3 cursor-pointer select-none w-fit group">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={acceptedPolicies[policy.id] || false}
+                                                onChange={() => handlePolicyToggle(policy.id)}
+                                                className="w-5 h-5 accent-[#C89B3C]"
+                                            />
+                                            <span className={`text-sm font-bold transition ${acceptedPolicies[policy.id] ? 'text-emerald-400' : 'text-white/70 group-hover:text-white'}`}>
+                                                أوافق وأتعهد بالالتزام بما ورد أعلاه
+                                            </span>
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* زر الحفظ النهائي */}
                     <div className="flex justify-end pt-4">
-                        <button onClick={handleSubmit} disabled={loading} className="bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold text-lg px-10 py-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/20 w-full md:w-auto">
+                        <button onClick={handleSubmit} disabled={loading} className="bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold text-lg px-10 py-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/20 w-full md:w-auto disabled:opacity-50 disabled:cursor-not-allowed">
                             {loading ? <Loader2 className="animate-spin w-6 h-6"/> : <><Save size={20}/> إرسال الخدمة للمراجعة</>}
                         </button>
                     </div>

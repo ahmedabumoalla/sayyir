@@ -9,7 +9,7 @@ import { Tajawal } from "next/font/google";
 import { 
   Search, MapPin, Filter, Star, Loader2, Home, Utensils, Mountain, ArrowLeft, Clock, CalendarDays, ChevronLeft,
   Users, CheckCircle, X, Info, ShieldCheck, Image as ImageIcon, PlayCircle, Calendar, Box, AlertCircle, Briefcase, Minus, Plus, Send, CheckSquare,
-  Wifi, Car, Waves, Sparkles, Wind, Tv, Flame, Coffee, HeartPulse, CalendarOff, Activity, Compass, Tent, Building, Ticket, CreditCard
+  Wifi, Car, Waves, Sparkles, Wind, Tv, Flame, Coffee, HeartPulse, CalendarOff, Activity, Compass, Tent, Building, Ticket, CreditCard, Heart, Share2
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -116,6 +116,10 @@ export default function ServiceDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [bookingLoading, setBookingLoading] = useState(false); 
   
+  // ✅ حالة المفضلة
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favLoading, setFavLoading] = useState(true);
+
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [agreedToPolicies, setAgreedToPolicies] = useState(false);
 
@@ -135,6 +139,34 @@ export default function ServiceDetailsPage() {
   useEffect(() => {
     fetchServiceDetails();
   }, []);
+
+  // التحقق من المفضلة
+  useEffect(() => {
+    if (service) checkFavorite();
+  }, [service]);
+
+  const checkFavorite = async () => {
+     const { data: { session } } = await supabase.auth.getSession();
+     if (!session) { setFavLoading(false); return; }
+     const { data } = await supabase.from('favorites').select('id').eq('user_id', session.user.id).eq('service_id', service?.id).single();
+     if (data) setIsFavorite(true);
+     setFavLoading(false);
+  };
+
+  const toggleFavorite = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return toast.error("يجب تسجيل الدخول للإضافة للمفضلة");
+    
+    if (isFavorite) {
+       setIsFavorite(false);
+       await supabase.from('favorites').delete().eq('user_id', session.user.id).eq('service_id', service?.id);
+       toast.success("تم الإزالة من المفضلة");
+    } else {
+       setIsFavorite(true);
+       await supabase.from('favorites').insert({ user_id: session.user.id, service_id: service?.id });
+       toast.success("تمت الإضافة للمفضلة");
+    }
+  };
 
   useEffect(() => {
       if (!service) return;
@@ -262,7 +294,6 @@ export default function ServiceDetailsPage() {
       } else {
           if (!bookingDate) return toast.warning("الرجاء تحديد تاريخ الحضور.");
           
-          // ✅ التحقق من الوقت لكل الخدمات (فعاليات ومرافق) ما عدا التجارب التي لها وقت محدد مسبقاً
           if (service.sub_category !== 'experience' && !bookingTime) {
               return toast.warning("الرجاء تحديد وقت الحضور.");
           }
@@ -353,9 +384,20 @@ export default function ServiceDetailsPage() {
         )}
         <div className="absolute inset-0 bg-linear-to-t from-[#0a0a0a] via-black/50 to-transparent" />
         
-        <button onClick={() => window.history.back()} className="absolute top-6 right-6 bg-black/50 p-2 rounded-full text-white hover:bg-[#C89B3C] transition z-20">
-            <ChevronLeft size={24} className="rotate-180" />
-        </button>
+        {/* ✅ أزرار الهيدر مع المفضلة */}
+        <div className="absolute top-6 left-6 right-6 flex justify-between items-center z-20">
+            <button onClick={() => window.history.back()} className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center hover:bg-[#C89B3C] hover:text-black transition text-white border border-white/10">
+                <ChevronLeft size={24} className="rotate-180" />
+            </button>
+            <div className="flex items-center gap-2">
+                <button onClick={toggleFavorite} disabled={favLoading} className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center hover:bg-[#C89B3C] hover:text-black transition text-white border border-white/10">
+                  {favLoading ? <Loader2 size={16} className="animate-spin"/> : <Heart size={18} className={isFavorite ? "fill-red-500 text-red-500" : ""} />}
+                </button>
+                <button className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center hover:bg-[#C89B3C] hover:text-black transition text-white border border-white/10">
+                  <Share2 size={18} />
+                </button>
+            </div>
+        </div>
 
         <div className="absolute bottom-0 w-full p-6 md:p-10">
             <div className="container mx-auto">
@@ -468,7 +510,7 @@ export default function ServiceDetailsPage() {
                             <div>
                                 <h4 className="text-orange-400 font-bold mb-1">تأمين مسترد على المحتويات</h4>
                                 <p className="text-white/80 text-sm">
-                                    يشترط دفع مبلغ تأمين {service.details.deposit_config.paymentTime === 'with_booking' ? 'يتم سداده مع الحجز' : 'يُدفع نقداً عند الوصول'}.
+                                    يشترط دفع مبلغ تأمين بقيمة <strong className="text-orange-400">{service.details.deposit_config.amount} ريال</strong> {service.details.deposit_config.paymentTime === 'with_booking' ? 'يتم سداده مع الحجز' : 'يُدفع نقداً عند الوصول'}.
                                     {service.details.deposit_config.isRefundable && " التأمين مسترد بالكامل في حال تسليم السكن بدون تلفيات."}
                                 </p>
                             </div>
@@ -616,7 +658,7 @@ export default function ServiceDetailsPage() {
                         <NavigationControl position="top-left" showCompass={false}/>
                         <Marker latitude={service.location_lat} longitude={service.location_lng} color="#C89B3C"/>
                     </Map>
-                    <a href={`https://www.google.com/maps/search/?api=1&query=$${service.location_lat},${service.location_lng}`} target="_blank" className="absolute bottom-6 left-6 right-6 bg-[#C89B3C] text-black py-4 rounded-xl font-bold text-center shadow-lg hover:bg-[#b38a35] transition flex justify-center items-center gap-2"><Compass size={18}/> فتح الموقع في خرائط Google</a>
+                    <a href={`https://www.google.com/maps/search/?api=1&query=$$${service.location_lat},${service.location_lng}`} target="_blank" className="absolute bottom-6 left-6 right-6 bg-[#C89B3C] text-black py-4 rounded-xl font-bold text-center shadow-lg hover:bg-[#b38a35] transition flex justify-center items-center gap-2"><Compass size={18}/> فتح الموقع في خرائط Google</a>
                 </div>
             )}
         </div>
@@ -776,7 +818,7 @@ export default function ServiceDetailsPage() {
                     )}
 
                     {/* الملاحظات */}
-                    <div className="space-y-2 pt-2 border-t border-white/10">
+                    <div className="space-y-2 pt-2 border-t border-white/5 mt-4">
                         <label className="text-xs text-gray-400 font-bold flex items-center gap-1 px-1">
                             <Info size={12}/> ملاحظاتك للمزود
                         </label>
@@ -785,7 +827,7 @@ export default function ServiceDetailsPage() {
                             value={additionalNotes}
                             onChange={(e) => setAdditionalNotes(e.target.value)}
                             placeholder="أي طلبات خاصة؟"
-                            className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none text-white text-sm resize-none focus:border-[#C89B3C]/50 transition"
+                            className="w-full bg-black/30 border border-white/10 rounded-xl p-3 outline-none text-white text-sm resize-none focus:border-[#C89B3C]/50 transition"
                         />
                     </div>
 
@@ -852,7 +894,7 @@ export default function ServiceDetailsPage() {
 
       </div>
 
-      {/* تكبير الصور */}
+      {/* تكبير الصور وفيديو */}
       {zoomedImage && (
         <div className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><X size={24} /></button>

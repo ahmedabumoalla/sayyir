@@ -7,9 +7,10 @@ import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
   MapPin, ArrowRight, Loader2, Mountain, Landmark, 
-  Search, Trees, X 
+  Search, Trees, X, Heart
 } from "lucide-react";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { toast, Toaster } from "sonner";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
@@ -54,6 +55,7 @@ export default function LandmarksPage() {
 
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white ${tajawal.className}`}>
+      <Toaster position="top-center" richColors />
       
       <div className="relative h-[40vh] md:h-[45vh] w-full flex items-center justify-center overflow-hidden bg-[#1a1a1a]">
         <Image src="/logo.png" alt="Sayyir Logo" fill className="object-contain p-16 md:p-24 opacity-30" />
@@ -134,17 +136,20 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
   const mainMedia = data.media_urls && data.media_urls[0] ? data.media_urls[0] : null;
   const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   
-  // ✅ التعديل هنا: فحص دقيق للسعر لضمان عدم ظهور الشارة للمعالم الفارغة (null)
   const hasPrice = data.price !== null && data.price !== undefined && data.price !== "";
   const priceValue = Number(data.price);
   
   return (
-    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40">
-        <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black flex items-center justify-center">
+    <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40 flex flex-col">
+        <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black flex items-center justify-center shrink-0">
+          
+          {/* ✅ زر المفضلة مضاف هنا */}
+          <FavoriteButton itemId={data.id} itemType="place" />
+
           {mainMedia ? (
               isMainMediaVideo ? (
                   <video 
-                    src={mainMedia} 
+                    src={`${mainMedia}#t=0.001`} 
                     className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500" 
                     muted 
                     loop 
@@ -164,32 +169,96 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
               <Image src="/placeholder.jpg" alt={data.name} fill className="object-cover"/>
           )}
           
-          <div className="absolute top-3 left-3 md:top-4 md:left-4 backdrop-blur-md bg-black/30 px-2.5 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl border border-white/10 flex items-center gap-1 md:gap-1.5 z-10">
-            {isHeritage ? <Landmark className="text-amber-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
-             isNatural ? <Trees className="text-teal-400 w-3 h-3 md:w-3.5 md:h-3.5"/> : 
-             <Mountain className="text-emerald-400 w-3 h-3 md:w-3.5 md:h-3.5"/>}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+          
+          <div className="absolute top-4 left-4 backdrop-blur-md bg-black/30 px-3 py-1.5 md:px-4 md:py-2 rounded-xl border border-white/10 flex items-center gap-1.5 z-10">
+            {isHeritage ? <Landmark className="text-amber-400 w-3.5 h-3.5"/> : 
+             isNatural ? <Trees className="text-teal-400 w-3.5 h-3.5"/> : 
+             <Mountain className="text-emerald-400 w-3.5 h-3.5"/>}
             <span className="text-[10px] md:text-xs font-bold text-white">
                 {isHeritage ? 'تراثي' : isNatural ? 'طبيعي' : 'سياحي'}
             </span>
           </div>
 
-          {/* ✅ الشارة تظهر فقط إذا كان هناك قيمة مدخلة للسعر (بما في ذلك 0 للفعاليات المجانية) */}
           {hasPrice && (
-              <div className={`absolute bottom-3 right-3 md:bottom-4 md:right-4 backdrop-blur text-white text-[9px] md:text-[10px] px-2 py-1 rounded-md md:rounded-lg font-bold shadow-lg z-10 ${priceValue > 0 ? 'bg-[#C89B3C]/90 text-black' : 'bg-emerald-500/90'}`}>
-                  {priceValue > 0 ? `${priceValue} ريال` : 'مجاني'}
+              <div className={`absolute bottom-4 right-4 backdrop-blur text-white text-[10px] md:text-xs px-3 py-1.5 rounded-lg font-bold shadow-lg z-10 ${priceValue > 0 ? 'bg-black/60 border border-[#C89B3C]/50 text-[#C89B3C]' : 'bg-emerald-500/90 border border-emerald-400 text-white'}`}>
+                  {priceValue > 0 ? `${priceValue} ريال` : 'دخول مجاني'}
               </div>
           )}
         </div>
         
-        <div className="p-4 md:p-6 relative -mt-8 md:-mt-10 z-20">
-          <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl">
-              <h3 className="text-lg md:text-xl font-bold text-white mb-1.5 md:mb-2 group-hover:text-[#C89B3C] transition line-clamp-1">{data.name}</h3>
-              <div className="flex items-center gap-1 text-white/50 text-[10px] md:text-xs mb-1 md:mb-3">
-                <MapPin className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0" />
+        {/* ✅ التعديل هنا: إضافة الوصف الجذاب بشكل متناسق مع الكروت الأخرى */}
+        <div className="p-4 md:p-6 flex flex-col flex-1 relative -mt-8 z-20">
+          <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-4 md:p-5 rounded-xl md:rounded-2xl shadow-xl flex-1 flex flex-col">
+              <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-[#C89B3C] transition line-clamp-1">{data.name}</h3>
+              
+              <div className="flex items-center gap-1.5 text-white/50 text-[10px] md:text-xs mb-3">
+                <MapPin className="w-3.5 h-3.5 shrink-0 text-[#C89B3C]" />
                 <span className="line-clamp-1">{data.city || "عسير، السعودية"}</span>
+              </div>
+
+              {/* النبذة الجذابة */}
+              <p className="text-white/60 text-xs leading-relaxed line-clamp-2 mb-4 flex-1">
+                {data.description}
+              </p>
+
+              <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
+                 <span className="text-xs text-[#C89B3C] font-bold flex items-center gap-1 hover:text-white transition">استكشف المعلم <ArrowRight size={12} className="rotate-180"/></span>
               </div>
           </div>
         </div>
     </div>
+  );
+}
+
+// ✅ مكون زر المفضلة المتوافق مع الجدول المحدث
+function FavoriteButton({ itemId, itemType }: { itemId: string, itemType: 'service' | 'place' }) {
+  const [isFav, setIsFav] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkFav = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setLoading(false); return; }
+      
+      const column = itemType === 'place' ? 'place_id' : 'service_id';
+      
+      const { data } = await supabase
+          .from('favorites')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .eq(column, itemId)
+          .single();
+          
+      if (data) setIsFav(true);
+      setLoading(false);
+    };
+    checkFav();
+  }, [itemId, itemType]);
+
+  const toggleFav = async (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return toast.error("يجب تسجيل الدخول لإضافة المفضلة");
+
+    const column = itemType === 'place' ? 'place_id' : 'service_id';
+    
+    if (isFav) {
+       setIsFav(false);
+       await supabase.from('favorites').delete().eq('user_id', session.user.id).eq(column, itemId);
+       toast.success("تمت الإزالة من المفضلة");
+    } else {
+       setIsFav(true);
+       await supabase.from('favorites').insert({ user_id: session.user.id, [column]: itemId });
+       toast.success("تمت الإضافة للمفضلة");
+    }
+  };
+
+  if (loading) return <div className="absolute top-4 right-4 p-2 bg-black/40 rounded-full z-20"><Loader2 size={16} className="animate-spin text-white/50" /></div>;
+
+  return (
+    <button onClick={toggleFav} className="absolute top-4 right-4 p-2.5 bg-black/40 backdrop-blur-md rounded-full transition border border-white/10 z-20 hover:scale-110">
+      <Heart size={18} className={isFav ? "fill-red-500 text-red-500 animate-in zoom-in" : "text-white"} />
+    </button>
   );
 }

@@ -8,7 +8,7 @@ import {
   ChevronRight, Save, Loader2, MapPin, Image as ImageIcon, 
   Home, Compass, Building, Tent, Info, Plus, Trash2, 
   ShieldCheck, UploadCloud, Clock, CheckSquare, X,
-  Activity, Ticket, FileText, Utensils
+  Activity, Ticket, FileText, Utensils, PlayCircle, Video
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
@@ -114,12 +114,43 @@ const TimePicker12H = ({ value, onChange }: { value: string, onChange: (val: str
     );
 };
 
+const isVideoLink = (url: string | null) => {
+    if (!url) return false;
+    const lower = url.toLowerCase();
+    return lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.ogg') || lower.includes('.mov') || lower.includes('video');
+};
+
 export default function AddServicePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const facilityServiceFileRef = useRef<HTMLInputElement>(null);
   const todayDate = new Date().toISOString().split('T')[0];
+
+  // --- جلب السياسات الديناميكية للمنصة ---
+  const [platformPolicies, setPlatformPolicies] = useState<any[]>([]);
+  const [acceptedPolicies, setAcceptedPolicies] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const fetchPolicies = async () => {
+        // نجلب فقط الحقول اللي نوعها policy ومخصصة للـ service
+        const { data, error } = await supabase
+            .from('registration_fields')
+            .select('*')
+            .eq('scope', 'service')
+            .eq('field_type', 'policy')
+            .order('sort_order', { ascending: true });
+            
+        if (!error && data) {
+            setPlatformPolicies(data);
+            // تهيئة حالة القبول للسياسات بـ false
+            const initialAcceptance: Record<string, boolean> = {};
+            data.forEach(p => initialAcceptance[p.id] = false);
+            setAcceptedPolicies(initialAcceptance);
+        }
+    };
+    fetchPolicies();
+  }, []);
 
   // 1. التصنيفات
   const [mainCategory, setMainCategory] = useState<'facility_lodging' | 'experience_event' | null>(null);
@@ -184,7 +215,6 @@ export default function AddServicePage() {
   const [exactLat, setExactLat] = useState("");
   const [exactLng, setExactLng] = useState("");
 
-  // تحديث الخريطة عند تغيير الإحداثيات يدوياً
   useEffect(() => {
       const lat = parseFloat(exactLat);
       const lng = parseFloat(exactLng);
@@ -193,7 +223,6 @@ export default function AddServicePage() {
       }
   }, [exactLat, exactLng]);
 
-  // --- دوال التحكم في الواجهة ---
   const removeImage = (index: number) => setImages(images.filter((_, i) => i !== index));
   const handleHouseFeatureToggle = (id: string) => setHouseFeatures(prev => prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]);
 
@@ -201,23 +230,35 @@ export default function AddServicePage() {
     if (!e.target.files || e.target.files.length === 0) return;
     setUploadingImage(true);
     try {
-      const file = await compressImage(e.target.files[0]);
-      const fileExt = file.name.split('.').pop();
+      const originalFile = e.target.files[0];
+      const isVideoFile = originalFile.type.startsWith('video/');
+      
+      const finalFile = isVideoFile ? originalFile : await compressImage(originalFile);
+      
+      const fileExt = finalFile.name.split('.').pop();
       const fileName = `places/${Date.now()}_${Math.random()}.${fileExt}`;
-      const { error } = await supabase.storage.from('provider-files').upload(fileName, file);
+      
+      const { error } = await supabase.storage.from('provider-files').upload(fileName, finalFile, {
+          contentType: originalFile.type 
+      });
+      
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from('provider-files').getPublicUrl(fileName);
       setImages([...images, publicUrl]);
-    } catch (error) { alert("حدث خطأ أثناء رفع الصورة."); } 
+    } catch (error) { 
+      alert("حدث خطأ أثناء رفع المرفق."); 
+    } 
     finally { setUploadingImage(false); }
   };
 
   const uploadSingleFile = async (file: File, folder: string) => {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${folder}/${Date.now()}_${Math.random()}.${fileExt}`;
-      const { error } = await supabase.storage.from('provider-files').upload(fileName, file);
-      if (error) throw error;
-      return supabase.storage.from('provider-files').getPublicUrl(fileName).data.publicUrl;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${folder}/${Date.now()}_${Math.random()}.${fileExt}`;
+    const { error } = await supabase.storage.from('provider-files').upload(fileName, file, {
+        contentType: file.type
+    });
+    if (error) throw error;
+    return supabase.storage.from('provider-files').getPublicUrl(fileName).data.publicUrl;
   };
 
   const addFacilityService = () => {
@@ -226,14 +267,23 @@ export default function AddServicePage() {
       setFacServName(""); setFacServDesc(""); setFacServImg(null);
   };
 
-  // --- الإرسال والحفظ ---
+  const handlePolicyToggle = (policyId: string) => {
+      setAcceptedPolicies(prev => ({ ...prev, [policyId]: !prev[policyId] }));
+  };
+
   const handleSubmit = async () => {
-      // ✅ تم تعديل التحقق لضمان إدخال السعر حتى للفعاليات، وعدم تجاوزه إذا كان فارغاً
       if (!title || !description || price === "" || !mainCategory || !subCategory) {
-          return alert("الرجاء تعبئة جميع الحقول الأساسية المطلوبة (بما فيها السعر، اكتب 0 إذا كانت مجانية).");
+          return alert("الرجاء تعبئة جميع الحقول الأساسية المطلوبة.");
       }
 
       if (subCategory === 'lodging' && !lodgingType) return alert("الرجاء تحديد نوع النزل.");
+
+      // ✅ التحقق من السياسات الإجبارية للمنصة
+      for (const policy of platformPolicies) {
+          if (policy.is_required && !acceptedPolicies[policy.id]) {
+              return alert(`يجب الموافقة على: "${policy.label}" قبل الإرسال.`);
+          }
+      }
 
       setLoading(true);
       try {
@@ -252,7 +302,11 @@ export default function AddServicePage() {
           const finalLat = exactLat ? parseFloat(exactLat) : location.lat;
           const finalLng = exactLng ? parseFloat(exactLng) : location.lng;
 
-          const details: any = { images };
+          // ✅ حفظ موافقات السياسات الديناميكية داخل حقل التفاصيل 
+          const details: any = { 
+              images,
+              platform_policies_accepted: Object.keys(acceptedPolicies).filter(id => acceptedPolicies[id])
+          };
 
           if (subCategory === 'facility') {
               details.facility_services = processedFacServices;
@@ -288,7 +342,7 @@ export default function AddServicePage() {
           }
           else if (subCategory === 'event') {
               details.event_info = {
-                  child_price: Number(childPrice),
+                  child_price: childPrice === "" ? null : Number(childPrice),
                   dates: eventDates,
                   activities: eventActivities,
                   custom_activities: customEventActivitiesList
@@ -302,7 +356,7 @@ export default function AddServicePage() {
               service_type: mainCategory === 'experience_event' ? 'experience' : 'general',
               title,
               description,
-              price: Number(price) || 0, // ✅ تم إصلاح الخلل هنا، سيتم حفظ السعر كما هو بغض النظر عن كونها فعالية
+              price: Number(price),
               commercial_license: licenseUrl,
               location_lat: finalLat,
               location_lng: finalLng,
@@ -347,7 +401,7 @@ export default function AddServicePage() {
 
         <div className="max-w-4xl mx-auto space-y-6 pb-20">
             
-            {/* 1. التصنيف الرئيسي */}
+            {/* ... [بقية الأقسام: التصنيفات، البيانات الأساسية، الموقع] ... نفس الكود السابق تماماً */}
             <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-xl">
                 <h2 className="text-lg font-bold mb-5 flex items-center gap-2"><Compass className="text-[#C89B3C]"/> 1. حدد القسم الرئيسي</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -384,7 +438,6 @@ export default function AddServicePage() {
             {subCategory && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                     
-                    {/* 2. البيانات الأساسية */}
                     <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-xl space-y-5">
                         <h2 className="text-lg font-bold flex items-center gap-2"><Info className="text-[#C89B3C]"/> 2. البيانات الأساسية</h2>
                         
@@ -425,8 +478,6 @@ export default function AddServicePage() {
                             </div>
                         </div>
                     </div>
-
-                    {/* 3. الإعدادات الخاصة بكل قسم */}
 
                     {/* أ. المرفق (Facility) */}
                     {subCategory === 'facility' && (
@@ -538,7 +589,7 @@ export default function AddServicePage() {
                                         </div>
                                     )}
 
-                                    {/* المميزات المتوفرة (ديناميكية حسب النوع) */}
+                                    {/* المميزات المتوفرة */}
                                     <div className="space-y-3 pt-2">
                                         <label className="text-sm text-white/70 font-bold">الخدمات والمميزات المتوفرة:</label>
                                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -564,7 +615,7 @@ export default function AddServicePage() {
                                         </div>
                                     </div>
 
-                                    {/* التأمين (يظهر للجميع) */}
+                                    {/* التأمين */}
                                     <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                                         <h3 className="font-bold text-[#C89B3C] mb-1 flex items-center gap-2"><ShieldCheck size={16}/> سياسة التأمين</h3>
                                         <label className="flex items-center gap-3 cursor-pointer">
@@ -596,6 +647,7 @@ export default function AddServicePage() {
                                 <label className="text-sm text-white/70 font-bold block mb-2">سياسات المكان (اختياري)</label>
                                 <textarea rows={3} value={policies} onChange={e => setPolicies(e.target.value)} placeholder="شروط الإلغاء، سياسة التدخين..." className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white outline-none resize-none text-sm"/>
                             </div>
+                            
                             <div className="space-y-3 pt-2">
                                 <label className="text-sm text-white/70 font-bold block">أوقات العمل (أيام الاستقبال)</label>
                                 <div className="grid grid-cols-1 gap-2 bg-black/20 p-4 rounded-xl border border-white/5"> 
@@ -792,13 +844,21 @@ export default function AddServicePage() {
                         <label className="text-sm text-white/70 font-bold flex items-center gap-2"><ImageIcon size={18} className="text-[#C89B3C]"/> صور وفيديو العرض الأساسية *</label>
                         <div className="flex flex-wrap gap-4">
                             {images.map((url, i) => (
-                                <div key={i} className="relative w-32 h-32 rounded-xl overflow-hidden border border-white/10 group">
-                                    <Image src={url} fill className="object-cover" alt="Preview"/>
+                                <div key={i} className="relative w-32 h-32 rounded-xl overflow-hidden border border-white/10 group bg-black/40 flex items-center justify-center">
+                                    {/* ✅ الحل النهائي لعرض الفيديو في الـ Preview دون أن يكون مكسوراً */}
+                                    {isVideoLink(url) ? (
+                                        <>
+                                            <video src={`${url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/30"><Video className="text-white/80" size={24}/></div>
+                                        </>
+                                    ) : (
+                                        <Image src={url} fill className="object-cover" alt="Preview"/>
+                                    )}
                                     <button onClick={() => removeImage(i)} className="absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition"><Trash2 size={16} className="text-white"/></button>
                                 </div>
                             ))}
                             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center gap-2 hover:bg-white/5 hover:border-[#C89B3C]/50 transition text-white/50">
-                                {uploadingImage ? <Loader2 className="animate-spin" /> : <><UploadCloud size={24} /> <span className="text-xs">رفع صورة</span></>}
+                                {uploadingImage ? <Loader2 className="animate-spin" /> : <><UploadCloud size={24} /> <span className="text-xs">رفع مرفق</span></>}
                             </button>
                             <input type="file" hidden ref={fileInputRef} accept="image/*,video/*" onChange={handleImageUpload} />
                         </div>
@@ -828,9 +888,41 @@ export default function AddServicePage() {
                         </div>
                     </div>
 
+                    {/* ✅ 6. السياسات المطلوبة من المنصة (يوافق عليها المزود) */}
+                    {platformPolicies.length > 0 && (
+                        <div className="bg-black/40 p-6 rounded-3xl border border-white/10 shadow-xl space-y-4">
+                            <h2 className="text-lg font-bold flex items-center gap-2"><ShieldCheck className="text-[#C89B3C]"/> سياسات وشروط المنصة</h2>
+                            <p className="text-sm text-white/50 mb-4">يرجى قراءة والموافقة على سياسات المنصة التالية لتمكين إرسال الخدمة.</p>
+                            
+                            <div className="space-y-4">
+                                {platformPolicies.map((policy) => (
+                                    <div key={policy.id} className={`p-5 rounded-2xl border transition ${acceptedPolicies[policy.id] ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/5 bg-[#1a1a1a]'}`}>
+                                        <h3 className="font-bold text-white mb-2">{policy.label} {policy.is_required && <span className="text-red-400 text-xs">(مطلوب)</span>}</h3>
+                                        {policy.options?.[0] && (
+                                            <div className="bg-black/30 p-4 rounded-xl text-sm text-white/70 whitespace-pre-wrap leading-relaxed border border-white/5 mb-4 max-h-40 overflow-y-auto custom-scrollbar">
+                                                {policy.options[0]}
+                                            </div>
+                                        )}
+                                        <label className="flex items-center gap-3 cursor-pointer select-none w-fit group">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={acceptedPolicies[policy.id] || false}
+                                                onChange={() => handlePolicyToggle(policy.id)}
+                                                className="w-5 h-5 accent-[#C89B3C]"
+                                            />
+                                            <span className={`text-sm font-bold transition ${acceptedPolicies[policy.id] ? 'text-emerald-400' : 'text-white/70 group-hover:text-white'}`}>
+                                                أوافق وأتعهد بالالتزام بما ورد أعلاه
+                                            </span>
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* زر الحفظ النهائي */}
                     <div className="flex justify-end pt-4">
-                        <button onClick={handleSubmit} disabled={loading} className="bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold text-lg px-10 py-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/20 w-full md:w-auto">
+                        <button onClick={handleSubmit} disabled={loading} className="bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold text-lg px-10 py-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/20 w-full md:w-auto disabled:opacity-50 disabled:cursor-not-allowed">
                             {loading ? <Loader2 className="animate-spin w-6 h-6"/> : <><Save size={20}/> إرسال الخدمة للمراجعة</>}
                         </button>
                     </div>
