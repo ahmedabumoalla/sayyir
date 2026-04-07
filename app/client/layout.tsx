@@ -12,7 +12,6 @@ import {
   History, 
   User, 
   LogOut,
-  Settings,
   Menu,
   X,
   Home,
@@ -26,14 +25,13 @@ const tajawal = Tajawal({
   variable: "--font-tajawal",
 });
 
-// خيارات العميل كما طلبتها
+// القائمة المحدثة بعد دمج وإزالة الإعدادات
 const sidebarItems = [
   { icon: LayoutDashboard, label: "الرئيسية", href: "/client/dashboard" },
   { icon: MapPin, label: "الخريطة التفاعلية", href: "/map" },
   { icon: Heart, label: "المفضلة", href: "/client/favorites" },
   { icon: History, label: "رحلاتي", href: "/client/trips" },
   { icon: User, label: "الملف الشخصي", href: "/client/profile" },
-  { icon: Settings, label: "الإعدادات", href: "/client/settings" },
 ];
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
