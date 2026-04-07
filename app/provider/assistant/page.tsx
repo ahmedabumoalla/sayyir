@@ -36,7 +36,7 @@ export default function AiGuidePage() {
       id: "1",
       role: "assistant",
       content:
-        'أهلاً بك 👋\nأنا مساعدك الذكي داخل لوحة مزود الخدمة.\n\nأقدر أساعدك في تحسين وصف الخدمات، كتابة أفكار للعروض، صياغة ردود احترافية، وتطوير ظهورك داخل المنصة.',
+        "أهلاً بك 👋\nأنا مساعدك الذكي داخل لوحة مزود الخدمة.\n\nأقدر أساعدك في تحسين وصف الخدمات، كتابة أفكار للعروض، صياغة ردود احترافية، وتطوير ظهورك داخل المنصة بشكل عملي ومباشر.",
       timestamp: new Date(),
     },
   ]);
@@ -51,13 +51,20 @@ export default function AiGuidePage() {
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSelectedImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const buildHistoryPayload = () => {
+    return messages.slice(-8).map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
   };
 
   const handleSend = async () => {
@@ -80,7 +87,21 @@ export default function AiGuidePage() {
       const response = await fetch("/api/guide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: userMessage.content, image: userMessage.image }),
+        body: JSON.stringify({
+          text: userMessage.content,
+          image: userMessage.image,
+          context: "provider",
+          history: buildHistoryPayload(),
+          pageContext: {
+            page: "provider_ai_guide",
+            suggestions: [
+              "حسن وصف خدمتي",
+              "اكتب لي عرضًا تسويقيًا",
+              "اقترح عنوانًا أقوى للخدمة",
+              "كيف أرفع التحويل والحجوزات",
+            ],
+          },
+        }),
       });
 
       if (!response.ok) throw new Error("فشل الاتصال");
@@ -90,20 +111,21 @@ export default function AiGuidePage() {
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: data.reply,
+        content: data?.reply || "حصل خلل مؤقت، حاول مرة أخرى.",
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       console.error(error);
+
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           role: "assistant",
           content:
-            "عذراً، واجهت مشكلة في الاتصال. تأكد من الإنترنت وحاول مرة أخرى.",
+            "عذرًا، واجهت مشكلة مؤقتة في الاتصال. أعد المحاولة الآن أو أرسل طلبك بصياغة مختصرة.",
           timestamp: new Date(),
         },
       ]);
@@ -112,7 +134,7 @@ export default function AiGuidePage() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -234,7 +256,12 @@ export default function AiGuidePage() {
         {selectedImage && (
           <div className="mb-3 relative inline-block animate-in fade-in slide-in-from-bottom-2">
             <div className="w-20 h-20 rounded-xl overflow-hidden border border-[#C89B3C]/50 relative">
-              <Image src={selectedImage} alt="Preview" fill className="object-cover" />
+              <Image
+                src={selectedImage}
+                alt="Preview"
+                fill
+                className="object-cover"
+              />
             </div>
             <button
               onClick={() => setSelectedImage(null)}
@@ -289,7 +316,7 @@ export default function AiGuidePage() {
         </div>
 
         <p className="text-center text-[10px] text-white/30 mt-3">
-          المساعد الذكي قد يقترح أفكارًا تحتاج مراجعتك النهائية قبل النشر أو التفعيل.
+          المساعد الذكي يساعدك في تحسين المحتوى والظهور داخل المنصة، مع بقاء قرارك النهائي عليك.
         </p>
       </div>
     </main>
