@@ -133,17 +133,41 @@ export default function LandmarksPage() {
 function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => boolean }) {
   const isHeritage = data.type === 'heritage';
   const isNatural = data.type === 'natural';
-  const mainMedia = data.media_urls && data.media_urls[0] ? data.media_urls[0] : null;
-  const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   
+  // ✅ التنظيف الجذري للروابط: يفكك أي صيغة ويمسح علامات التنصيص والأقواس المخفية
+  let mediaArray: string[] = [];
+  if (data.media_urls) {
+      if (Array.isArray(data.media_urls)) {
+          mediaArray = data.media_urls;
+      } else if (typeof data.media_urls === 'string') {
+          try { 
+              mediaArray = JSON.parse(data.media_urls); 
+          } catch { 
+              const cleanStr = data.media_urls.replace(/^\{|\}$/g, '');
+              if (cleanStr) {
+                  mediaArray = cleanStr.split(',').map((s: string) => s.replace(/^"|"$/g, '').trim());
+              }
+          }
+      }
+  }
+
+  // أخذ أول رابط وتنظيفه بشكل نهائي 
+  let mainMedia = mediaArray.length > 0 && mediaArray[0] ? String(mediaArray[0]).replace(/^["']|["']$/g, '').trim() : null;
+  if (mainMedia === "[" || mainMedia === "]" || mainMedia === "") {
+      mainMedia = null;
+  }
+
+  const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
   const hasPrice = data.price !== null && data.price !== undefined && data.price !== "";
   const priceValue = Number(data.price);
   
+  // ✅ صورة احتياطية خارجية مضمونة تشتغل دائماً بدل الصورة المحلية اللي سببت كسر الأيقونة
+  const fallbackImg = "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800";
+
   return (
     <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/20 hover:border-[#C89B3C]/40 flex flex-col">
         <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-black flex items-center justify-center shrink-0">
           
-          {/* ✅ زر المفضلة مضاف هنا */}
           <FavoriteButton itemId={data.id} itemType="place" />
 
           {mainMedia ? (
@@ -157,16 +181,20 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
                     playsInline 
                   />
               ) : (
-                  <Image 
+                  <img 
                     src={mainMedia} 
                     alt={data.name} 
-                    fill 
-                    className="object-cover transition-transform duration-700 group-hover:scale-110"
-                    onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    onError={(e) => { 
+                        // إذا الرابط من الداتابيس خربان، استبدله فوراً بالصورة المضمونة
+                        if (e.currentTarget.src !== fallbackImg) {
+                            e.currentTarget.src = fallbackImg; 
+                        }
+                    }}
                   />
               )
           ) : (
-              <Image src="/placeholder.jpg" alt={data.name} fill className="object-cover"/>
+              <img src={fallbackImg} alt={data.name} className="w-full h-full object-cover" />
           )}
           
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
@@ -187,7 +215,6 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
           )}
         </div>
         
-        {/* ✅ التعديل هنا: إضافة الوصف الجذاب بشكل متناسق مع الكروت الأخرى */}
         <div className="p-4 md:p-6 flex flex-col flex-1 relative -mt-8 z-20">
           <div className="bg-[#252525] backdrop-blur-xl border border-white/5 p-4 md:p-5 rounded-xl md:rounded-2xl shadow-xl flex-1 flex flex-col">
               <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-[#C89B3C] transition line-clamp-1">{data.name}</h3>
@@ -197,7 +224,6 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
                 <span className="line-clamp-1">{data.city || "عسير، السعودية"}</span>
               </div>
 
-              {/* النبذة الجذابة */}
               <p className="text-white/60 text-xs leading-relaxed line-clamp-2 mb-4 flex-1">
                 {data.description}
               </p>
@@ -211,7 +237,6 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
   );
 }
 
-// ✅ مكون زر المفضلة المتوافق مع الجدول المحدث
 function FavoriteButton({ itemId, itemType }: { itemId: string, itemType: 'service' | 'place' }) {
   const [isFav, setIsFav] = useState(false);
   const [loading, setLoading] = useState(true);
