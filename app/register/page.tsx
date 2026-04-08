@@ -28,23 +28,67 @@ export default function RegisterPage() {
 
     const phone = rawPhone ? phoneCode + rawPhone.replace(/\D/g, '') : '';
 
+    // 1. التحقق من الحقول الفارغة
     if (!full_name || !phone || !email || !password || !confirm) {
-      alert("جميع الحقول مطلوبة");
+      toast.error("جميع الحقول مطلوبة");
       setLoading(false);
       return;
     }
 
+    // 2. التحقق من تطابق كلمة المرور
     if (password !== confirm) {
-      alert("كلمتا المرور غير متطابقتين");
+      toast.error("كلمتا المرور غير متطابقتين");
       setLoading(false);
       return;
     }
 
     try {
+        const normalizedEmail = email.toLowerCase();
+
+        // 3. الفحص المسبق: التحقق من وجود الإيميل
+        const { data: emailCheck } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('email', normalizedEmail)
+            .maybeSingle();
+
+        if (emailCheck) {
+            toast.error("البريد الإلكتروني مسجل مسبقاً في المنصة.");
+            setLoading(false);
+            return;
+        }
+
+        // 4. الفحص المسبق: التحقق من وجود رقم الجوال
+        const { data: phoneCheck } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('phone', phone)
+            .maybeSingle();
+
+        if (phoneCheck) {
+            toast.error("رقم الجوال مسجل مسبقاً بحساب آخر.");
+            setLoading(false);
+            return;
+        }
+
+        // 5. الفحص المسبق: التحقق من وجود الاسم (اختياري لكنه مطلوب بناءً على طلبك)
+        const { data: nameCheck } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('full_name', full_name)
+            .maybeSingle();
+
+        if (nameCheck) {
+            toast.error("هذا الاسم مسجل مسبقاً، يرجى استخدام اسم آخر أو إضافة لقب.");
+            setLoading(false);
+            return;
+        }
+
+        // 6. المتابعة لإنشاء الحساب في Auth
         const redirectTo = `${window.location.origin}/auth/callback`;
 
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: {
             emailRedirectTo: redirectTo,
@@ -57,21 +101,23 @@ export default function RegisterPage() {
         });
 
         if (error) {
-          alert(error.message || "فشل إنشاء الحساب");
+          toast.error(error.message || "فشل إنشاء الحساب");
           setLoading(false);
           return;
         }
 
         if (data.user && !data.session) {
-          alert("✅ تم إنشاء الحساب بنجاح!\n\nتم إرسال رابط التفعيل إلى بريدك الإلكتروني.\nالرجاء تأكيد الإيميل لتتمكن من تسجيل الدخول.");
-          router.replace("/login");
+          toast.success("تم إنشاء الحساب بنجاح! راجع بريدك لتفعيل الحساب.");
+          setTimeout(() => {
+              router.replace("/login");
+          }, 3000);
         } else if (data.session) {
           router.replace("/"); 
         }
 
     } catch (err) {
         console.error(err);
-        alert("حدث خطأ غير متوقع");
+        toast.error("حدث خطأ غير متوقع أثناء الاتصال بالخادم");
     } finally {
         setLoading(false);
     }
@@ -79,6 +125,7 @@ export default function RegisterPage() {
 
   return (
     <main dir="rtl" className="relative min-h-screen flex items-center justify-center bg-black overflow-hidden">
+      <Toaster position="top-center" richColors />
       
       <Link 
         href="/" 

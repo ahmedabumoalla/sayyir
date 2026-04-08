@@ -61,13 +61,28 @@ export default function DynamicProviderRegister() {
 
   useEffect(() => {
     const initPage = async () => {
-      const { data } = await supabase
+      // 1. جلب الحقول الديناميكية
+      const { data: fieldsData } = await supabase
         .from("registration_fields")
         .select("*")
         .order("sort_order", { ascending: true });
 
-      if (data) {
-        setFields(data);
+      // 2. التحقق من تسجيل دخول العميل وجلب بياناته
+      const { data: { session } } = await supabase.auth.getSession();
+      let userProfile: any = null;
+
+      if (session) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("full_name, email, phone")
+          .eq("id", session.user.id)
+          .single();
+        
+        if (profileData) userProfile = profileData;
+      }
+
+      if (fieldsData) {
+        setFields(fieldsData);
         const initialAnswers: any = {};
 
         let userLocation = { lat: 18.216, lng: 42.505 };
@@ -90,20 +105,50 @@ export default function DynamicProviderRegister() {
                 zoom: 15,
               });
 
-              const updatedAnswers = { ...initialAnswers };
-              data.forEach((f) => {
-                if (f.field_type === "map") updatedAnswers[f.id] = userLocation;
+              setAnswers((prev) => {
+                const updated = { ...prev };
+                fieldsData.forEach((f) => {
+                  if (f.field_type === "map") updated[f.id] = userLocation;
+                });
+                return updated;
               });
-              setAnswers(updatedAnswers);
             },
             (err) => console.warn(err)
           );
         }
 
-        data.forEach((f) => {
-          if (f.field_type === "map") initialAnswers[f.id] = userLocation;
-          else if (f.field_type === "policy") initialAnswers[f.id] = false;
-          else initialAnswers[f.id] = "";
+        // 3. تعبئة البيانات تلقائياً إن وجدت
+        fieldsData.forEach((f) => {
+          if (f.field_type === "map") {
+            initialAnswers[f.id] = userLocation;
+          } else if (f.field_type === "policy") {
+            initialAnswers[f.id] = false;
+          } else if (f.field_type === "email" && userProfile?.email) {
+            initialAnswers[f.id] = userProfile.email;
+          } else if (f.field_type === "tel" && userProfile?.phone) {
+            let phoneVal = userProfile.phone;
+            
+            // ضبط رمز الدولة تلقائياً بناءً على رقم العميل المسجل
+            if (phoneVal.startsWith("+971")) setPhoneCode("+971");
+            else if (phoneVal.startsWith("+965")) setPhoneCode("+965");
+            else if (phoneVal.startsWith("+973")) setPhoneCode("+973");
+            else if (phoneVal.startsWith("+968")) setPhoneCode("+968");
+            else if (phoneVal.startsWith("+974")) setPhoneCode("+974");
+            else if (phoneVal.startsWith("+20")) setPhoneCode("+20");
+            else if (phoneVal.startsWith("05")) {
+              // معالجة الأرقام السعودية التي تبدأ بـ 05
+              phoneVal = "+966" + phoneVal.substring(1);
+            } else {
+              setPhoneCode("+966"); // افتراضي
+            }
+
+            initialAnswers[f.id] = phoneVal;
+          } else if ((f.field_type === "text" || f.label.includes("اسم")) && userProfile?.full_name && f.label.includes("اسم")) {
+            // تعبئة الاسم فقط إذا كان الحقل يطلب "اسم"
+            initialAnswers[f.id] = userProfile.full_name;
+          } else {
+            initialAnswers[f.id] = "";
+          }
         });
 
         setAnswers(initialAnswers);
@@ -377,6 +422,7 @@ export default function DynamicProviderRegister() {
                     <input
                       type="text"
                       required={field.is_required}
+                      value={answers[field.id] || ""} // ✅ ربط القيمة لتظهر التعبئة التلقائية
                       className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20"
                       placeholder={`أدخل ${field.label}...`}
                       onChange={(e) => handleChange(field.id, e.target.value)}
@@ -392,6 +438,7 @@ export default function DynamicProviderRegister() {
                     <input
                       type="email"
                       required={true}
+                      value={answers[field.id] || ""} // ✅ ربط القيمة
                       className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20 text-left"
                       placeholder={`أدخل ${field.label}...`}
                       onChange={(e) => handleChange(field.id, e.target.value)}
@@ -442,6 +489,7 @@ export default function DynamicProviderRegister() {
                     <input
                       type="tel"
                       required={true}
+                      value={(answers[field.id] || "").replace(phoneCode, "")} // ✅ عرض الرقم بدون رمز الدولة لتجنب التكرار البصري
                       className="w-full bg-white/5 border border-white/10 rounded-r-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20 text-left"
                       placeholder={`رقم الجوال...`}
                       onChange={(e) => {
@@ -457,6 +505,7 @@ export default function DynamicProviderRegister() {
                   <textarea
                     rows={4}
                     required={field.is_required}
+                    value={answers[field.id] || ""} // ✅ ربط القيمة
                     className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none resize-none transition-all shadow-lg"
                     placeholder="اكتب التفاصيل هنا..."
                     onChange={(e) => handleChange(field.id, e.target.value)}

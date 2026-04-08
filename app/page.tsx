@@ -522,7 +522,7 @@ export default function HomePage() {
                   <h4 className="text-white font-bold text-lg mb-6">روابط سريعة</h4>
                   <ul className="space-y-3 text-white/60 text-sm">
                     <li><Link href="/map" className="hover:text-[#C89B3C] transition">الخريطة التفاعلية</Link></li>
-                    <li><Link href="/ai-guide" className="hover:text-[#C89B3C] transition">المرشد الذكي (جـاد)</Link></li>
+                    <li><Link href="/ai-guide" className="hover:text-[#C89B3C] transition">المرشد الذكي </Link></li>
                     <li><Link href="/register/provider" className="hover:text-[#C89B3C] transition">انضم كشريك خدمة</Link></li>
                     <li><Link href="/login" className="hover:text-[#C89B3C] transition">تسجيل الدخول</Link></li>
                   </ul>

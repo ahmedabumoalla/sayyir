@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image"; 
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
@@ -11,6 +10,25 @@ import {
 import { toast } from "sonner";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
+
+const FALLBACK_IMAGE = "/logo.png";
+
+// ✅ دالة استخراج الرابط وتجنب الـ 404
+const getValidMediaUrl = (media: any): string => {
+  if (!media) return FALLBACK_IMAGE;
+  if (Array.isArray(media) && media.length > 0) return typeof media[0] === 'string' ? media[0] : FALLBACK_IMAGE;
+  if (typeof media === 'string') {
+      if (media.startsWith('http') || media.startsWith('/')) return media;
+      try {
+          const parsed = JSON.parse(media);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
+          return media; 
+      } catch {
+          return media; 
+      }
+  }
+  return FALLBACK_IMAGE;
+};
 
 export default function FacilitiesPage() {
   const [facilities, setFacilities] = useState<any[]>([]);
@@ -24,27 +42,9 @@ export default function FacilitiesPage() {
   const fetchProviderFacilities = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('services')
-        .select('*')
-        .neq('service_category', 'experience')
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false });
-
+      const { data, error } = await supabase.from('services').select('*').neq('service_category', 'experience').eq('status', 'approved').order('created_at', { ascending: false });
       if (error) throw error;
-
-      if (data) {
-        // ✅ فلترة لإخفاء أي منشأة أو خدمة انتهى تاريخها
-        const today = new Date().toISOString().split('T')[0];
-        const validFacilities = data.filter((item: any) => {
-            const endDate = item.details?.event_info?.dates?.endDate || item.details?.experience_info?.dates?.slice(-1)[0];
-            if (endDate) {
-                return endDate >= today; // عرض فقط اللي تاريخ انتهائها أكبر من أو يساوي اليوم
-            }
-            return true; // إذا لم يكن لها تاريخ انتهاء، تُعرض دائمًا
-        });
-        setFacilities(validFacilities);
-      }
+      if (data) setFacilities(data);
     } catch (err) {
       console.error("خطأ في جلب المرافق:", err);
     } finally {
@@ -113,10 +113,9 @@ export default function FacilitiesPage() {
 }
 
 function FacilityCard({ data }: { data: any }) {
-  let imageUrl = "/placeholder-facility.jpg";
-  if (data.details?.images && data.details.images.length > 0) imageUrl = data.details.images[0];
-  else if (data.image_url) imageUrl = data.image_url;
-  else if (data.menu_items && data.menu_items.length > 0 && data.menu_items[0].image) imageUrl = data.menu_items[0].image;
+  const rawImage = data.image_url || data.details?.images || data.menu_items?.[0]?.image;
+  const imageUrl = getValidMediaUrl(rawImage);
+  const isFallback = imageUrl === FALLBACK_IMAGE;
 
   let typeLabel = 'خدمة عامة'; let TypeIcon = Store; let badgeColor = 'bg-gray-500/20 text-gray-400 border-gray-500/30';
   if (data.sub_category === 'lodging') { typeLabel = 'سكن ونزل'; TypeIcon = BedDouble; badgeColor = 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'; }
@@ -130,11 +129,21 @@ function FacilityCard({ data }: { data: any }) {
 
   return (
     <div className="group h-full relative bg-[#1a1a1a] rounded-3xl md:rounded-[2rem] overflow-hidden border border-white/10 transition-all duration-500 hover:shadow-2xl hover:shadow-[#C89B3C]/10 hover:border-[#C89B3C]/40 flex flex-col">
-      <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden shrink-0">
+      <div className="relative h-56 sm:h-64 md:h-72 w-full overflow-hidden bg-[#0f0f0f] flex items-center justify-center shrink-0">
         
         <FavoriteButton itemId={data.id} itemType="service" />
 
-        <img src={imageUrl} alt={data.title} className="w-full h-full object-cover opacity-80 transition-transform duration-700 group-hover:scale-110" onError={(e) => { e.currentTarget.src = "/logo.png"; e.currentTarget.className = "w-full h-full object-contain p-10 opacity-50 bg-[#1a1a1a]"; }} />
+        <img 
+            src={imageUrl} 
+            alt={data.title} 
+            className={`w-full h-full transition-transform duration-700 group-hover:scale-110 ${isFallback ? 'object-contain p-16 opacity-20' : 'object-cover opacity-80'}`} 
+            onError={(e) => { 
+                if (e.currentTarget.src.includes('logo.png')) return;
+                e.currentTarget.src = FALLBACK_IMAGE; 
+                e.currentTarget.className = "w-full h-full object-contain p-16 opacity-20 transition-transform duration-700 group-hover:scale-110"; 
+            }} 
+        />
+        
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
         <div className={`absolute top-4 left-4 backdrop-blur-md px-3 py-1.5 rounded-lg flex items-center gap-1 text-[10px] md:text-xs font-bold border z-10 ${badgeColor}`}>
@@ -178,9 +187,7 @@ function FavoriteButton({ itemId, itemType }: { itemId: string, itemType: 'servi
       if (!session) { setLoading(false); return; }
       
       const column = itemType === 'place' ? 'place_id' : 'service_id';
-      
       const { data } = await supabase.from('favorites').select('id').eq('user_id', session.user.id).eq(column, itemId).single();
-          
       if (data) setIsFav(true);
       setLoading(false);
     };
