@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import { 
-    Loader2, ArrowRight, Edit, Send, Info, FileText, Clock, Compass, Home, Ticket, ShieldAlert, UploadCloud, CheckCircle, Eye
+    Loader2, ArrowRight, Edit, Send, Info, FileText, Clock, Compass, Home, Ticket, ShieldAlert, UploadCloud, CheckCircle, Eye, ImageIcon, X, Trash2, Plus
 } from "lucide-react";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// ✅ الحل هنا: تم نقل المكون المساعد إلى خارج الدالة الرئيسية لكي لا يفقد التركيز (Focus) عند الكتابة
 const CompareRow = ({ label, originalValue, originalDisplay, children }: { label: string, originalValue?: any, originalDisplay?: React.ReactNode, children: React.ReactNode }) => (
     <div className="flex flex-col md:flex-row gap-4 p-4 bg-white/5 border border-white/5 rounded-2xl hover:border-white/10 transition">
         <div className="w-full md:w-1/3 opacity-60 pointer-events-none border-b md:border-b-0 md:border-l border-white/10 pb-4 md:pb-0 md:pl-4">
@@ -26,6 +25,21 @@ const CompareRow = ({ label, originalValue, originalDisplay, children }: { label
     </div>
 );
 
+// دالة مساعدة لاستخراج الصور
+const safeArray = (data: any) => {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === "string") {
+    try {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [data];
+    }
+  }
+  return [];
+};
+
 export default function EditServicePage() {
   const router = useRouter();
   const params = useParams();
@@ -35,13 +49,15 @@ export default function EditServicePage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [providerInfo, setProviderInfo] = useState<any>(null);
   
-  // الخدمة الأصلية
   const [originalService, setOriginalService] = useState<any>(null);
 
-  // ملف الترخيص المرفوع
   const [licenseFile, setLicenseFile] = useState<File | null>(null);
+  
+  // حالة الصور والفيديوهات
+  const [existingMedia, setExistingMedia] = useState<string[]>([]);
+  const [newMediaFiles, setNewMediaFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // نموذج التعديل الشامل
   const [editForm, setEditForm] = useState<any>({
       title: '',
       description: '',
@@ -83,8 +99,11 @@ export default function EditServicePage() {
 
           setOriginalService(service);
           
-          // دمج البيانات: إذا كان فيه طلب تعديل سابق لم يوافق عليه، نعرضه، وإلا نعرض الأصلي
           const initialData = service.pending_updates || service;
+          
+          // استخراج الصور الحالية
+          const currentImages = safeArray(initialData.details?.images || initialData.image_url);
+          setExistingMedia(currentImages);
           
           setEditForm({
               title: initialData.title || '',
@@ -92,7 +111,7 @@ export default function EditServicePage() {
               price: initialData.price !== undefined ? initialData.price.toString() : '0',
               commercial_license: initialData.commercial_license || '',
               work_schedule: initialData.work_schedule || [],
-              details: JSON.parse(JSON.stringify(initialData.details || {})) // نسخة عميقة
+              details: JSON.parse(JSON.stringify(initialData.details || {}))
           });
 
       } catch (err) {
@@ -133,35 +152,70 @@ export default function EditServicePage() {
       });
   };
 
+  // دوال إدارة الوسائط
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setNewMediaFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+    }
+  };
+
+  const removeExistingMedia = (indexToRemove: number) => {
+    setExistingMedia(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const removeNewMedia = (indexToRemove: number) => {
+    setNewMediaFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
   const submitEditRequest = async () => {
       if (!editForm.title.trim() || !editForm.description.trim()) {
           return alert("يرجى تعبئة العنوان والوصف بشكل صحيح.");
+      }
+
+      if (existingMedia.length === 0 && newMediaFiles.length === 0) {
+          return alert("يجب أن تحتوي الخدمة على صورة أو فيديو واحد على الأقل.");
       }
 
       setActionLoading(true);
       try {
           let finalLicenseUrl = editForm.commercial_license;
 
-          // إذا قام المستخدم باختيار ملف ترخيص جديد، نقوم برفعه أولاً
           if (licenseFile) {
               const fileExt = licenseFile.name.split('.').pop();
               const fileName = `license_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
               const { error: uploadError } = await supabase.storage.from('provider-files').upload(fileName, licenseFile);
-              
               if (uploadError) throw uploadError;
-              
               const { data } = supabase.storage.from('provider-files').getPublicUrl(fileName);
               finalLicenseUrl = data.publicUrl;
           }
 
-          // تجهيز الأوبجكت الشامل للتعديلات
+          // رفع الصور والفيديوهات الجديدة
+          const uploadedMediaUrls: string[] = [];
+          if (newMediaFiles.length > 0) {
+              for (const file of newMediaFiles) {
+                  const fileExt = file.name.split('.').pop();
+                  const fileName = `media_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                  const { error: uploadError } = await supabase.storage.from('provider-files').upload(fileName, file);
+                  if (uploadError) throw uploadError;
+                  const { data } = supabase.storage.from('provider-files').getPublicUrl(fileName);
+                  uploadedMediaUrls.push(data.publicUrl);
+              }
+          }
+
+          // دمج الصور المتبقية القديمة مع الجديدة المرفوعة
+          const finalMediaList = [...existingMedia, ...uploadedMediaUrls];
+
+          // تحديث الميديا في डिटेल्स
+          const updatedDetails = { ...editForm.details, images: finalMediaList };
+
           const pendingUpdates = { 
               title: editForm.title, 
               description: editForm.description, 
               price: Number(editForm.price),
-              commercial_license: finalLicenseUrl, // حفظ الرابط الجديد (أو القديم إذا لم يغيره)
+              commercial_license: finalLicenseUrl, 
+              image_url: finalMediaList[0] || '', // نعتمد أول صورة أو فيديو كغلاف
               work_schedule: editForm.work_schedule,
-              details: editForm.details
+              details: updatedDetails
           };
 
           const { error } = await supabase
@@ -202,10 +256,11 @@ export default function EditServicePage() {
       );
   }
 
+  const isVideo = (url: string) => !!url.match(/\.(mp4|webm|ogg|mov)$/i);
+
   return (
     <div className={`min-h-screen bg-[#121212] p-4 md:p-8 animate-in fade-in duration-500 pb-20 ${tajawal.className}`} dir="rtl">
         
-        {/* Header & Back Button */}
         <div className="max-w-6xl mx-auto mb-8 flex items-center gap-4">
             <button 
                 onClick={() => router.push('/provider/services')} 
@@ -223,16 +278,71 @@ export default function EditServicePage() {
 
         <div className="max-w-6xl mx-auto bg-[#1E1E1E] rounded-3xl border border-blue-500/20 shadow-2xl overflow-hidden">
             
-            {/* Info Alert */}
             <div className="bg-blue-500/10 p-5 md:p-6 border-b border-white/5 flex items-start gap-3">
                 <Info className="text-blue-400 shrink-0 mt-0.5" size={20} />
                 <p className="text-sm md:text-base text-blue-100/80 leading-relaxed">
-                    قم بتعديل أي حقل ترغب بتحديثه في الحقول الملونة أدناه. سيتم إرسال كافة التعديلات كطلب واحد للإدارة للمراجعة. <strong className="text-white">ولن تتأثر الخدمة الحالية المعروضة للعملاء حتى يتم الاعتماد.</strong>
+                    قم بتعديل أي حقل ترغب بتحديثه في الحقول الملونة أدناه. يمكنك تعديل العناوين، الوصف، والصور والمقاطع. سيتم إرسال كافة التعديلات كطلب واحد للإدارة للمراجعة. <strong className="text-white">ولن تتأثر الخدمة الحالية المعروضة للعملاء حتى يتم الاعتماد.</strong>
                 </p>
             </div>
 
             <div className="p-6 md:p-8 space-y-10">
                 
+                {/* 0. معرض الصور والفيديو (تعديل كامل) */}
+                <section className="space-y-4">
+                    <h3 className="text-[#C89B3C] font-bold text-lg flex items-center gap-2 border-b border-[#C89B3C]/20 pb-2"><ImageIcon size={18}/> الصور والفيديوهات</h3>
+                    
+                    <div className="bg-black/30 border border-white/10 rounded-2xl p-6">
+                        <p className="text-sm text-white/60 mb-4">أضف أو احذف الصور ومقاطع الفيديو الخاصة بالخدمة. أول ملف سيكون هو الغلاف الرئيسي.</p>
+                        
+                        <div className="flex flex-wrap gap-4 mb-4">
+                            {/* الوسائط الحالية المتبقية */}
+                            {existingMedia.map((url, idx) => (
+                                <div key={`ex-${idx}`} className="relative w-32 h-32 rounded-xl overflow-hidden border border-white/10 group">
+                                    {isVideo(url) ? (
+                                        <video src={url} className="w-full h-full object-cover opacity-70" muted playsInline />
+                                    ) : (
+                                        <img src={url} alt={`Media ${idx}`} className="w-full h-full object-cover opacity-70" />
+                                    )}
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                        <button onClick={() => removeExistingMedia(idx)} className="p-2 bg-red-500 hover:bg-red-600 rounded-full text-white transition shadow-lg">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                    <span className="absolute bottom-1 right-1 bg-black/60 text-[10px] px-1.5 rounded text-white/50">سابق</span>
+                                </div>
+                            ))}
+
+                            {/* الوسائط الجديدة المرفوعة */}
+                            {newMediaFiles.map((file, idx) => {
+                                const tempUrl = URL.createObjectURL(file);
+                                const isVid = file.type.startsWith('video/');
+                                return (
+                                    <div key={`new-${idx}`} className="relative w-32 h-32 rounded-xl overflow-hidden border border-[#C89B3C]/50 group">
+                                        {isVid ? (
+                                            <video src={tempUrl} className="w-full h-full object-cover" muted playsInline />
+                                        ) : (
+                                            <img src={tempUrl} alt={`New Media ${idx}`} className="w-full h-full object-cover" />
+                                        )}
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                            <button onClick={() => removeNewMedia(idx)} className="p-2 bg-red-500 hover:bg-red-600 rounded-full text-white transition shadow-lg">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                        <span className="absolute bottom-1 right-1 bg-[#C89B3C] text-[10px] px-1.5 rounded text-black font-bold">جديد</span>
+                                    </div>
+                                );
+                            })}
+
+                            {/* زر الإضافة */}
+                            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-xl border-2 border-dashed border-white/20 hover:border-[#C89B3C] flex flex-col items-center justify-center gap-2 text-white/50 hover:text-[#C89B3C] transition bg-white/5 hover:bg-[#C89B3C]/5">
+                                <Plus size={24} />
+                                <span className="text-xs font-bold">إضافة ملف</span>
+                            </button>
+                            <input type="file" multiple accept="image/*,video/*" ref={fileInputRef} onChange={handleMediaSelect} className="hidden" />
+                        </div>
+                    </div>
+                </section>
+
                 {/* 1. البيانات الأساسية */}
                 <section className="space-y-4">
                     <h3 className="text-[#C89B3C] font-bold text-lg flex items-center gap-2 border-b border-[#C89B3C]/20 pb-2"><FileText size={18}/> البيانات الأساسية</h3>
@@ -250,7 +360,6 @@ export default function EditServicePage() {
                         <textarea rows={4} value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition resize-none leading-relaxed" />
                     </CompareRow>
 
-                    {/* ✅ تحديث حقل رفع الترخيص التجاري (ملف بدل رابط) */}
                     <CompareRow 
                         label="الترخيص التجاري (مرفق)" 
                         originalDisplay={originalService.commercial_license ? (
@@ -284,11 +393,6 @@ export default function EditServicePage() {
                                     </div>
                                 )}
                             </label>
-                            {!licenseFile && editForm.commercial_license && (
-                                <p className="text-[10px] text-white/40 mt-2 flex items-center gap-1">
-                                    <Info size={12}/> سيتم الاحتفاظ بالمرفق الحالي إذا لم تقم برفع ملف جديد.
-                                </p>
-                            )}
                         </div>
                     </CompareRow>
 
@@ -334,10 +438,10 @@ export default function EditServicePage() {
                         </CompareRow>
 
                         <CompareRow label="مستوى الصعوبة" originalValue={originalService.details?.experience_info?.difficulty}>
-                            <select value={editForm.details?.experience_info?.difficulty || 'سهل'} onChange={e => handleDetailChange('experience_info', e.target.value, 'difficulty')} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition">
-                                <option value="سهل">سهل</option>
-                                <option value="متوسط">متوسط</option>
-                                <option value="صعب">صعب</option>
+                            <select value={editForm.details?.experience_info?.difficulty || 'سهل'} onChange={e => handleDetailChange('experience_info', e.target.value, 'difficulty')} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition appearance-none text-center">
+                                <option value="سهل" className="bg-[#1a1a1a]">سهل</option>
+                                <option value="متوسط" className="bg-[#1a1a1a]">متوسط</option>
+                                <option value="صعب" className="bg-[#1a1a1a]">صعب</option>
                             </select>
                         </CompareRow>
                         
@@ -358,15 +462,15 @@ export default function EditServicePage() {
                         
                         <CompareRow label="تواريخ الفعالية" originalValue={`من: ${originalService.details?.event_info?.dates?.startDate} | إلى: ${originalService.details?.event_info?.dates?.endDate}`}>
                             <div className="flex gap-2">
-                                <input type="date" value={editForm.details?.event_info?.dates?.startDate || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'startDate')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
-                                <input type="date" value={editForm.details?.event_info?.dates?.endDate || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'endDate')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
+                                <input type="date" value={editForm.details?.event_info?.dates?.startDate || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'startDate')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" style={{ colorScheme: 'dark' }} />
+                                <input type="date" value={editForm.details?.event_info?.dates?.endDate || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'endDate')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" style={{ colorScheme: 'dark' }} />
                             </div>
                         </CompareRow>
 
                         <CompareRow label="ساعات العمل" originalValue={`من: ${originalService.details?.event_info?.dates?.startTime} | إلى: ${originalService.details?.event_info?.dates?.endTime}`}>
                             <div className="flex gap-2">
-                                <input type="time" value={editForm.details?.event_info?.dates?.startTime || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'startTime')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
-                                <input type="time" value={editForm.details?.event_info?.dates?.endTime || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'endTime')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" />
+                                <input type="time" value={editForm.details?.event_info?.dates?.startTime || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'startTime')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" style={{ colorScheme: 'dark' }} />
+                                <input type="time" value={editForm.details?.event_info?.dates?.endTime || ''} onChange={e => handleDetailChange('event_info', e.target.value, 'dates', 'endTime')} className="w-1/2 bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white/80 dir-ltr text-right" style={{ colorScheme: 'dark' }} />
                             </div>
                         </CompareRow>
 
@@ -403,9 +507,9 @@ export default function EditServicePage() {
                                         {day.active ? day.shifts.map((shift: any, shiftIdx: number) => (
                                             <div key={shiftIdx} className="flex items-center gap-2 justify-end">
                                                 <span className="text-xs text-white/50">من</span>
-                                                <input type="time" value={shift.from} onChange={e => handleScheduleChange(i, 'shifts', e.target.value, shiftIdx, 'from')} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white/80 focus:border-[#C89B3C] outline-none dir-ltr" />
+                                                <input type="time" value={shift.from} onChange={e => handleScheduleChange(i, 'shifts', e.target.value, shiftIdx, 'from')} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white/80 focus:border-[#C89B3C] outline-none dir-ltr" style={{ colorScheme: 'dark' }} />
                                                 <span className="text-xs text-white/50">إلى</span>
-                                                <input type="time" value={shift.to} onChange={e => handleScheduleChange(i, 'shifts', e.target.value, shiftIdx, 'to')} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white/80 focus:border-[#C89B3C] outline-none dir-ltr" />
+                                                <input type="time" value={shift.to} onChange={e => handleScheduleChange(i, 'shifts', e.target.value, shiftIdx, 'to')} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white/80 focus:border-[#C89B3C] outline-none dir-ltr" style={{ colorScheme: 'dark' }} />
                                             </div>
                                         )) : (
                                             <span className="text-xs text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg w-fit md:ml-auto">مغلق في هذا اليوم</span>
@@ -421,7 +525,7 @@ export default function EditServicePage() {
             </div>
 
             {/* Footer Actions */}
-            <div className="p-6 md:p-8 border-t border-white/10 bg-black/20 flex flex-col md:flex-row justify-end gap-4">
+            <div className="p-6 md:p-8 border-t border-white/10 bg-black/20 flex flex-col md:flex-row justify-end gap-4 mt-8">
                 <button 
                     onClick={() => router.push('/provider/services')} 
                     className="px-8 py-3.5 rounded-xl hover:bg-white/10 transition text-white font-bold border border-transparent hover:border-white/10"
@@ -431,9 +535,9 @@ export default function EditServicePage() {
                 <button 
                     onClick={submitEditRequest} 
                     disabled={actionLoading} 
-                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-10 py-3.5 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-70"
+                    className="bg-[#C89B3C] hover:bg-[#b38a35] text-black font-bold px-10 py-3.5 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/20 disabled:opacity-70"
                 >
-                    {actionLoading ? <Loader2 className="animate-spin"/> : <><Send size={18}/> إرسال الطلب الشامل للإدارة</>}
+                    {actionLoading ? <Loader2 className="animate-spin text-black"/> : <><Send size={18}/> إرسال الطلب الشامل للإدارة</>}
                 </button>
             </div>
 

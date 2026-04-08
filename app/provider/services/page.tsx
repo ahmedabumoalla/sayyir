@@ -8,18 +8,17 @@ import {
   Clock, Eye, Wifi, Car, Waves, Sparkles, Box, User, XCircle,
   Tv, Wind, ShieldCheck, Coffee, Flame, HeartPulse, PlayCircle,
   Mountain, Calendar, Image as ImageIcon, FileText, PauseCircle, AlertTriangle, Info,
-  Utensils, Video, CheckSquare, Activity, Users, Tent, Building, Home, Compass, Ticket, ShieldAlert, Edit, Trash2, Send, Filter
+  Utensils, Video, CheckSquare, Activity, Users, Tent, Building, Home, Compass, Ticket, ShieldAlert, Edit, Trash2, Send, Filter, CalendarDays, CalendarOff, LayoutList, Check
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import Image from "next/image";
 import Link from "next/link";
+import Image from "next/image";
 import { Tajawal } from "next/font/google";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-// ✅ ترجمة جميع المميزات
 const ALL_FEATURES_DICT: Record<string, any> = {
     'yard': { label: 'يوجد حوش', icon: MapPin },
     'view': { label: 'إطلالة مميزة', icon: Mountain },
@@ -61,6 +60,16 @@ const safeArray = (data: any) => {
     return [];
 };
 
+const formatTime12H = (time24: string) => {
+    if (!time24) return "";
+    const [hourStr, minute] = time24.split(':');
+    let hour = parseInt(hourStr, 10);
+    const period = hour >= 12 ? 'مساءً' : 'صباحاً';
+    if (hour > 12) hour -= 12;
+    if (hour === 0) hour = 12;
+    return `${hour.toString().padStart(2, '0')}:${minute} ${period}`;
+};
+
 export default function ProviderServicesPage() {
   const router = useRouter();
   const [services, setServices] = useState<any[]>([]);
@@ -69,15 +78,12 @@ export default function ProviderServicesPage() {
   const [viewService, setViewService] = useState<any>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
-  // الفلترة وإحصائيات الحالات
   const [filter, setFilter] = useState("all");
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
-  // حالات النوافذ المنبثقة للإجراءات الجديدة
   const [actionModal, setActionModal] = useState<'stop' | 'delete' | null>(null); 
   const [actionLoading, setActionLoading] = useState(false);
 
-  // بيانات نماذج الطلبات
   const [stopForm, setStopForm] = useState({ reason: '', startDate: '', endDate: '' });
   const [deleteReason, setDeleteReason] = useState('');
 
@@ -97,7 +103,6 @@ export default function ProviderServicesPage() {
     
     if (srvs) {
         setServices(srvs);
-        // حساب عدد الخدمات لكل حالة للفلتر
         const counts = srvs.reduce((acc: any, curr: any) => {
             acc[curr.status] = (acc[curr.status] || 0) + 1;
             return acc;
@@ -116,7 +121,6 @@ export default function ProviderServicesPage() {
       }
   };
 
-  // 1. إرسال طلب إيقاف
   const submitStopRequest = async () => {
       if (!stopForm.reason.trim()) return alert("يرجى كتابة سبب الإيقاف.");
       setActionLoading(true);
@@ -126,14 +130,12 @@ export default function ProviderServicesPage() {
               .update({ status: 'stop_requested', stop_dates: stopDates, details: { ...viewService.details, stop_reason: stopForm.reason } })
               .eq('id', viewService.id);
           if (error) throw error;
-
           await notifyAdmin(`طلب إيقاف لخدمة: ${viewService.title} (السبب: ${stopForm.reason})`);
-          alert("تم إرسال طلب الإيقاف للإدارة بنجاح. الخدمة مخفية حالياً لحين المراجعة.");
+          alert("تم إرسال طلب الإيقاف للإدارة بنجاح.");
           closeAndRefresh();
       } catch (e: any) { alert("حدث خطأ: " + e.message); } finally { setActionLoading(false); }
   };
 
-  // 2. إرسال طلب حذف
   const submitDeleteRequest = async () => {
       if (!deleteReason.trim()) return alert("يرجى كتابة سبب الحذف.");
       setActionLoading(true);
@@ -142,9 +144,8 @@ export default function ProviderServicesPage() {
               .update({ status: 'delete_requested', delete_reason: deleteReason })
               .eq('id', viewService.id);
           if (error) throw error;
-
           await notifyAdmin(`طلب حذف نهائي لخدمة: ${viewService.title} (السبب: ${deleteReason})`);
-          alert("تم إرسال طلب الحذف للإدارة بنجاح. الخدمة مخفية حالياً لحين المراجعة.");
+          alert("تم إرسال طلب الحذف للإدارة بنجاح.");
           closeAndRefresh();
       } catch (e: any) { alert("حدث خطأ: " + e.message); } finally { setActionLoading(false); }
   };
@@ -184,7 +185,6 @@ export default function ProviderServicesPage() {
       }
   };
 
-  // فلترة الخدمات للعرض
   const filteredServices = services.filter(s => filter === "all" || s.status === filter);
 
   return (
@@ -199,7 +199,6 @@ export default function ProviderServicesPage() {
           </Link>
        </div>
 
-       {/* شريط الفلترة */}
        <div className="flex gap-3 mb-6 overflow-x-auto pb-2 custom-scrollbar">
         {[
             { key: 'all', label: 'الكل', icon: Filter },
@@ -222,7 +221,6 @@ export default function ProviderServicesPage() {
         ))}
       </div>
 
-       {/* قائمة الخدمات (الكروت) */}
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
            {filteredServices.length === 0 && !loading && (
                <div className="col-span-full text-center py-20 bg-white/5 rounded-3xl border border-white/5 text-white/30">
@@ -241,22 +239,14 @@ export default function ProviderServicesPage() {
                                    {badge.text}
                                </span>
                            </div>
-
                            <h3 className="font-bold mb-1 text-lg group-hover:text-[#C89B3C] transition pr-16 line-clamp-1">{s.title}</h3>
                            <span className="text-xs text-white/50 bg-white/5 px-2 py-1 rounded mb-3 inline-block w-fit">
-                               {s.service_category === 'experience' ? 'تجربة سياحية' : `مرفق/فعالية: ${
-                                 s.sub_category === 'event' ? 'فعالية' : 
-                                 s.sub_category === 'lodging' ? 'نزل وتأجير' : 
-                                 s.sub_category === 'food' ? 'أكل ومشروبات' : 'حرف ومنتجات'
-                               }`}
+                               {s.service_category === 'experience' ? 'تجربة سياحية' : `مرفق/فعالية: ${s.sub_category}`}
                            </span>
                            <p className="text-sm text-white/70 line-clamp-2 mb-4">{s.description}</p>
-
                            <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
-                                <span className="font-bold text-[#C89B3C]">
-                                    {s.price === 0 ? "مجاني" : `${s.price} ﷼`}
-                                </span>
-                                <span className="text-xs text-white/40 flex items-center gap-1 group-hover:text-white transition">عرض وتعديل التفاصيل <Eye size={12}/></span>
+                                <span className="font-bold text-[#C89B3C] font-mono">{s.price === 0 ? "مجاني" : `${s.price} ﷼`}</span>
+                                <span className="text-xs text-white/40 flex items-center gap-1 group-hover:text-white transition">عرض التفاصيل <Eye size={12}/></span>
                            </div>
                        </div>
                    );
@@ -264,308 +254,321 @@ export default function ProviderServicesPage() {
            )}
        </div>
 
-       {/* نافذة عرض التفاصيل الكاملة للمزود */}
+       {/* ========================================================== */}
+       {/* نافذة عرض التفاصيل الكاملة والعميقة للمزود (كل شي حرفياً) */}
+       {/* ========================================================== */}
        {viewService && !actionModal && (
          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
             <div className="bg-[#1e1e1e] w-full max-w-5xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
                
-               {/* Header */}
                <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5 rounded-t-3xl shrink-0">
                   <div>
-                      <h2 className="text-2xl font-bold flex items-center gap-2 text-white">إدارة وتفاصيل الخدمة</h2>
+                      <h2 className="text-2xl font-bold flex items-center gap-2 text-white"><LayoutList className="text-[#C89B3C]" size={24}/> إدارة وتفاصيل الخدمة</h2>
                   </div>
                   <button onClick={() => setViewService(null)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition"><X size={20}/></button>
                </div>
                
-               <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+               <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 space-y-8">
                   
-                  {/* ⚠️ تنبيهات الحالات والطلبات قيد الإجراء */}
-                  {['stop_requested', 'delete_requested', 'update_requested', 'pending', 'rejected', 'stopped', 'deleted'].includes(viewService.status) && (
-                      <div className={`border p-4 rounded-xl mb-6 flex items-start gap-3 ${
-                          ['rejected', 'stopped', 'deleted'].includes(viewService.status) 
-                              ? 'bg-red-500/10 border-red-500/20' 
-                              : 'bg-blue-500/10 border-blue-500/20'
-                      }`}>
-                          <Info className={['rejected', 'stopped', 'deleted'].includes(viewService.status) ? 'text-red-400 shrink-0' : 'text-blue-400 shrink-0'} size={24}/>
+                  {/* 1. التنبيهات والطلبات */}
+                  {['stop_requested', 'delete_requested', 'update_requested', 'pending', 'rejected'].includes(viewService.status) && (
+                      <div className={`border p-4 rounded-xl flex items-start gap-3 ${['rejected'].includes(viewService.status) ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'}`}>
+                          <Info className={['rejected'].includes(viewService.status) ? 'text-red-400 shrink-0' : 'text-blue-400 shrink-0'} size={20}/>
                           <div>
-                              <h3 className={`font-bold mb-1 ${['rejected', 'stopped', 'deleted'].includes(viewService.status) ? 'text-red-400' : 'text-blue-400'}`}>
-                                  {viewService.status === 'pending' ? 'الخدمة قيد المراجعة الأولية لدى الإدارة' : 
-                                   viewService.status === 'rejected' ? 'تم رفض الخدمة من الإدارة' :
-                                   viewService.status === 'stopped' ? 'الخدمة موقوفة حالياً' :
-                                   viewService.status === 'deleted' ? 'الخدمة محذوفة' :
-                                   'يوجد طلب قيد المراجعة لدى الإدارة'}
-                              </h3>
-                              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-line">
-                                  {viewService.status === 'update_requested' ? 'لقد قمت بطلب تعديل بيانات هذه الخدمة، سيتم تطبيق التعديلات فور موافقة الإدارة.' : 
-                                   viewService.status === 'stop_requested' ? 'لقد قمت بطلب إيقاف هذه الخدمة، وتم إخفاؤها مؤقتاً لحين موافقة الإدارة.' :
-                                   viewService.status === 'delete_requested' ? 'لقد قمت بطلب حذف هذه الخدمة نهائياً، وتم إخفاؤها لحين مراجعة الطلب.' :
-                                   viewService.rejection_reason ? `السبب: ${viewService.rejection_reason}` :
-                                   'الخدمة لا تظهر للعملاء حالياً، سيتم إشعارك فور اعتمادها.'}
-                              </p>
+                              <h3 className={`font-bold mb-1 ${['rejected'].includes(viewService.status) ? 'text-red-400' : 'text-blue-400'}`}>{getStatusBadge(viewService.status).text}</h3>
+                              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-line">{viewService.rejection_reason ? `سبب الرفض: ${viewService.rejection_reason}` : 'هذه الخدمة قيد المراجعة حالياً من قبل الإدارة.'}</p>
+                          </div>
+                      </div>
+                  )}
+
+                  {/* 2. معرض الصور والفيديو (الشامل) */}
+                  <div className="space-y-4">
+                      <h3 className="text-[#C89B3C] font-bold text-sm border-r-4 border-[#C89B3C] pr-3 flex items-center gap-2">الوسائط المرئية <ImageIcon size={14}/></h3>
+                      <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                          {/* الصورة الرئيسية */}
+                          {viewService.image_url && (
+                             <div className="relative w-48 h-32 shrink-0 rounded-2xl overflow-hidden border border-[#C89B3C]/50 shadow-lg group cursor-zoom-in" onClick={() => setZoomedImage(viewService.image_url)}>
+                                 {isVideo(viewService.image_url) ? (
+                                    <div className="w-full h-full flex items-center justify-center bg-black/40">
+                                        <video src={`${viewService.image_url}#t=0.1`} className="w-full h-full object-cover opacity-80" muted playsInline/>
+                                        <PlayCircle className="absolute text-white/80" size={32}/>
+                                    </div>
+                                 ) : <img src={viewService.image_url} className="w-full h-full object-cover" alt="Main"/>}
+                                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-white">صورة الغلاف</div>
+                             </div>
+                          )}
+                          {/* مصفوفة الصور والفيديوهات في details */}
+                          {safeArray(viewService.details?.images).map((url: string, i: number) => (
+                              <div key={i} onClick={() => setZoomedImage(url)} className="relative w-48 h-32 shrink-0 rounded-2xl overflow-hidden border border-white/10 group cursor-zoom-in bg-black/40">
+                                  {isVideo(url) ? (
+                                      <div className="w-full h-full flex items-center justify-center">
+                                          <video src={`${url}#t=0.1`} className="w-full h-full object-cover opacity-60" muted playsInline/>
+                                          <PlayCircle className="absolute text-white/80" size={32}/>
+                                      </div>
+                                  ) : <img src={url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" alt={`Media ${i}`}/>}
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                      {/* ========= العمود الأول والوسط (بيانات شاملة) ========= */}
+                      <div className="lg:col-span-2 space-y-8">
+                          
+                          {/* البيانات الأساسية */}
+                          <div className="bg-white/5 p-6 rounded-2xl border border-white/5 space-y-5">
+                              <div className="flex justify-between items-start border-b border-white/10 pb-4">
+                                  <div>
+                                      <h3 className="text-[#C89B3C] font-bold text-sm mb-1 uppercase tracking-wider">البيانات الأساسية للخدمة</h3>
+                                      <h4 className="text-xl font-bold">{viewService.title}</h4>
+                                  </div>
+                                  <div className="text-left">
+                                      <p className="text-xs text-white/50 mb-1">{viewService.sub_category === 'event' ? 'سعر التذكرة للبالغ' : viewService.sub_category === 'lodging' ? 'سعر الليلة' : 'السعر'}</p>
+                                      <p className="text-2xl font-bold font-mono text-[#C89B3C]">{viewService.price === 0 ? 'مجاني' : `${viewService.price} ﷼`}</p>
+                                  </div>
+                              </div>
                               
-                              {viewService.status === 'update_requested' && viewService.pending_updates && (
-                                  <div className="mt-3 bg-black/30 p-3 rounded-lg text-xs space-y-1 border border-white/5">
-                                      <p className="text-white/50 mb-2">التعديلات المقترحة:</p>
-                                      <p className="text-[#C89B3C]">يمكنك مراجعة التعديلات المعلقة من صفحة التعديل.</p>
+                              {viewService.sub_category === 'event' && viewService.details?.event_info?.child_price !== undefined && (
+                                  <div className="bg-black/20 p-3 rounded-lg flex items-center justify-between border border-white/5">
+                                      <span className="text-sm font-bold text-white/70">سعر تذكرة الأطفال:</span>
+                                      <span className="font-mono text-[#C89B3C] font-bold">{viewService.details.event_info.child_price === 0 ? 'مجاني' : `${viewService.details.event_info.child_price} ﷼`}</span>
+                                  </div>
+                              )}
+
+                              <div>
+                                  <p className="text-xs text-white/50 mb-2">الوصف التفصيلي</p>
+                                  <div className="text-sm text-white/80 leading-loose bg-black/20 p-4 rounded-xl border border-white/5 whitespace-pre-line">{viewService.description}</div>
+                              </div>
+                          </div>
+
+                          {/* تفاصيل النوع (Dynamic Logic) */}
+                          <div className="bg-white/5 p-6 rounded-2xl border border-white/5 space-y-6">
+                              <h3 className="text-[#C89B3C] font-bold text-sm border-r-4 border-[#C89B3C] pr-3 flex items-center gap-2">المواصفات التقنية والبيانات <CheckCircle size={14}/></h3>
+                              
+                              {/* أ. النزل (Lodging) */}
+                              {viewService.sub_category === 'lodging' && viewService.details && (
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">نوع السكن</p><p className="font-bold text-sm">{viewService.details.lodging_type === 'other' ? viewService.details.custom_lodging_type : viewService.details.lodging_type}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">المساحة</p><p className="font-bold text-sm">{viewService.details.area || 'غير محدد'} م²</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">الوحدات</p><p className="font-bold text-sm">{viewService.details.number_of_units || 'غير محدد'}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">يتسع لـ</p><p className="font-bold text-sm">{viewService.max_capacity ? `${viewService.max_capacity} أشخاص` : 'غير محدد'}</p></div>
+                                      
+                                      {viewService.details.apartment_details && (
+                                          <div className="col-span-full grid grid-cols-3 gap-2 bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/10 text-center">
+                                              <div><span className="block text-[10px] text-white/40">غرف النوم</span><span className="font-bold">{viewService.details.apartment_details.rooms || '0'}</span></div>
+                                              <div><span className="block text-[10px] text-white/40">عدد الأسرة</span><span className="font-bold">{viewService.details.apartment_details.beds || '0'}</span></div>
+                                              <div><span className="block text-[10px] text-white/40">دورات المياه</span><span className="font-bold">{viewService.details.apartment_details.bathrooms || '0'}</span></div>
+                                          </div>
+                                      )}
+
+                                      {viewService.details.house_details && (
+                                          <div className="col-span-full grid grid-cols-4 gap-2 bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/10 text-center">
+                                              <div><span className="block text-[10px] text-white/40">الأدوار</span><span className="font-bold">{viewService.details.house_details.floors || '0'}</span></div>
+                                              <div><span className="block text-[10px] text-white/40">غرف النوم</span><span className="font-bold">{viewService.details.house_details.bedrooms || '0'}</span></div>
+                                              <div><span className="block text-[10px] text-white/40">المجالس</span><span className="font-bold">{viewService.details.house_details.livingRooms || '0'}</span></div>
+                                              <div><span className="block text-[10px] text-white/40">حمامات</span><span className="font-bold">{viewService.details.house_details.bathrooms || '0'}</span></div>
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
+
+                              {/* ب. التجربة (Experience) */}
+                              {viewService.service_category === 'experience' && viewService.details?.experience_info && (
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">المدة</p><p className="font-bold text-sm">{viewService.details.experience_info.duration || 'غير محدد'}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">المستوى</p><p className="font-bold text-sm">{viewService.details.experience_info.difficulty === 'easy' ? 'سهل' : viewService.details.experience_info.difficulty === 'medium' ? 'متوسط' : viewService.details.experience_info.difficulty === 'hard' ? 'صعب' : 'غير محدد'}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">الأطفال</p><p className="font-bold text-sm">{viewService.details.experience_info.children_allowed ? 'مسموح' : 'ممنوع'}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">وقت البدء</p><p className="font-bold text-sm">{viewService.details.experience_info.start_time || 'غير محدد'}</p></div>
+                                      
+                                      <div className="col-span-full">
+                                          <p className="text-xs text-white/50 mb-2">تواريخ الانعقاد المتاحة للتجربة</p>
+                                          {safeArray(viewService.details.experience_info.dates).length > 0 ? (
+                                              <div className="flex flex-wrap gap-2">
+                                                  {safeArray(viewService.details.experience_info.dates).sort().map((d: string, i: number) => <span key={i} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/30 px-3 py-1.5 rounded-lg dir-ltr font-mono">{d}</span>)}
+                                              </div>
+                                          ) : <p className="text-xs text-white/30 italic">لا توجد تواريخ محددة</p>}
+                                      </div>
+
+                                      {viewService.details.experience_info.what_to_bring && (
+                                          <div className="col-span-full bg-black/20 p-4 rounded-xl border border-white/5">
+                                              <p className="text-xs text-orange-400 font-bold mb-2">المطلوب إحضاره من العميل</p>
+                                              <p className="text-sm text-white/80 whitespace-pre-line">{viewService.details.experience_info.what_to_bring}</p>
+                                          </div>
+                                      )}
+
+                                      {viewService.details.experience_info.food_details && (
+                                          <div className="col-span-full bg-white/5 p-4 rounded-xl border border-white/5 space-y-2">
+                                              <p className="text-xs text-emerald-400 font-bold mb-2 flex items-center gap-1"><Utensils size={14}/> تفاصيل الوجبات والمشروبات المشمولة</p>
+                                              <p className="text-sm text-white/80 leading-relaxed"><span className="text-white/40 text-xs">النوع:</span> {viewService.details.experience_info.food_details.mealType || 'غير محدد'}</p>
+                                              <p className="text-sm text-white/80 leading-relaxed"><span className="text-white/40 text-xs">المحتوى:</span> {viewService.details.experience_info.food_details.contents || 'غير محدد'}</p>
+                                              <p className="text-sm text-white/80 leading-relaxed"><span className="text-white/40 text-xs">المشروبات:</span> {viewService.details.experience_info.food_details.drinks || 'غير محدد'}</p>
+                                              {viewService.details.experience_info.food_details.calories && <p className="text-sm text-white/80 leading-relaxed"><span className="text-white/40 text-xs">السعرات:</span> {viewService.details.experience_info.food_details.calories}</p>}
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
+
+                              {/* ج. الفعالية (Event) */}
+                              {viewService.sub_category === 'event' && viewService.details?.event_info && (
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">تاريخ البدء</p><p className="font-bold text-sm dir-ltr text-right">{viewService.details.event_info.dates?.startDate || 'غير محدد'}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">تاريخ الانتهاء</p><p className="font-bold text-sm dir-ltr text-right">{viewService.details.event_info.dates?.endDate || 'غير محدد'}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">وقت البدء</p><p className="font-bold text-sm dir-ltr text-right">{viewService.details.event_info.dates?.startTime || 'غير محدد'}</p></div>
+                                      <div className="bg-black/20 p-3 rounded-xl"><p className="text-[10px] text-white/40 mb-1">وقت الانتهاء</p><p className="font-bold text-sm dir-ltr text-right">{viewService.details.event_info.dates?.endTime || 'غير محدد'}</p></div>
+                                  </div>
+                              )}
+
+                              {/* د. المرفق (Facility Services) */}
+                              {viewService.sub_category === 'facility' && safeArray(viewService.details?.facility_services).length > 0 && (
+                                  <div className="space-y-3 pt-2">
+                                      <p className="text-xs text-[#C89B3C] font-bold">الخدمات والمرافق الداخلية:</p>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          {safeArray(viewService.details.facility_services).map((srv: any, i: number) => (
+                                              <div key={i} className="bg-black/20 p-3 rounded-xl border border-white/5 flex gap-3 items-center">
+                                                  {srv.image_url ? <img src={srv.image_url} className="w-12 h-12 rounded-lg object-cover" alt="img"/> : <div className="w-12 h-12 rounded-lg bg-white/5 flex items-center justify-center"><ImageIcon size={14} className="text-white/20"/></div>}
+                                                  <div>
+                                                      <p className="text-sm font-bold text-white">{srv.name}</p>
+                                                      {srv.description && <p className="text-[10px] text-white/50 line-clamp-1">{srv.description}</p>}
+                                                  </div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              )}
+
+                              {/* المميزات المشمولة (للجميع) */}
+                              <div className="space-y-3 pt-4 border-t border-white/10">
+                                  <p className="text-xs text-white/40 font-bold">المميزات والخدمات المختارة والمضافة للخدمة:</p>
+                                  <div className="flex flex-wrap gap-2">
+                                      {/* مميزات النزل */}
+                                      {safeArray(viewService.details?.features).map((f: string, i: number) => getTranslatedFeature(f))}
+                                      {safeArray(viewService.details?.custom_features).map((f: string, i: number) => <span key={`c1-${i}`} className="text-[10px] bg-white/5 text-white/80 px-2 py-1 rounded border border-white/10 font-medium"><CheckSquare size={12} className="inline ml-1 text-[#C89B3C]"/> {f}</span>)}
+                                      
+                                      {/* مميزات التجربة */}
+                                      {safeArray(viewService.details?.experience_info?.included_services).map((f: string, i: number) => getTranslatedFeature(f))}
+                                      {safeArray(viewService.details?.experience_info?.custom_services).map((f: string, i: number) => <span key={`c2-${i}`} className="text-[10px] bg-white/5 text-white/80 px-2 py-1 rounded border border-white/10 font-medium"><CheckSquare size={12} className="inline ml-1 text-[#C89B3C]"/> {f}</span>)}
+                                      
+                                      {/* أنشطة الفعالية */}
+                                      {safeArray(viewService.details?.event_info?.activities).map((f: string, i: number) => getTranslatedFeature(f))}
+                                      {safeArray(viewService.details?.event_info?.custom_activities).map((f: string, i: number) => <span key={`c3-${i}`} className="text-[10px] bg-white/5 text-white/80 px-2 py-1 rounded border border-white/10 font-medium"><CheckSquare size={12} className="inline ml-1 text-[#C89B3C]"/> {f}</span>)}
+
+                                      {/* إذا كان فارغاً */}
+                                      {safeArray(viewService.details?.features).length === 0 && safeArray(viewService.details?.custom_features).length === 0 && 
+                                       safeArray(viewService.details?.experience_info?.included_services).length === 0 && safeArray(viewService.details?.experience_info?.custom_services).length === 0 &&
+                                       safeArray(viewService.details?.event_info?.activities).length === 0 && safeArray(viewService.details?.event_info?.custom_activities).length === 0 && (
+                                           <span className="text-xs text-white/30 italic">لم يتم تحديد أي مميزات إضافية</span>
+                                      )}
+                                  </div>
+                              </div>
+                          </div>
+
+                          {/* جدول المواعيد والدوام */}
+                          {safeArray(viewService.work_schedule).length > 0 && (
+                               <div className="bg-white/5 p-6 rounded-2xl border border-white/5">
+                                  <h3 className="text-[#C89B3C] font-bold text-sm mb-4 border-r-4 border-[#C89B3C] pr-3 flex items-center gap-2">أوقات العمل وجدول الدوام <Clock size={14}/></h3>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {safeArray(viewService.work_schedule).map((day: any, i: number) => (
+                                          <div key={i} className="bg-black/30 p-3 rounded-xl border border-white/5 flex justify-between items-center">
+                                              <span className="text-xs font-bold text-white/70">{day.day}</span>
+                                              {day.active ? (
+                                                  <div className="flex flex-col gap-1 items-end">
+                                                      {safeArray(day.shifts).map((s:any, idx:number) => <span key={idx} className="text-[9px] bg-[#C89B3C]/10 text-[#C89B3C] border border-[#C89B3C]/20 px-1.5 py-0.5 rounded font-mono dir-ltr">{formatTime12H(s.from)} - {formatTime12H(s.to)}</span>)}
+                                                  </div>
+                                              ) : <span className="text-[10px] text-red-400 bg-red-400/5 px-2 py-1 rounded">مغلق</span>}
+                                          </div>
+                                      ))}
+                                  </div>
+                               </div>
+                          )}
+                      </div>
+
+                      {/* ========= العمود الثالث (جانبي: لوجستيات وأمان) ========= */}
+                      <div className="space-y-6">
+                          
+                          {/* معلومات الموقع */}
+                          <div className="bg-black/20 p-5 rounded-2xl border border-white/5 space-y-4">
+                              <h3 className="text-white font-bold text-xs flex items-center gap-2"><MapPin size={14} className="text-[#C89B3C]"/> الموقع الجغرافي</h3>
+                              {viewService.location_lat && viewService.location_lng ? (
+                                  <div className="h-40 rounded-xl overflow-hidden border border-white/10 relative group">
+                                      <Map initialViewState={{ latitude: viewService.location_lat, longitude: viewService.location_lng, zoom: 11 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN}>
+                                          <Marker latitude={viewService.location_lat} longitude={viewService.location_lng} color="#C89B3C"/>
+                                      </Map>
+                                      <a href={`http://googleusercontent.com/maps.google.com/maps?q=${viewService.location_lat},${viewService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-[#C89B3C] hover:text-black transition"><Compass size={10}/> فتح الخريطة</a>
+                                  </div>
+                              ) : <div className="h-40 bg-white/5 rounded-xl flex items-center justify-center text-xs text-white/30 italic">الموقع غير محدد</div>}
+                          </div>
+
+                          {/* الأوراق والسياسات */}
+                          <div className="bg-black/20 p-5 rounded-2xl border border-white/5 space-y-4">
+                              <h3 className="text-white font-bold text-xs flex items-center gap-2"><ShieldCheck size={14} className="text-[#C89B3C]"/> الأمان والسياسات</h3>
+                              
+                              {/* الترخيص */}
+                              <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                                  <p className="text-[10px] text-white/40 mb-2">مرفق الترخيص التجاري / المهني:</p>
+                                  {viewService.commercial_license ? (
+                                      <a href={viewService.commercial_license} target="_blank" className="flex items-center justify-between group bg-blue-500/10 p-2 rounded-lg border border-blue-500/20 hover:bg-blue-500/20 transition">
+                                          <span className="text-xs text-blue-400 font-bold">عرض المستند</span>
+                                          <Eye size={14} className="text-blue-400"/>
+                                      </a>
+                                  ) : <span className="text-[10px] text-red-400 bg-red-400/10 px-2 py-1 rounded block w-fit">لم يتم رفع ترخيص</span>}
+                              </div>
+
+                              {/* الملاحظات والسياسات المكتوبة */}
+                              {viewService.details?.policies && (
+                                  <div>
+                                      <p className="text-[10px] text-[#C89B3C] font-bold mb-1">شروط وسياسات الحجز للمزود:</p>
+                                      <div className="text-xs text-white/80 bg-white/5 p-3 rounded-lg leading-relaxed max-h-40 overflow-y-auto custom-scrollbar whitespace-pre-line border border-white/5">{viewService.details.policies}</div>
+                                  </div>
+                              )}
+                              
+                              {viewService.details?.experience_info?.cancellation_policy && (
+                                  <div>
+                                      <p className="text-[10px] text-red-400 font-bold mb-1">سياسة الإلغاء والاسترجاع:</p>
+                                      <div className="text-xs text-white/80 bg-red-500/5 p-3 rounded-lg leading-relaxed whitespace-pre-line border border-red-500/10">{viewService.details.experience_info.cancellation_policy}</div>
                                   </div>
                               )}
                           </div>
-                      </div>
-                  )}
 
-                  {/* ✅ أزرار الإجراءات (تظهر فقط إذا كانت الخدمة معتمدة) */}
-                  {viewService.status === 'approved' && (
-                      <div className="flex flex-wrap gap-3 mb-8 bg-black/20 p-4 rounded-xl border border-white/5">
-                          <p className="w-full text-sm text-white/50 mb-1">خيارات إدارة الخدمة:</p>
-                          <button onClick={() => router.push(`/provider/services/${viewService.id}/edit`)} className="bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/30 px-5 py-2.5 rounded-lg text-sm font-bold transition flex items-center gap-2"><Edit size={16}/> طلب تعديل البيانات</button>
-                          <button onClick={() => handleOpenAction('stop', viewService)} className="bg-orange-600/20 text-orange-400 hover:bg-orange-600 hover:text-white border border-orange-500/30 px-5 py-2.5 rounded-lg text-sm font-bold transition flex items-center gap-2"><PauseCircle size={16}/> طلب إيقاف مؤقت</button>
-                          <button onClick={() => handleOpenAction('delete', viewService)} className="mr-auto bg-red-600/20 text-red-500 hover:bg-red-600 hover:text-white border border-red-500/30 px-5 py-2.5 rounded-lg text-sm font-bold transition flex items-center gap-2"><Trash2 size={16}/> طلب حذف نهائي</button>
-                      </div>
-                  )}
-
-                  {/* ✅ معرض الصور والفيديو */}
-                  {viewService.details?.images && viewService.details.images.length > 0 && (
-                      <div className="mb-8">
-                          <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><ImageIcon size={16}/> صور / فيديو العرض</h3>
-                          <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                              {viewService.details.images.map((url: string, i: number) => (
-                                  <div key={i} onClick={() => setZoomedImage(url)} className="relative w-40 h-28 shrink-0 rounded-xl overflow-hidden border border-white/10 group cursor-pointer hover:border-[#C89B3C]/50 transition bg-black/40 flex items-center justify-center">
-                                      {isVideo(url) ? ( 
-                                        <>
-                                          <video src={`${url}#t=0.001`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition duration-500" muted playsInline preload="metadata"/>
-                                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"><PlayCircle className="text-white/80" size={32}/></div>
-                                        </> 
-                                      ) : ( 
-                                        <Image src={url} fill className="object-cover group-hover:scale-110 transition duration-500" alt={`Image ${i}`}/> 
-                                      )}
+                          {/* التواريخ المحجوزة/المغلقة (للنزل والمرافق غالباً) */}
+                          {safeArray(viewService.blocked_dates).length > 0 && (
+                               <div className="bg-red-500/5 p-5 rounded-2xl border border-red-500/10 space-y-3">
+                                  <h3 className="text-red-400 font-bold text-xs flex items-center gap-2"><CalendarOff size={14}/> التواريخ المغلقة (لا يمكن الحجز فيها)</h3>
+                                  <div className="flex flex-wrap gap-1.5">
+                                      {safeArray(viewService.blocked_dates).sort().map((d: string) => <span key={d} className="text-[10px] font-mono text-white/90 bg-red-500/20 px-2 py-1 rounded border border-red-500/30">{d}</span>)}
                                   </div>
-                              ))}
-                          </div>
-                      </div>
-                  )}
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* ========= العمود الأول (اليمين) ========= */}
-                      <div className="space-y-6">
-                          
-                          {/* البيانات الأساسية */}
-                          <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                              <h3 className="text-[#C89B3C] font-bold text-sm mb-2">البيانات الأساسية</h3>
-                              <div><p className="text-xs text-white/50 mb-1">العنوان</p><p className="font-bold text-lg">{viewService.title}</p></div>
-                              
-                              {/* ✅ عرض السعر بدقة للبالغين والأطفال */}
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div>
-                                      <p className="text-xs text-white/50 mb-1">{viewService.sub_category === 'lodging' ? 'سعر الليلة' : viewService.sub_category === 'event' ? 'تذكرة البالغين' : 'السعر'}</p>
-                                      <p className="font-bold text-[#C89B3C] text-xl font-mono">{viewService.price === 0 ? 'مجاني' : `${viewService.price} ﷼`}</p>
-                                  </div>
-                                  
-                                  {viewService.sub_category === 'event' && viewService.details?.event_info?.child_price !== undefined && (
-                                      <div>
-                                          <p className="text-xs text-white/50 mb-1">تذكرة الأطفال</p>
-                                          <p className="font-bold text-[#C89B3C] text-xl font-mono">{viewService.details.event_info.child_price === 0 ? 'مجاني' : `${viewService.details.event_info.child_price} ﷼`}</p>
-                                      </div>
-                                  )}
-                              </div>
-                              
-                              <div><p className="text-xs text-white/50 mb-1">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{viewService.description}</p></div>
-                          </div>
-
-                          {/* ✅ تفاصيل النزل (Lodging) */}
-                          {viewService.sub_category === 'lodging' && viewService.details?.lodging_type && (
-                               <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2"><Home size={16}/> تفاصيل النزل السياحي</h3>
-                                  <div className="grid grid-cols-2 gap-3 text-sm">
-                                      <div><p className="text-xs text-white/50">نوع النزل</p><p className="font-bold">{viewService.details.lodging_type === 'other' ? viewService.details.custom_lodging_type : viewService.details.lodging_type}</p></div>
-                                      <div><p className="text-xs text-white/50">عدد الوحدات/الغرف</p><p>{viewService.details.number_of_units || 'غير محدد'}</p></div>
-                                      {viewService.details.area && <div><p className="text-xs text-white/50">المساحة</p><p>{viewService.details.area} م²</p></div>}
-                                      {viewService.max_capacity && <div><p className="text-xs text-white/50">السعة (أشخاص)</p><p>{viewService.max_capacity}</p></div>}
-                                      {viewService.details.target_audience && <div><p className="text-xs text-white/50">مخصص لـ</p><p>{viewService.details.target_audience === 'singles' ? 'عزاب' : viewService.details.target_audience === 'families' ? 'عوايل' : 'الكل'}</p></div>}
-                                  </div>
-                                  
-                                  {viewService.details.apartment_details && (
-                                      <div className="mt-3 pt-3 border-t border-white/5 grid grid-cols-3 gap-2 text-sm text-center">
-                                          <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">غرف</span>{viewService.details.apartment_details.rooms}</div>
-                                          <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">أسرة</span>{viewService.details.apartment_details.beds}</div>
-                                          <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">حمامات</span>{viewService.details.apartment_details.bathrooms}</div>
-                                      </div>
-                                  )}
-                                  {viewService.details.house_details && (
-                                      <div className="mt-3 pt-3 border-t border-white/5 grid grid-cols-4 gap-2 text-sm text-center">
-                                          <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">أدوار</span>{viewService.details.house_details.floors}</div>
-                                          <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">غرف نوم</span>{viewService.details.house_details.bedrooms}</div>
-                                          <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">مجالس</span>{viewService.details.house_details.livingRooms}</div>
-                                          <div className="bg-white/5 rounded p-1"><span className="block text-[10px] text-white/50">حمامات</span>{viewService.details.house_details.bathrooms}</div>
-                                      </div>
-                                  )}
-
-                                  {viewService.details.deposit_config?.required && (
-                                      <div className="mt-3 bg-orange-500/10 border border-orange-500/20 p-2 rounded-lg text-xs">
-                                          <p className="text-orange-400 font-bold mb-1"><ShieldCheck size={12} className="inline mr-1"/> تأمين مطلوب</p>
-                                          <p className="text-white/80">الدفع: {viewService.details.deposit_config.paymentTime === 'with_booking' ? 'مع الحجز بالمنصة' : 'نقداً عند الوصول'}</p>
-                                          <p className="text-white/80">الحالة: {viewService.details.deposit_config.isRefundable ? 'مسترد' : 'غير مسترد'}</p>
-                                      </div>
-                                  )}
                                </div>
                           )}
 
-                          {/* ✅ تفاصيل التجربة (Experience) */}
-                          {viewService.sub_category === 'experience' && viewService.details?.experience_info && (
-                              <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Compass size={16}/> تفاصيل التجربة السياحية</h3>
-                                  <div className="grid grid-cols-2 gap-4">
-                                      <div><p className="text-xs text-white/50">مستوى الصعوبة</p><p className="font-bold text-sm">{viewService.details.experience_info.difficulty}</p></div>
-                                      <div><p className="text-xs text-white/50">مدة التجربة</p><p className="font-bold text-sm">{viewService.details.experience_info.duration}</p></div>
-                                      <div><p className="text-xs text-white/50">الفئة المستهدفة</p><p className="font-bold text-sm">{viewService.details.experience_info.target_audience === 'both' ? 'الكل' : viewService.details.experience_info.target_audience === 'families' ? 'عوايل' : 'عزاب'}</p></div>
-                                      <div><p className="text-xs text-white/50">دخول الأطفال</p><p className="font-bold text-sm">{viewService.details.experience_info.children_allowed ? 'مسموح' : 'ممنوع'}</p></div>
-                                  </div>
-                                  
-                                  {safeArray(viewService.details.experience_info.dates).length > 0 && (
-                                      <div>
-                                          <p className="text-xs text-white/50 mb-1">تواريخ الانعقاد والوقت</p>
-                                          <div className="flex flex-wrap gap-1.5">
-                                              <span className="text-xs bg-[#C89B3C] text-black px-2 py-1 rounded font-bold">{viewService.details.experience_info.start_time}</span>
-                                              {safeArray(viewService.details.experience_info.dates).map((d: string, i: number) => <span key={i} className="text-xs bg-white/10 px-2 py-1 rounded dir-ltr">{d}</span>)}
-                                          </div>
-                                      </div>
-                                  )}
-
-                                  {(safeArray(viewService.details.experience_info.included_services).length > 0 || safeArray(viewService.details.experience_info.custom_services).length > 0) && (
-                                      <div>
-                                          <p className="text-xs text-white/50 mb-1">الخدمات المشمولة</p>
-                                          <div className="flex flex-wrap gap-1">
-                                              {safeArray(viewService.details.experience_info.included_services).map((srv: string, i: number) => (
-                                                  <span key={i} className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded">{ALL_FEATURES_DICT[srv]?.label || srv}</span>
-                                              ))}
-                                              {safeArray(viewService.details.experience_info.custom_services).map((srv: string, i: number) => (
-                                                  <span key={`cust-${i}`} className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded">{srv}</span>
-                                              ))}
-                                          </div>
-                                      </div>
-                                  )}
-
-                                  {viewService.details.experience_info.food_details && (
-                                      <div className="bg-white/5 p-3 rounded-lg text-xs space-y-1">
-                                          <p className="text-[#C89B3C] font-bold mb-1">تفاصيل الطعام</p>
-                                          <p><span className="text-white/50">النوع:</span> {viewService.details.experience_info.food_details.mealType}</p>
-                                          <p><span className="text-white/50">المشروبات:</span> {viewService.details.experience_info.food_details.drinks}</p>
-                                          <p><span className="text-white/50">المكونات:</span> {viewService.details.experience_info.food_details.contents}</p>
-                                          {viewService.details.experience_info.food_details.calories && <p><span className="text-white/50">السعرات:</span> {viewService.details.experience_info.food_details.calories}</p>}
-                                      </div>
-                                  )}
-
-                                  {viewService.details.experience_info.what_to_bring && <div><p className="text-xs text-white/50">المطلوب إحضاره</p><p className="text-sm bg-white/5 p-2 rounded-lg mt-1">{viewService.details.experience_info.what_to_bring}</p></div>}
-                                  {viewService.details.experience_info.cancellation_policy && <div><p className="text-xs text-white/50">سياسة الإلغاء</p><p className="text-sm bg-white/5 p-2 rounded-lg mt-1">{viewService.details.experience_info.cancellation_policy}</p></div>}
-                              </div>
-                          )}
-
-                      </div>
-
-                      {/* ========= العمود الثاني (اليسار) ========= */}
-                      <div className="space-y-6">
-                          
-                          {/* الخريطة */}
-                          {viewService.location_lat && viewService.location_lng && (
-                              <div className="h-64 rounded-xl overflow-hidden border border-white/10 relative shadow-lg">
-                                  <Map initialViewState={{ latitude: viewService.location_lat, longitude: viewService.location_lng, zoom: 12 }} mapStyle="mapbox://styles/mapbox/satellite-streets-v12" mapboxAccessToken={MAPBOX_TOKEN}>
-                                      <NavigationControl showCompass={false}/>
-                                      <Marker latitude={viewService.location_lat} longitude={viewService.location_lng} color="#C89B3C"/>
-                                  </Map>
-                                  <a href={`http://googleusercontent.com/maps.google.com/maps?q=${viewService.location_lat},${viewService.location_lng}`} target="_blank" className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-[#C89B3C] hover:text-black transition"><MapPin size={14}/> عرض في الخرائط</a>
-                              </div>
-                          )}
-
-                          {/* ✅ خدمات المرفق الديناميكية (Facility) */}
-                          {viewService.sub_category === 'facility' && safeArray(viewService.details?.facility_services).length > 0 && (
-                              <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Activity size={16}/> الخدمات المتوفرة في المرفق</h3>
-                                  <div className="space-y-2">
-                                      {safeArray(viewService.details.facility_services).map((srv: any, i: number) => (
-                                          <div key={i} className="flex gap-3 bg-white/5 p-3 rounded-lg items-center border border-white/5">
-                                              {srv.image_url ? <Image src={srv.image_url} width={40} height={40} className="rounded object-cover" alt={srv.name}/> : <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center shrink-0"><ImageIcon size={14} className="text-white/20"/></div>}
-                                              <div><p className="text-sm font-bold text-white">{srv.name}</p>{srv.description && <p className="text-xs text-white/50">{srv.description}</p>}</div>
-                                          </div>
-                                      ))}
-                                  </div>
-                              </div>
-                          )}
-
-                          {/* ✅ مميزات النزل (Lodging) */}
-                          {viewService.sub_category === 'lodging' && (safeArray(viewService.details?.features).length > 0 || safeArray(viewService.details?.custom_features).length > 0) && (
-                              <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Sparkles size={16}/> مميزات النزل</h3>
-                                  <div className="flex flex-wrap gap-2">
-                                      {safeArray(viewService.details.features).map((feat: string, i: number) => getTranslatedFeature(feat))}
-                                      {safeArray(viewService.details.custom_features).map((feat: string, i: number) => <span key={`c-${i}`} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {feat}</span>)}
-                                  </div>
-                              </div>
-                          )}
-
-                          {/* سياسات المكان */}
-                          {viewService.details?.policies && (
-                              <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-2">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><ShieldAlert size={16}/> سياسات وشروط المكان</h3>
-                                  <p className="text-sm text-white/80 whitespace-pre-line bg-white/5 p-3 rounded-lg border border-white/5">{viewService.details.policies}</p>
-                              </div>
-                          )}
-
-                          {/* ✅ أوقات الدوام للمرافق والنزل */}
-                          {safeArray(viewService.work_schedule).length > 0 && (
-                              <div className="bg-black/20 p-4 rounded-xl border border-white/5">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Clock size={16}/> أوقات العمل والدوام</h3>
-                                  <div className="space-y-2">
-                                      {safeArray(viewService.work_schedule).map((day: any, i: number) => (
-                                          <div key={i} className="flex justify-between items-center text-sm border-b border-white/5 pb-2 last:border-0 last:pb-0">
-                                              <span className="text-white/70 font-bold">{day.day}</span>
-                                              {day.active ? (
-                                                  <div className="flex flex-wrap justify-end gap-1.5">
-                                                      {safeArray(day.shifts).map((s:any, idx:number) => <span key={idx} className="bg-white/10 px-2 py-0.5 rounded text-xs dir-ltr">{s.from} - {s.to}</span>)}
-                                                  </div>
-                                              ) : <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">مغلق</span>}
-                                          </div>
-                                      ))}
-                                  </div>
-                              </div>
-                          )}
-
-                          {/* ✅ تفاصيل الفعالية (Event) */}
-                          {viewService.sub_category === 'event' && viewService.details?.event_info && (
-                              <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
-                                  <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Ticket size={16}/> تفاصيل وتواريخ الفعالية</h3>
-                                  
-                                  <div className="grid grid-cols-2 gap-4 text-sm bg-white/5 p-3 rounded-lg">
-                                      <div><p className="text-xs text-white/50">من تاريخ</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.startDate}</p></div>
-                                      <div><p className="text-xs text-white/50">إلى تاريخ</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.endDate}</p></div>
-                                      <div><p className="text-xs text-white/50">من الساعة</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.startTime}</p></div>
-                                      <div><p className="text-xs text-white/50">إلى الساعة</p><p className="font-bold dir-ltr text-left">{viewService.details.event_info.dates?.endTime}</p></div>
-                                  </div>
-
-                                  {(safeArray(viewService.details.event_info.activities).length > 0 || safeArray(viewService.details.event_info.custom_activities).length > 0) && (
-                                      <div>
-                                          <p className="text-xs text-white/50 mb-2">الفعاليات الداخلية المتاحة</p>
-                                          <div className="flex flex-wrap gap-1.5">
-                                              {safeArray(viewService.details.event_info.activities).map((act: string, i: number) => (
-                                                  <span key={i} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{ALL_FEATURES_DICT[act]?.label || act}</span>
-                                              ))}
-                                              {safeArray(viewService.details.event_info.custom_activities).map((act: string, i: number) => (
-                                                  <span key={`cust-${i}`} className="text-xs bg-[#C89B3C]/10 text-[#C89B3C] px-2 py-1 rounded">{act}</span>
-                                              ))}
-                                          </div>
-                                      </div>
-                                  )}
-                              </div>
-                          )}
-
-                          {viewService.commercial_license && (
-                              <div className="bg-[#C89B3C]/10 p-4 rounded-xl border border-[#C89B3C]/20 flex justify-between items-center">
-                                  <div><h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><FileText size={16}/> الترخيص التجاري</h3><p className="text-xs text-white/50 mt-1">مرفق من قبل المزود</p></div>
-                                  <a href={viewService.commercial_license} target="_blank" rel="noreferrer" className="bg-[#C89B3C] text-black px-4 py-2 rounded-lg text-xs font-bold hover:bg-white transition flex items-center gap-2"><Eye size={14}/> عرض المرفق</a>
+                          {/* إعدادات التأمين */}
+                          {viewService.details?.deposit_config && viewService.details.deposit_config.required && (
+                              <div className="bg-orange-500/10 p-5 rounded-2xl border border-orange-500/20 space-y-2">
+                                  <h3 className="text-orange-400 font-bold text-xs flex items-center gap-2"><ShieldAlert size={14}/> تأمين مسترد للمكان</h3>
+                                  <p className="text-sm font-bold text-white">{viewService.details.deposit_config.amount} ﷼</p>
+                                  <p className="text-[10px] text-white/70">يُدفع: {viewService.details.deposit_config.paymentTime === 'with_booking' ? 'عند الحجز عبر المنصة' : 'نقداً عند الوصول للمكان'}</p>
+                                  <p className="text-[10px] text-white/70">حالة الاسترداد: {viewService.details.deposit_config.isRefundable ? 'مسترد بالكامل عند تسليم المكان سليم' : 'غير مسترد'}</p>
                               </div>
                           )}
 
                       </div>
                   </div>
 
+               </div>
+               
+               {/* Footer */}
+               <div className="p-6 border-t border-white/10 bg-black/40 rounded-b-3xl shrink-0 flex flex-wrap justify-between items-center gap-4">
+                  <div className="flex items-center gap-2 text-white/40 text-xs">
+                      <Clock size={14}/> تمت إضافة هذه الخدمة في: {new Date(viewService.created_at).toLocaleDateString('ar-SA')}
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                      {viewService.status === 'approved' && (
+                         <>
+                            <button onClick={() => router.push(`/provider/services/${viewService.id}/edit`)} className="bg-[#C89B3C]/10 text-[#C89B3C] hover:bg-[#C89B3C] hover:text-black border border-[#C89B3C]/30 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2"><Edit size={16}/> طلب تعديل</button>
+                            <button onClick={() => handleOpenAction('stop', viewService)} className="bg-orange-500/10 text-orange-400 hover:bg-orange-500 hover:text-black border border-orange-500/30 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2"><PauseCircle size={16}/> إيقاف مؤقت</button>
+                            <button onClick={() => handleOpenAction('delete', viewService)} className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white border border-red-500/30 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2"><Trash2 size={16}/> إيقاف نهائي (حذف)</button>
+                         </>
+                      )}
+                      <button onClick={() => setViewService(null)} className="px-6 py-2 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition">إغلاق</button>
+                  </div>
                </div>
             </div>
          </div>
@@ -575,7 +578,7 @@ export default function ProviderServicesPage() {
        
        {/* 1. نافذة طلب الإيقاف */}
        {actionModal === 'stop' && (
-           <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in fade-in zoom-in-95">
+           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in fade-in zoom-in-95">
                <div className="bg-[#1e1e1e] w-full max-w-lg rounded-3xl border border-orange-500/20 shadow-2xl overflow-hidden flex flex-col">
                    <div className="p-6 border-b border-white/10 bg-orange-500/10 flex justify-between items-center">
                        <h2 className="text-xl font-bold flex items-center gap-2 text-orange-400"><PauseCircle size={20}/> طلب إيقاف الخدمة</h2>
@@ -610,10 +613,10 @@ export default function ProviderServicesPage() {
 
        {/* 2. نافذة طلب الحذف */}
        {actionModal === 'delete' && (
-           <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in fade-in zoom-in-95">
+           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in fade-in zoom-in-95">
                <div className="bg-[#1e1e1e] w-full max-w-lg rounded-3xl border border-red-500/20 shadow-2xl overflow-hidden flex flex-col">
                    <div className="p-6 border-b border-white/10 bg-red-500/10 flex justify-between items-center">
-                       <h2 className="text-xl font-bold flex items-center gap-2 text-red-500"><Trash2 size={20}/> طلب حذف الخدمة نهائياً</h2>
+                       <h2 className="text-xl font-bold flex items-center gap-2 text-red-500"><Trash2 size={20}/> طلب إيقاف نهائي (حذف)</h2>
                        <button onClick={() => setActionModal(null)} className="text-white/50 hover:text-white transition"><X size={24}/></button>
                    </div>
                    <div className="p-6 space-y-5">
@@ -636,13 +639,13 @@ export default function ProviderServicesPage() {
 
        {/* تكبير الصور */}
        {zoomedImage && (
-        <div className="fixed inset-0 z-80 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><X size={32} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
                 {isVideo(zoomedImage) ? ( 
                     <video src={zoomedImage} controls autoPlay className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> 
                 ) : ( 
-                    <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> 
+                    <img src={zoomedImage} className="max-w-full max-h-full object-contain drop-shadow-2xl" alt="Zoomed" onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }}/> 
                 )}
             </div>
         </div>

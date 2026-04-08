@@ -7,7 +7,7 @@ import {
   MapPin, Clock, FileText, Save, Loader2, Filter, User, 
   Sparkles, Utensils, Mountain, Compass, Info, PauseCircle, AlertTriangle, CheckSquare, Image as ImageIcon, Video,
   Calendar, Map as MapIcon, ShieldAlert, Home, Send, HeartPulse, Waves, Car, Wind, Tv, Flame, Coffee, ShieldCheck, Ticket, Wifi, Percent,
-  Activity, Briefcase, CalendarDays, CalendarOff, Users, Tent, Building, Phone, Mail, MessageCircle, Star, Navigation // <--- تأكد من وجود Navigation هنا
+  Activity, Briefcase, CalendarDays, CalendarOff, Users, Tent, Building, Phone, Mail, MessageCircle, Star, Navigation
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
@@ -144,7 +144,6 @@ const getProviderEmail = (service: any) => {
     return service.profiles.email || '';
 };
 
-// الدوال المساعدة للمزود
 const getProviderPhone = (service: any) => {
     if (!service || !service.profiles) return '';
     if (Array.isArray(service.profiles)) return service.profiles[0]?.phone || '';
@@ -157,7 +156,6 @@ const getProviderCreatedAt = (service: any) => {
     return service.profiles.created_at || null;
 };
 
-// حساب المدة من تاريخ الانضمام
 const calculateTimeSince = (dateString: string | null) => {
     if (!dateString) return 'غير معروف';
     const joinDate = new Date(dateString);
@@ -171,7 +169,6 @@ const calculateTimeSince = (dateString: string | null) => {
     const diffYears = Math.floor(diffMonths / 12);
     return `${diffYears} سنة`;
 };
-
 
 const isVideo = (url: string | null) => {
     if (!url) return false;
@@ -201,7 +198,6 @@ export default function ReviewServicesPage() {
   const [stopUntil, setStopUntil] = useState("");
   const [stopReason, setStopReason] = useState("");
 
-  // حالات إحصائيات المزود
   const [providerStats, setProviderStats] = useState({
       approved_services: 0,
       stopped_services: 0,
@@ -267,7 +263,6 @@ export default function ReviewServicesPage() {
       if (!providerId) return;
       setStatsLoading(true);
       try {
-          // 1. جلب إحصائيات الخدمات
           const { data: srvData } = await supabase.from('services').select('status').eq('provider_id', providerId);
           let approved = 0, stopped = 0, updated = 0;
           if (srvData) {
@@ -278,7 +273,6 @@ export default function ReviewServicesPage() {
               });
           }
 
-          // 2. جلب إحصائيات الحجوزات
           const { data: bkData } = await supabase.from('bookings').select('status, provider_earnings, payment_status').eq('provider_id', providerId);
           let totalBookings = 0, totalEarned = 0, paidAmount = 0, pendingAmount = 0;
           if (bkData) {
@@ -293,15 +287,13 @@ export default function ReviewServicesPage() {
               });
           }
 
-          // 3. جلب التقييم
-          const { data: revData } = await supabase.from('reviews').select('rating').eq('provider_id', providerId); // افتراض وجود provider_id في reviews، أو عدلها حسب الهيكل
+          const { data: revData } = await supabase.from('reviews').select('rating').eq('provider_id', providerId); 
           let avgRating = 0;
           if (revData && revData.length > 0) {
               const sum = revData.reduce((acc, curr) => acc + (curr.rating || 0), 0);
               avgRating = Number((sum / revData.length).toFixed(1));
           }
 
-          // 4. جلب موقع المزود من provider_requests
           const { data: reqData } = await supabase.from('provider_requests').select('dynamic_data').eq('user_id', providerId).limit(1);
           let lat = null, lng = null;
           if (reqData && reqData[0]?.dynamic_data?.location) {
@@ -338,7 +330,6 @@ export default function ReviewServicesPage() {
     setUseCustomCommission(service.platform_commission !== null && service.platform_commission !== undefined);
     setCustomCommission(service.platform_commission ? service.platform_commission.toString() : "");
     
-    // جلب الإحصائيات عند فتح المودال
     const providerId = Array.isArray(service.profiles) ? service.profiles[0]?.id : service.profiles?.id;
     if (providerId) {
         fetchProviderStats(providerId);
@@ -359,6 +350,7 @@ export default function ReviewServicesPage() {
       } catch (err: any) { toast.error("خطأ: " + err.message); } finally { setSavingCommission(false); }
   };
 
+  // ✅ التعديل الرئيسي لربط الإيميلات
   const handleAction = async (action: 'approve' | 'reject' | 'approve_update' | 'reject_update' | 'approve_stop' | 'reject_stop' | 'approve_delete' | 'reject_delete' | 'admin_stop' | 'admin_reactivate') => {
     if (!selectedService) return;
     
@@ -374,15 +366,38 @@ export default function ReviewServicesPage() {
     setActionLoading(true);
     try {
       let updates: any = {};
+      let emailType = ''; // لتحديد نوع الإيميل الذي سيرسل
 
-      if (action === 'approve') updates = { status: 'approved', rejection_reason: null, platform_commission: useCustomCommission ? Number(customCommission) : null }; 
-      if (action === 'reject') updates = { status: 'rejected', rejection_reason: `${rejectionReason}\n\n${ADMIN_CONTACT_INFO}` }; 
-      if (action === 'approve_update') updates = { ...selectedService.pending_updates, status: 'approved', pending_updates: null };
-      if (action === 'reject_update') updates = { status: 'approved', pending_updates: null };
-      if (action === 'approve_stop') updates = { status: 'stopped' };
-      if (action === 'reject_stop') updates = { status: 'approved' };
-      if (action === 'approve_delete') updates = { status: 'deleted' };
-      if (action === 'reject_delete') updates = { status: 'approved', delete_reason: null };
+      if (action === 'approve') {
+          updates = { status: 'approved', rejection_reason: null, platform_commission: useCustomCommission ? Number(customCommission) : null }; 
+          emailType = 'service_approved';
+      }
+      if (action === 'reject') {
+          updates = { status: 'rejected', rejection_reason: `${rejectionReason}\n\n${ADMIN_CONTACT_INFO}` }; 
+          emailType = 'service_rejected';
+      }
+      if (action === 'approve_update') {
+          updates = { ...selectedService.pending_updates, status: 'approved', pending_updates: null };
+          emailType = 'update_approved';
+      }
+      if (action === 'reject_update') {
+          updates = { status: 'approved', pending_updates: null };
+          // يمكن إضافة emailType = 'update_rejected' لاحقاً إذا احتجت
+      }
+      if (action === 'approve_stop') {
+          updates = { status: 'stopped' };
+          emailType = 'stop_approved';
+      }
+      if (action === 'reject_stop') {
+          updates = { status: 'approved' };
+      }
+      if (action === 'approve_delete') {
+          updates = { status: 'deleted' };
+          emailType = 'delete_approved';
+      }
+      if (action === 'reject_delete') {
+          updates = { status: 'approved', delete_reason: null };
+      }
       
       if (action === 'admin_stop') {
           updates = { 
@@ -393,8 +408,31 @@ export default function ReviewServicesPage() {
 
       if (action === 'admin_reactivate') updates = { status: 'approved', stop_dates: null };
 
+      // 1. تحديث حالة الخدمة في قاعدة البيانات
       const { error: updateError } = await supabase.from('services').update(updates).eq('id', selectedService.id);
       if (updateError) throw updateError;
+
+      // 2. إرسال الإشعار للمزود (إذا كان الإجراء يتطلب إشعاراً)
+      if (emailType) {
+          const providerEmail = getProviderEmail(selectedService);
+          const providerName = getProviderName(selectedService);
+          const providerPhone = getProviderPhone(selectedService);
+
+          if (providerEmail) {
+              await fetch('/api/emails/send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      type: emailType,
+                      providerEmail: providerEmail,
+                      providerName: providerName,
+                      serviceTitle: selectedService.title,
+                      providerPhone: providerPhone,
+                      reason: rejectionReason // في حالة الرفض
+                  })
+              }).catch(e => console.error("فشل إرسال إشعار للمزود:", e));
+          }
+      }
 
       toast.success("تم تنفيذ الإجراء وتحديث الخدمة بنجاح ✅");
       setSelectedService(null);
@@ -550,7 +588,6 @@ export default function ReviewServicesPage() {
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
                 
-                {/* ⚠️ تنبيهات الطلبات قيد الإجراء */}
                 {selectedService.status === 'stop_requested' && (
                     <div className="bg-orange-500/10 border border-orange-500/20 p-5 rounded-xl mb-6">
                         <h3 className="text-orange-400 font-bold mb-2 flex items-center gap-2"><PauseCircle size={20}/> طلب إيقاف الخدمة من المزود</h3>
@@ -565,7 +602,6 @@ export default function ReviewServicesPage() {
                     </div>
                 )}
 
-                {/* ⚠️ تنبيه إذا كانت الخدمة موقوفة حالياً من الإدارة */}
                 {selectedService.status === 'stopped' && selectedService.stop_dates && (
                     <div className="bg-orange-500/10 border border-orange-500/20 p-5 rounded-xl mb-6">
                         <h3 className="text-orange-400 font-bold mb-2 flex items-center gap-2"><PauseCircle size={20}/> هذه الخدمة موقوفة حالياً من الإدارة</h3>
@@ -574,7 +610,6 @@ export default function ReviewServicesPage() {
                     </div>
                 )}
 
-                {/* ✅ قسم مراجعة طلب التعديل (المقارنة الذكية) */}
                 {selectedService.status === 'update_requested' && selectedService.pending_updates && (
                     <div className="mb-8">
                         <div className="bg-blue-500/10 border border-blue-500/20 p-5 rounded-xl mb-6 flex items-start gap-3">
@@ -618,7 +653,6 @@ export default function ReviewServicesPage() {
                     </div>
                 )}
 
-                {/* ✅ إصلاح جذري لمعرض الصور والفيديو في تفاصيل الإدارة */}
                 {(() => {
                     const displayImages = selectedService.images?.length > 0 
                         ? selectedService.images 
@@ -652,10 +686,8 @@ export default function ReviewServicesPage() {
                 })()}
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* ========= العمود الأول (اليمين) ========= */}
                     <div className="space-y-6">
                         
-                        {/* ✅ قسم بيانات المزود والإحصائيات المحدث */}
                         <div className="bg-black/20 p-5 rounded-xl border border-white/5 space-y-5">
                             <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2 border-b border-white/10 pb-3"><User size={18}/> بيانات المزود والتصنيف</h3>
                             
@@ -674,7 +706,6 @@ export default function ReviewServicesPage() {
                                 </div>
                             </div>
 
-                            {/* معلومات التواصل */}
                             <div className="space-y-2 pt-2 border-t border-white/10">
                                 <h4 className="text-xs text-white/50 mb-2">معلومات التواصل:</h4>
                                 <div className="flex flex-col sm:flex-row gap-2">
@@ -688,7 +719,6 @@ export default function ReviewServicesPage() {
                                 <div className="text-center mt-2 text-xs font-mono text-white/40">{getProviderPhone(selectedService)} | {getProviderEmail(selectedService)}</div>
                             </div>
 
-                            {/* إحصائيات المزود */}
                             <div className="pt-4 border-t border-white/10">
                                 <h4 className="text-xs text-white/50 mb-3 flex items-center justify-between">
                                     <span>إحصائيات ونشاط المزود</span>
@@ -739,9 +769,8 @@ export default function ReviewServicesPage() {
                                 </div>
                             </div>
                             
-                            {/* زر موقع المزود (مقر العمل) */}
                             {providerLocation.lat && providerLocation.lng && (
-                                <a href={`https://www.google.com/maps/search/?api=1&query=${providerLocation.lat},${providerLocation.lng}`} target="_blank" rel="noreferrer" className="w-full mt-2 bg-white/5 hover:bg-white/10 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition text-sm font-bold border border-white/10">                                    <MapPin size={16} className="text-[#C89B3C]"/> عرض المقر/الموقع الرسمي للمزود
+                                <a href={`http://googleusercontent.com/maps.google.com/maps?q=${providerLocation.lat},${providerLocation.lng}`} target="_blank" rel="noreferrer" className="w-full mt-2 bg-white/5 hover:bg-white/10 text-white p-3 rounded-xl flex items-center justify-center gap-2 transition text-sm font-bold border border-white/10">                                    <MapPin size={16} className="text-[#C89B3C]"/> عرض المقر/الموقع الرسمي للمزود
                                 </a>
                             )}
                         </div>
@@ -777,7 +806,6 @@ export default function ReviewServicesPage() {
                             <div><p className="text-xs text-white/50 mb-1">الوصف</p><p className="text-white/80 text-sm leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 whitespace-pre-line">{selectedService.description}</p></div>
                         </div>
 
-                        {/* ✅ إعدادات عمولة المنصة */}
                         {(selectedService.status === 'pending' || selectedService.status === 'approved' || selectedService.status === 'update_requested') && (
                             <div className="bg-black/40 border border-white/10 p-5 rounded-xl">
                                 <div className="flex justify-between items-start mb-4">
@@ -809,7 +837,6 @@ export default function ReviewServicesPage() {
                     {/* ========= العمود الثاني (اليسار) ========= */}
                     <div className="space-y-6">
                         
-                        {/* خريطة موقع الخدمة */}
                         {selectedService.location_lat && selectedService.location_lng && (
                             <div className="bg-black/20 rounded-xl border border-white/5 p-4 flex flex-col gap-3">
                                 <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><MapPin size={16}/> موقع الخدمة الفعلي</h3>
@@ -818,20 +845,19 @@ export default function ReviewServicesPage() {
                                         <NavigationControl showCompass={false}/>
                                         <Marker latitude={selectedService.location_lat} longitude={selectedService.location_lng} color="#C89B3C"/>
                                     </Map>
-                                </div>
-                                <a href={`https://www.google.com/maps/search/?api=1&query=${selectedService.location_lat},${selectedService.location_lng}`} target="_blank" rel="noreferrer" className="w-full bg-[#C89B3C]/10 hover:bg-[#C89B3C]/20 text-[#C89B3C] p-2.5 rounded-lg flex items-center justify-center gap-2 transition text-xs font-bold border border-[#C89B3C]/20">    <Navigation size={14}/> التوجه إلى موقع الخدمة بخرائط جوجل
+                                    <a href={`http://googleusercontent.com/maps.google.com/maps?q=${selectedService.location_lat},${selectedService.location_lng}`} target="_blank" rel="noreferrer" className="w-full bg-[#C89B3C]/10 hover:bg-[#C89B3C]/20 text-[#C89B3C] p-2.5 rounded-lg flex items-center justify-center gap-2 transition text-xs font-bold border border-[#C89B3C]/20">    <Navigation size={14}/> التوجه إلى موقع الخدمة بخرائط جوجل
 </a>
+                                </div>
                             </div>
                         )}
 
-                        {/* ✅ خدمات المرفق الديناميكية (Facility) */}
                         {selectedService.sub_category === 'facility' && safeArray(selectedService.details?.facility_services).length > 0 && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Activity size={16}/> الخدمات المتوفرة في المرفق</h3>
                                 <div className="space-y-2">
                                     {safeArray(selectedService.details.facility_services).map((srv: any, i: number) => (
                                         <div key={i} className="flex gap-3 bg-white/5 p-3 rounded-lg items-center border border-white/5">
-                                            {srv.image_url ? <Image src={srv.image_url} width={40} height={40} className="rounded object-cover" alt={srv.name}/> : <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center shrink-0"><ImageIcon size={14} className="text-white/20"/></div>}
+                                            {srv.image_url ? <Image src={srv.image_url} width={40} height={40} className="rounded object-cover" alt="img"/> : <div className="w-10 h-10 bg-black/40 rounded flex items-center justify-center shrink-0"><ImageIcon size={14} className="text-white/20"/></div>}
                                             <div><p className="text-sm font-bold text-white">{srv.name}</p>{srv.description && <p className="text-xs text-white/50">{srv.description}</p>}</div>
                                         </div>
                                     ))}
@@ -839,7 +865,6 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* ✅ مميزات النزل (Lodging) */}
                         {selectedService.sub_category === 'lodging' && (safeArray(selectedService.details?.features).length > 0 || safeArray(selectedService.details?.custom_features).length > 0) && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Sparkles size={16}/> مميزات النزل</h3>
@@ -850,7 +875,6 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* سياسات المكان */}
                         {selectedService.details?.policies && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-2">
                                 <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><ShieldAlert size={16}/> سياسات وشروط المكان</h3>
@@ -858,7 +882,6 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* ✅ أوقات الدوام للمرافق والنزل */}
                         {safeArray(selectedService.work_schedule).length > 0 && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-3 flex items-center gap-2"><Clock size={16}/> أوقات العمل والدوام</h3>
@@ -870,14 +893,14 @@ export default function ReviewServicesPage() {
                                                 <div className="flex flex-wrap justify-end gap-1.5">
                                                     {safeArray(day.shifts).map((s:any, idx:number) => <span key={idx} className="bg-white/10 px-2 py-0.5 rounded text-xs dir-ltr">{s.from} - {s.to}</span>)}
                                                 </div>
-                                            ) : <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-xs">مغلق</span>}
+                                            ) : <span className="text-[10px] text-red-400 bg-red-400/5 px-2 py-1 rounded">مغلق</span>}
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
-
-                        {/* ✅ تفاصيل النزل السياحي */}
+                        
+                        {/* 🌟 تفاصيل النزل السياحي (المساحة، السعة، الغرف) */}
                         {selectedService.sub_category === 'lodging' && selectedService.details?.lodging_type && (
                              <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3">
                                 <h3 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2"><Home size={16}/> تفاصيل النزل السياحي</h3>
@@ -915,7 +938,7 @@ export default function ReviewServicesPage() {
                              </div>
                         )}
 
-                        {/* ✅ تفاصيل التجربة السياحية (Experience) */}
+                        {/* 🌟 تفاصيل التجربة السياحية (Experience) */}
                         {selectedService.sub_category === 'experience' && selectedService.details?.experience_info && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                                 <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Compass size={16}/> تفاصيل التجربة السياحية</h3>
@@ -965,7 +988,7 @@ export default function ReviewServicesPage() {
                             </div>
                         )}
 
-                        {/* ✅ تفاصيل الفعالية (Event) */}
+                        {/* 🌟 تفاصيل الفعالية (Event) */}
                         {selectedService.sub_category === 'event' && selectedService.details?.event_info && (
                             <div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-4">
                                 <h3 className="text-[#C89B3C] font-bold text-sm flex items-center gap-2"><Ticket size={16}/> تفاصيل وتواريخ الفعالية</h3>
@@ -1044,20 +1067,19 @@ export default function ReviewServicesPage() {
                                 </>
                             )}
 
-                            {/* 5. إيقاف الخدمة من قبل الإدارة (للخدمات المفعلة) ✅ */}
+                            {/* 5. إيقاف الخدمة من قبل الإدارة (للخدمات المفعلة) */}
                             {selectedService.status === 'approved' && (
                                 <button onClick={() => setActionToConfirm('admin_stop')} className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
                                     <PauseCircle size={20}/> إيقاف الخدمة (مؤقت / نهائي)
                                 </button>
                             )}
 
-                            {/* 6. إعادة التفعيل (للخدمات المتوقفة) ✅ */}
+                            {/* 6. إعادة التفعيل (للخدمات المتوقفة) */}
                             {selectedService.status === 'stopped' && (
                                 <button disabled={actionLoading} onClick={() => handleAction('admin_reactivate')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
                                     <PlayCircle size={20}/> إعادة تفعيل الخدمة للعامة
                                 </button>
                             )}
-
                         </div>
                     )}
 
@@ -1078,7 +1100,7 @@ export default function ReviewServicesPage() {
                         </div>
                     )}
 
-                    {/* ✅ نموذج إيقاف الخدمة من قِبل الإدارة */}
+                    {/* نموذج إيقاف الخدمة من قِبل الإدارة */}
                     {actionToConfirm === 'admin_stop' && (
                         <div className="animate-in slide-in-from-bottom-2 fade-in space-y-4 bg-orange-500/10 p-5 rounded-xl border border-orange-500/20">
                             <h4 className="text-orange-400 text-sm font-bold flex items-center gap-2">
@@ -1124,13 +1146,13 @@ export default function ReviewServicesPage() {
 
       {/* تكبير الصور وفيديو */}
       {zoomedImage && (
-        <div className="fixed inset-0 z-80 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={() => setZoomedImage(null)}>
             <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full"><XCircle size={32} /></button>
             <div className="relative w-full max-w-6xl h-[85vh] flex items-center justify-center">
                 {isVideo(zoomedImage) ? ( 
                     <video src={zoomedImage} controls autoPlay playsInline className="max-w-full max-h-full rounded-xl shadow-2xl outline-none" onClick={(e) => e.stopPropagation()} /> 
                 ) : ( 
-                    <Image src={zoomedImage} alt="Zoomed View" fill className="object-contain"/> 
+                    <img src={zoomedImage} className="max-w-full max-h-full object-contain drop-shadow-2xl" alt="Zoomed" onError={(e) => { e.currentTarget.src = "/placeholder.jpg"; }}/> 
                 )}
             </div>
         </div>
