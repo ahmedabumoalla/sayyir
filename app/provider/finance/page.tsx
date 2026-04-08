@@ -209,7 +209,7 @@ export default function ProviderFinancePage() {
             <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl flex gap-3 items-start">
                 <AlertCircle className="text-blue-400 shrink-0" size={20} />
                 <p className="text-sm text-white/70 leading-relaxed">
-                    يتم معالجة طلبات السحب خلال <strong>24-48 ساعة</strong> عمل. سيصلك إشعار وتحديث لحالة الطلب فور إتمام التحويل.
+                    يتم معالجة طلبات السحب خلال <strong>سبعة أيام عمل </strong> عمل. سيصلك إشعار وتحديث لحالة الطلب فور إتمام التحويل.
                 </p>
             </div>
         </div>
