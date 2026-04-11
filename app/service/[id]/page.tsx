@@ -440,8 +440,7 @@ export default function ServiceDetailsPage() {
       if (serviceData) {
         let profileData = null;
         if (serviceData.provider_id) {
-          const { data: pData } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", serviceData.provider_id).maybeSingle();
-          profileData = pData ? { ...pData, avatar_url: resolveSupabaseMediaUrl(pData.avatar_url || "") } : null;
+          const { data: pData } = await supabase.from("profiles").select("full_name, avatar_url, email, phone").eq("id", serviceData.provider_id).maybeSingle();          profileData = pData ? { ...pData, avatar_url: resolveSupabaseMediaUrl(pData.avatar_url || "") } : null;
         }
         const normalizedService = {
           ...serviceData,
@@ -548,7 +547,28 @@ export default function ServiceDetailsPage() {
           await supabase.from("services").update({ max_capacity: refreshService.max_capacity - guestCount }).eq("id", service.id);
         }
       }
+// ✅ تشغيل API الإشعارات لإرسال الإيميلات والواتساب للطرفين
+try {
+  // نجلب بيانات العميل الحالي (المرسل)
+  const { data: clientProfile } = await supabase.from("profiles").select("full_name, email, phone").eq("id", session.user.id).single();
 
+  await fetch("/api/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: "new_booking_request",
+      clientEmail: session.user.email || clientProfile?.email,
+      clientPhone: clientProfile?.phone,
+      clientName: clientProfile?.full_name,
+      providerEmail: service.profiles?.email,
+      providerPhone: service.profiles?.phone,
+      providerName: service.profiles?.full_name,
+      serviceTitle: service.title,
+    }),
+  });
+} catch (notifyError) {
+  console.error("فشل إرسال الإشعار:", notifyError);
+}
       if (isAutoApprove) {
         toast.success("تم تأكيد الحجز المبدئي، جاري توجيهك للدفع...");
         router.push(`/checkout/${bookingData.id}`);

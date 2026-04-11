@@ -15,162 +15,114 @@ export async function POST(request: Request) {
     const body = await request.json();
     
     const { 
-        type, email, clientEmail, name, clientName, serviceTitle, reason, providerName, 
-        amount, expiryTime, bookingId, clientPhone, providerPhone, providerEmail,
-        password, ticketCode, zatcaCode, totalPrice, quantity 
+        type, clientEmail, providerEmail, clientName, providerName, 
+        serviceTitle, reason, amount, bookingId, clientPhone, 
+        providerPhone, password, ticketCode, zatcaCode, totalPrice 
     } = body;
 
-    // ✅ تحديث استخراج الإيميل لضمان قراءة إيميل المزود في جميع الحالات
-    const finalRecipientEmail = email || clientEmail || providerEmail;
-    
-    // ✅ تحديث الأسماء
-    const finalClientName = clientName || name || "عميلنا العزيز";
-    const finalProviderName = providerName || name || "شريكنا العزيز";
-
-    let subject = '';
-    let html = '';
-    let smsTo = clientPhone || providerPhone || ''; 
-    let smsBody = '';
-
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sayyir.sa';
+    const finalClientName = clientName || "عميلنا العزيز";
+    const finalProviderName = providerName || "شريكنا العزيز";
+
+    // دالة مساعدة لإرسال الإيميل
+    const sendEmail = async (to: string, subject: string, html: string) => {
+        if (!to || !process.env.RESEND_API_KEY) return;
+        try {
+            await resend.emails.send({
+                from: 'منصة سَيّر <info@emails.sayyir.sa>',
+                to, subject, html,
+            });
+        } catch (err) { console.error("Resend Error:", err); }
+    };
+
+    // دالة مساعدة لإرسال الواتساب
+    const sendWhatsApp = async (phone: string, message: string) => {
+        if (!phone || !message) return;
+        try {
+            const { data: settings } = await supabase.from('platform_settings').select('twilio_account_sid, twilio_auth_token, twilio_phone_number').eq('id', 1).single();
+            if (settings?.twilio_account_sid && settings?.twilio_auth_token) {
+                const client = twilio(settings.twilio_account_sid, settings.twilio_auth_token);
+                const formattedTo = `whatsapp:${phone.startsWith('+') ? phone : '+' + phone}`;
+                await client.messages.create({
+                    body: message,
+                    from: `whatsapp:${settings.twilio_phone_number}`,
+                    to: formattedTo,
+                });
+            }
+        } catch (err) { console.error("Twilio Error:", err); }
+    };
 
     switch (type) {
-        // --- إشعارات الحجوزات (العميل والمزود) ---
-        case 'booking_approved_invoice':
-            subject = `✅ تمت الموافقة على حجزك #${bookingId?.slice(0,6) || ''}`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalClientName}</h2><p>وافق المزود على حجزك لخدمة: <strong>${serviceTitle}</strong></p><p>المبلغ المطلوب: <strong>${amount} ريال</strong></p><a href="${baseUrl}/checkout?booking_id=${bookingId}" style="background-color: #C89B3C; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px; font-weight: bold;">اضغط للدفع الآن وإتمام الحجز</a></div>`;
-            smsBody = `مرحباً ${finalClientName}،\nتمت الموافقة على حجزك (${serviceTitle})! 🎉\nيرجى الدفع لإتمام الحجز عبر الرابط:\n${baseUrl}/checkout?booking_id=${bookingId}`;
-            break;
-
-        case 'booking_rejected_notification':
-            subject = `❌ تحديث بخصوص حجزك`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>عذراً ${finalClientName}</h2><p>تم رفض حجزك لخدمة: <strong>${serviceTitle}</strong></p><p>السبب: ${reason}</p></div>`;
-            smsBody = `مرحباً ${finalClientName}،\nعذراً، تم رفض طلب حجزك لخدمة ${serviceTitle}.\nالسبب: ${reason}`;
-            break;
-
-        case 'new_booking_for_provider':
-            subject = '🔔 طلب حجز جديد بانتظار موافقتك';
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalProviderName}</h2><p>لديك حجز جديد لخدمة: <strong>${serviceTitle}</strong></p><p>العميل: ${finalClientName}</p><p>يرجى الدخول للوحة التحكم للقبول أو الرفض.</p></div>`;
-            smsBody = `تنبيه للمزود:\nلديك طلب حجز جديد لخدمة (${serviceTitle}).\nالرجاء مراجعة لوحة التحكم للقبول أو الرفض.`;
-            break;
-
-        case 'booking_ticket_invoice':
-            subject = `🎫 تذكرة الدخول والفاتورة الضريبية - حجز مؤكد`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333; max-w-lg; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;"><h2 style="color: #C89B3C;">مرحباً ${finalClientName}،</h2><p>تم تأكيد دفعك بنجاح لخدمة: <strong>${serviceTitle}</strong></p><p>المبلغ المدفوع: <strong>${totalPrice} ريال</strong></p><div style="background-color: #f9f9f9; padding: 20px; text-align: center; border-radius: 10px; margin: 20px 0;"><p style="margin: 0 0 10px 0; font-weight: bold;">تذكرة الدخول الخاصة بك (للمزود):</p><img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${ticketCode}" alt="Ticket QR Code" style="border-radius: 8px;" /><p style="margin: 10px 0 0 0; font-family: monospace; font-size: 18px; letter-spacing: 2px;">${ticketCode?.split('-')[0].toUpperCase()}</p></div><div style="text-align: center; margin-top: 20px;"><p style="font-size: 12px; color: #666;">الفاتورة الضريبية:</p><img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${zatcaCode}" alt="ZATCA QR Code" /></div></div>`;
-            smsBody = `تم تأكيد دفعك بنجاح لخدمة (${serviceTitle})! ✅\nتم إرسال تذكرة الدخول والفاتورة إلى بريدك الإلكتروني. نتمنى لك رحلة ممتعة.`;
-            break;
-
-        case 'provider_payment_received':
-            subject = `💰 تم تأكيد دفع عميل لحجز جديد`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalProviderName}،</h2><p>نود إعلامك بأن العميل <strong>${finalClientName}</strong> قام بالدفع وتأكيد الحجز بنجاح.</p><p>الخدمة: <strong>${serviceTitle}</strong></p><p>يرجى الاستعداد لاستقبال العميل.</p></div>`;
-            smsBody = `تنبيه للمزود: قام العميل ${finalClientName} بالدفع وتأكيد حجزه لخدمة (${serviceTitle}). الحجز مؤكد.`;
-            break;
-
-        // --- إشعارات إضافة الخدمات (للمزود والإدارة) ---
-        case 'service_approved':
-            subject = `🎉 تمت الموافقة على خدمتك في منصة سيّر!`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalProviderName}،</h2><p>تمت الموافقة على إدراج خدمتك: <strong>"${serviceTitle}"</strong>.</p></div>`;
-            smsBody = `أخبار رائعة من سيّر! 🎉\nتمت الموافقة على خدمتك (${serviceTitle}) وهي الآن متاحة للحجز.`;
-            break;
-
-        case 'service_rejected':
-            subject = `⚠️ تحديث هام بخصوص خدمتك في منصة سيّر`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalProviderName}،</h2><p>يوجد ملاحظات على خدمتك: <strong>"${serviceTitle}"</strong>.</p><p>السبب: ${reason}</p></div>`;
-            smsBody = `مرحباً ${finalProviderName}،\nيوجد ملاحظات على خدمتك (${serviceTitle}). يرجى الدخول لتعديلها.`;
-            break;
-
-        // ✅ --- إشعارات قبول طلبات (التعديل/الإيقاف/الحذف) للمزود --- ✅
-        case 'update_approved': 
-            subject = `✅ تم اعتماد تحديث بيانات خدمتك`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalProviderName}،</h2><p>نود إعلامك بأنه تم اعتماد التعديلات الجديدة لخدمتك: <strong>"${serviceTitle}"</strong> بنجاح.</p><p>البيانات المحدثة تظهر الآن لجميع العملاء.</p></div>`;
-            smsBody = `مرحباً ${finalProviderName}، تم اعتماد تحديث بيانات خدمتك (${serviceTitle}) بنجاح وهي متاحة الآن للعملاء. ✅`;
-            break;
-
-        case 'stop_approved': 
-            subject = `⏸️ تم إيقاف خدمتك مؤقتاً`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalProviderName}،</h2><p>تمت الموافقة على طلب الإيقاف المؤقت لخدمتك: <strong>"${serviceTitle}"</strong>.</p><p>الخدمة الآن مخفية عن العملاء، ويمكنك طلب إعادة تفعيلها في أي وقت من لوحة التحكم.</p></div>`;
-            smsBody = `مرحباً ${finalProviderName}، تمت الموافقة على طلب الإيقاف المؤقت لخدمتك (${serviceTitle}). سيّر يتمنى لك يوماً سعيداً.`;
-            break;
-
-        case 'delete_approved': 
-            subject = `🗑️ تم حذف خدمتك نهائياً من المنصة`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalProviderName}،</h2><p>تم تنفيذ طلب حذف خدمتك: <strong>"${serviceTitle}"</strong> نهائياً من منصة سَيّر بناءً على طلبك.</p></div>`;
-            smsBody = `مرحباً ${finalProviderName}، تم حذف خدمتك (${serviceTitle}) نهائياً من منصة سيّر بناءً على طلبك.`;
-            break;
-
-        // --- إشعارات الإدارة ---
-        case 'new_service_notification':
-            subject = `🔔 خدمة جديدة بانتظار المراجعة`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>تنبيه للإدارة،</h2><p>قام المزود <strong>${finalProviderName}</strong> بإضافة خدمة جديدة.</p><p>الخدمة: <strong>${serviceTitle}</strong></p></div>`;
-            break;
-
-        case 'new_provider_request':
-            subject = `🚀 طلب انضمام شريك جديد: ${finalProviderName}`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً فريق الإدارة،</h2><p>طلب انضمام جديد:</p><p>الاسم: ${finalProviderName}</p><p>الجوال: <span dir="ltr">${smsTo}</span></p></div>`;
-            break;
+        // 1. طلب حجز جديد (يصل للطرفين)
+        case 'new_booking_request':
+            // للعميل
+            await sendEmail(clientEmail, `🔔 تم استلام طلب حجزك: ${serviceTitle}`, `<div dir="rtl"><h2>مرحباً ${finalClientName}</h2><p>تم إرسال طلب حجزك لـ <strong>${serviceTitle}</strong> بنجاح.</p><p>نحن الآن بانتظار موافقة المزود، وسنخطرك فور التحديث.</p></div>`);
+            await sendWhatsApp(clientPhone, `مرحباً ${finalClientName}، تم استلام طلب حجزك لـ (${serviceTitle}). نحن بانتظار تأكيد المزود.`);
             
-        case 'provider_approved':
-            subject = `🎉 تمت الموافقة على طلبك وتفعيل حسابك في منصة سيّر`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalClientName}،</h2><p>تمت الموافقة على طلب الانضمام!</p><p>الإيميل: <strong style="color: #C89B3C;">${finalRecipientEmail}</strong></p><p>كلمة المرور المؤقتة: <strong style="color: #C89B3C;">${password}</strong></p><a href="${baseUrl}/login">تسجيل الدخول</a></div>`;
-            smsBody = `مرحباً ${finalClientName}،\nتمت الموافقة على انضمامك لمنصة سيّر! 🎉\nبيانات الدخول أرسلت لبريدك الإلكتروني.`;
+            // للمزود
+            await sendEmail(providerEmail, `🔔 طلب حجز جديد بانتظار موافقتك`, `<div dir="rtl"><h2>مرحباً ${finalProviderName}</h2><p>لديك طلب حجز جديد لخدمة: <strong>${serviceTitle}</strong> من العميل ${finalClientName}.</p><p>يرجى الدخول للوحة التحكم للقبول أو الرفض.</p></div>`);
+            await sendWhatsApp(providerPhone, `تنبيه للمزود: لديك طلب حجز جديد لخدمة (${serviceTitle}). يرجى مراجعة لوحة التحكم.`);
             break;
 
-        case 'provider_rejected':
-            subject = `تحديث بخصوص طلب انضمامك لمنصة سيّر`;
-            html = `<div dir="rtl" style="font-family: sans-serif; color: #333;"><h2>مرحباً ${finalClientName}،</h2><p>نعتذر عن عدم تمكننا من قبول طلبك حالياً.</p><p>السبب: ${reason}</p></div>`;
-            smsBody = `مرحباً ${finalClientName}،\nنعتذر لعدم تمكننا من قبول طلبك حالياً.\nالسبب: ${reason}`;
+        // 2. الموافقة على الحجز وإرسال رابط الدفع (يصل للطرفين)
+        case 'booking_approved_invoice':
+            // للعميل (رابط الدفع)
+            await sendEmail(clientEmail, `✅ تمت الموافقة على حجزك #${bookingId?.slice(0,6)}`, `<div dir="rtl"><h2>مرحباً ${finalClientName}</h2><p>وافق المزود على حجزك لخدمة: <strong>${serviceTitle}</strong></p><p>المبلغ المطلوب: <strong>${amount} ريال</strong></p><a href="${baseUrl}/checkout?booking_id=${bookingId}" style="background-color: #C89B3C; color: #000; padding: 12px 25px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold;">اضغط للدفع الآن وإتمام الحجز</a></div>`);
+            await sendWhatsApp(clientPhone, `أخبار سارة ${finalClientName}! تمت الموافقة على حجزك (${serviceTitle}). يرجى إتمام الدفع عبر الرابط: ${baseUrl}/checkout?booking_id=${bookingId}`);
+            
+            // للمزود (تأكيد الموافقة)
+            await sendEmail(providerEmail, `✅ لقد وافقت على الحجز #${bookingId?.slice(0,6)}`, `<div dir="rtl"><h2>مرحباً ${finalProviderName}</h2><p>لقد قمت بالموافقة على حجز العميل ${finalClientName}.</p><p>تم إرسال رابط الدفع للعميل، وسنخطرك فور إتمام العملية.</p></div>`);
+            break;
+
+        // 3. تأكيد الدفع - التذكرة والفاتورة (يصل للطرفين)
+        case 'booking_payment_confirmed':
+            // للعميل (التذكرة)
+            await sendEmail(clientEmail, `🎫 تذكرة حجزك المؤكد: ${serviceTitle}`, `<div dir="rtl" style="font-family: sans-serif; max-w-lg; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;"><h2>تم تأكيد الحجز!</h2><p>شكراً ${finalClientName}، تم تأكيد دفعك لخدمة: <strong>${serviceTitle}</strong></p><div style="text-align: center; background: #f9f9f9; padding: 15px; border-radius: 10px;"><p>تذكرة الدخول:</p><img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${ticketCode}" /><p>${ticketCode}</p></div></div>`);
+            await sendWhatsApp(clientPhone, `تم تأكيد حجزك لـ (${serviceTitle}) بنجاح! ✅ التذكرة وصلت بريدك الإلكتروني. رحلة سعيدة!`);
+
+            // للمزود (إشعار استلام المال)
+            await sendEmail(providerEmail, `💰 تم دفع مبلغ الحجز لخدمة: ${serviceTitle}`, `<div dir="rtl"><h2>مرحباً ${finalProviderName}</h2><p>العميل <strong>${finalClientName}</strong> أكمل عملية الدفع بنجاح.</p><p>المبلغ الصافي سيضاف لمحفظتك. يرجى الاستعداد لتقديم الخدمة.</p></div>`);
+            await sendWhatsApp(providerPhone, `تنبيه: العميل ${finalClientName} أكمل الدفع لخدمة (${serviceTitle}). الحجز الآن مؤكد 100%.`);
+            break;
+
+        // 4. رفض الحجز (يصل للطرفين)
+        case 'booking_rejected':
+            // للعميل
+            await sendEmail(clientEmail, `❌ تحديث بخصوص طلب حجزك`, `<div dir="rtl"><h2>نعتذر منك ${finalClientName}</h2><p>تم رفض طلب حجزك لخدمة: <strong>${serviceTitle}</strong></p><p>السبب: ${reason}</p></div>`);
+            await sendWhatsApp(clientPhone, `نعتذر منك ${finalClientName}، تم رفض طلب حجزك لـ (${serviceTitle}). السبب: ${reason}`);
+
+            // للمزود
+            await sendEmail(providerEmail, `❌ تم تنفيذ طلب الرفض`, `<div dir="rtl"><h2>مرحباً ${finalProviderName}</h2><p>تم إرسال إشعار الرفض للعميل ${finalClientName} بخصوص خدمة ${serviceTitle}.</p></div>`);
+            break;
+
+        // 5. إلغاء الحجز (يصل للطرفين)
+        case 'booking_cancelled':
+            const cancelMsg = `تم إلغاء الحجز الخاص بـ (${serviceTitle}) بنجاح.`;
+            await sendEmail(clientEmail, `🚫 تم إلغاء حجزك`, `<div dir="rtl"><h2>مرحباً ${finalClientName}</h2><p>${cancelMsg}</p></div>`);
+            await sendEmail(providerEmail, `🚫 إشعار إلغاء حجز`, `<div dir="rtl"><h2>تنبيه للمزود</h2><p>نود إعلامك بأنه تم إلغاء الحجز الخاص بالخدمة: <strong>${serviceTitle}</strong>.</p></div>`);
+            await sendWhatsApp(clientPhone, cancelMsg);
+            await sendWhatsApp(providerPhone, `تنبيه: تم إلغاء حجز لخدمة (${serviceTitle}).`);
+            break;
+
+        // --- إشعارات الإدارة والخدمات ---
+        case 'service_approved':
+            await sendEmail(providerEmail, `🎉 تمت الموافقة على خدمتك!`, `<div dir="rtl"><h2>مرحباً ${finalProviderName}</h2><p>تمت الموافقة على إدراج خدمتك: <strong>"${serviceTitle}"</strong> وهي متاحة الآن للعملاء.</p></div>`);
+            break;
+
+        case 'new_service_notification':
+            await sendEmail('info@sayyir.sa', `🔔 خدمة جديدة بانتظار المراجعة`, `<div dir="rtl"><h2>تنبيه للإدارة</h2><p>المزود ${finalProviderName} أضاف خدمة: ${serviceTitle}</p></div>`);
+            break;
+
+        case 'provider_approved':
+            await sendEmail(clientEmail, `🎉 مرحباً بك كشريك في سيّر`, `<div dir="rtl"><h2>مرحباً ${finalClientName}</h2><p>تم تفعيل حسابك! كلمة المرور: <strong>${password}</strong></p></div>`);
             break;
 
         default:
-            return NextResponse.json({ error: "Invalid email type" }, { status: 400 });
-    }
-
-    // 1. إرسال الإيميل
-    if (finalRecipientEmail || type === 'new_service_notification' || type === 'new_provider_request') {
-        const emailToUse = (type === 'new_service_notification' || type === 'new_provider_request') ? 'info@sayyir.sa' : finalRecipientEmail;
-        
-        if (emailToUse && process.env.RESEND_API_KEY) {
-            try {
-                await resend.emails.send({
-                    from: 'منصة سَيّر <info@emails.sayyir.sa>',
-                    to: emailToUse,
-                    subject: subject,
-                    html: html,
-                });
-                console.log("Email sent successfully to:", emailToUse);
-            } catch (err: any) {
-                console.error("Resend Email Error:", err);
-            }
-        }
-    }
-
-    // 2. إرسال الواتساب
-    if (smsTo && smsBody) {
-        try {
-            const { data: settings } = await supabase.from('platform_settings').select('twilio_account_sid, twilio_auth_token, twilio_phone_number').eq('id', 1).single();
-            
-            if (settings?.twilio_account_sid && settings?.twilio_auth_token && settings?.twilio_phone_number) {
-                const client = twilio(settings.twilio_account_sid, settings.twilio_auth_token);
-                
-                const formattedTo = `whatsapp:${smsTo.startsWith('+') ? smsTo : '+' + smsTo}`;
-                const formattedFrom = `whatsapp:${settings.twilio_phone_number}`;
-
-                await client.messages.create({
-                    body: smsBody,
-                    from: formattedFrom,
-                    to: formattedTo,
-                });
-                console.log("WhatsApp message sent to:", formattedTo);
-            }
-        } catch (err: any) {
-            console.error("Twilio WhatsApp Error:", err);
-        }
+            return NextResponse.json({ error: "Invalid type" }, { status: 400 });
     }
 
     return NextResponse.json({ success: true });
-
   } catch (error: any) {
-    console.error("Notification Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
