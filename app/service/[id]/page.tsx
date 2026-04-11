@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
 import {
-  Star,
   Loader2,
   Home,
   Utensils,
@@ -41,11 +40,12 @@ import {
   Tent,
   Building,
   Ticket,
-  CreditCard,
   Heart,
   Share2,
   MapPin,
   CalendarOff,
+  CreditCard,
+  Star
 } from "lucide-react";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -56,11 +56,27 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const FALLBACK_IMAGE = "/placeholder.jpg";
 
 const DAYS_MAP: Record<string, string> = {
-  'Sunday': 'الأحد', 'Monday': 'الإثنين', 'Tuesday': 'الثلاثاء',
-  'Wednesday': 'الأربعاء', 'Thursday': 'الخميس', 'Friday': 'الجمعة', 'Saturday': 'السبت',
-  'sunday': 'الأحد', 'monday': 'الإثنين', 'tuesday': 'الثلاثاء',
-  'wednesday': 'الأربعاء', 'thursday': 'الخميس', 'friday': 'الجمعة', 'saturday': 'السبت',
-  'Sun': 'الأحد', 'Mon': 'الإثنين', 'Tue': 'الثلاثاء', 'Wed': 'الأربعاء', 'Thu': 'الخميس', 'Fri': 'الجمعة', 'Sat': 'السبت'
+  Sunday: "الأحد",
+  Monday: "الإثنين",
+  Tuesday: "الثلاثاء",
+  Wednesday: "الأربعاء",
+  Thursday: "الخميس",
+  Friday: "الجمعة",
+  Saturday: "السبت",
+  sunday: "الأحد",
+  monday: "الإثنين",
+  tuesday: "الثلاثاء",
+  wednesday: "الأربعاء",
+  thursday: "الخميس",
+  friday: "الجمعة",
+  saturday: "السبت",
+  Sun: "الأحد",
+  Mon: "الإثنين",
+  Tue: "الثلاثاء",
+  Wed: "الأربعاء",
+  Thu: "الخميس",
+  Fri: "الجمعة",
+  Sat: "السبت",
 };
 
 const ALL_FEATURES_DICT: Record<string, any> = {
@@ -133,7 +149,11 @@ const addDaysToDate = (dateStr: string, days: number): string => {
   return d.toISOString().split("T")[0];
 };
 
-const generateTimeSlots = (startTime: string, endTime: string, intervalMinutes = 30) => {
+const generateTimeSlots = (
+  startTime: string,
+  endTime: string,
+  intervalMinutes = 30
+) => {
   if (!startTime || !endTime) return [];
 
   const parseTime = (t: string) => {
@@ -153,7 +173,10 @@ const generateTimeSlots = (startTime: string, endTime: string, intervalMinutes =
     const currentMins = m % (24 * 60);
     const hours24 = Math.floor(currentMins / 60);
     const mins = currentMins % 60;
-    const value24 = `${hours24.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`;
+    const value24 = `${hours24.toString().padStart(2, "0")}:${mins
+      .toString()
+      .padStart(2, "0")}`;
+
     slots.push({
       value: value24,
       label: formatTime12H(value24),
@@ -163,7 +186,8 @@ const generateTimeSlots = (startTime: string, endTime: string, intervalMinutes =
   return slots;
 };
 
-const normalizeText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const normalizeText = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
 
 const extractMediaUrl = (item: any): string => {
   if (!item) return "";
@@ -188,7 +212,8 @@ const extractMediaUrl = (item: any): string => {
       normalizeText(item.publicUrl) ||
       normalizeText(item.public_url) ||
       normalizeText(item.file_url) ||
-      normalizeText(item.path) || ""
+      normalizeText(item.path) ||
+      ""
     );
   }
   return "";
@@ -197,23 +222,39 @@ const extractMediaUrl = (item: any): string => {
 const resolveSupabaseMediaUrl = (rawValue: string): string => {
   const value = normalizeText(rawValue);
   if (!value) return "";
-  if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("data:") || value.startsWith("blob:")) return value;
+  if (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("data:") ||
+    value.startsWith("blob:")
+  ) {
+    return value;
+  }
   if (value.startsWith("/")) return value;
+
   const normalized = value.replace(/^\/+/, "");
+
   if (normalized.includes("/storage/v1/object/public/")) {
     if (normalized.startsWith("http")) return normalized;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     return supabaseUrl ? `${supabaseUrl}/${normalized}` : normalized;
   }
+
   if (normalized.startsWith("storage/v1/object/public/")) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     return supabaseUrl ? `${supabaseUrl}/${normalized}` : normalized;
   }
-  const envBucket = process.env.NEXT_PUBLIC_SUPABASE_MEDIA_BUCKET || process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "";
+
+  const envBucket =
+    process.env.NEXT_PUBLIC_SUPABASE_MEDIA_BUCKET ||
+    process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ||
+    "";
+
   if (envBucket) {
     const { data } = supabase.storage.from(envBucket).getPublicUrl(normalized);
     return data?.publicUrl || normalized;
   }
+
   const parts = normalized.split("/");
   if (parts.length > 1) {
     const bucket = parts[0];
@@ -221,6 +262,7 @@ const resolveSupabaseMediaUrl = (rawValue: string): string => {
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);
     return data?.publicUrl || normalized;
   }
+
   return normalized;
 };
 
@@ -238,7 +280,12 @@ const normalizeMediaList = (...sources: any[]): string[] => {
     }
     return [source];
   });
-  const urls = rawItems.map((item) => extractMediaUrl(item)).filter(Boolean).map((url) => resolveSupabaseMediaUrl(url));
+
+  const urls = rawItems
+    .map((item) => extractMediaUrl(item))
+    .filter(Boolean)
+    .map((url) => resolveSupabaseMediaUrl(url));
+
   return Array.from(new Set(urls));
 };
 
@@ -247,8 +294,13 @@ const isVideo = (url: string) => {
   if (!value) return false;
   const withoutQuery = value.split("?")[0].split("#")[0];
   return (
-    withoutQuery.endsWith(".mp4") || withoutQuery.endsWith(".webm") || withoutQuery.endsWith(".ogg") ||
-    withoutQuery.endsWith(".mov") || value.includes("video") || value.includes("mime=video") || value.includes("content-type=video")
+    withoutQuery.endsWith(".mp4") ||
+    withoutQuery.endsWith(".webm") ||
+    withoutQuery.endsWith(".ogg") ||
+    withoutQuery.endsWith(".mov") ||
+    value.includes("video") ||
+    value.includes("mime=video") ||
+    value.includes("content-type=video")
   );
 };
 
@@ -261,14 +313,20 @@ const normalizeMenuItems = (items: any[]) => {
 
 const normalizeFacilityServices = (items: any[]) => {
   return safeArray(items).map((item: any) => {
-    const image_url = normalizeMediaList(item?.image_url, item?.image, item?.url)[0] || "";
+    const image_url =
+      normalizeMediaList(item?.image_url, item?.image, item?.url)[0] || "";
     return { ...item, image_url };
   });
 };
 
 const formatDateAr = (dateStr: string | null) => {
   if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  return new Date(dateStr).toLocaleDateString("ar-SA", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 };
 
 export default function ServiceDetailsPage() {
@@ -305,8 +363,10 @@ export default function ServiceDetailsPage() {
   const isExperience = service?.service_category === "experience" && !isEvent;
   const isFacility = service?.sub_category === "facility";
 
-  const validExpDates = isExperience 
-    ? safeArray(service?.details?.experience_info?.dates).filter((d: string) => d >= todayDate).sort() 
+  const validExpDates = isExperience
+    ? safeArray(service?.details?.experience_info?.dates)
+        .filter((d: string) => d >= todayDate)
+        .sort()
     : [];
 
   useEffect(() => {
@@ -323,7 +383,11 @@ export default function ServiceDetailsPage() {
   }, [service]);
 
   const firstImage = useMemo(() => {
-    return galleryImages.find((url: string) => !isVideo(url)) || service?.image_url || FALLBACK_IMAGE;
+    return (
+      galleryImages.find((url: string) => !isVideo(url)) ||
+      service?.image_url ||
+      FALLBACK_IMAGE
+    );
   }, [galleryImages, service]);
 
   const firstVideo = useMemo(() => {
@@ -343,44 +407,72 @@ export default function ServiceDetailsPage() {
   }, [service?.id, firstVideo]);
 
   const checkFavorite = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setFavLoading(false); return; }
-    const { data } = await supabase.from("favorites").select("id").eq("user_id", session.user.id).eq("service_id", service?.id).single();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      setFavLoading(false);
+      return;
+    }
+
+    const { data } = await supabase
+      .from("favorites")
+      .select("id")
+      .eq("user_id", session.user.id)
+      .eq("service_id", service?.id)
+      .single();
+
     if (data) setIsFavorite(true);
     setFavLoading(false);
   };
 
   const toggleFavorite = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return toast.error("يجب تسجيل الدخول للإضافة للمفضلة");
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      toast.error("يجب تسجيل الدخول للإضافة للمفضلة");
+      return;
+    }
+
     if (isFavorite) {
       setIsFavorite(false);
-      await supabase.from("favorites").delete().eq("user_id", session.user.id).eq("service_id", service?.id);
+      await supabase
+        .from("favorites")
+        .delete()
+        .eq("user_id", session.user.id)
+        .eq("service_id", service?.id);
       toast.success("تم الإزالة من المفضلة");
     } else {
       setIsFavorite(true);
-      await supabase.from("favorites").insert({ user_id: session.user.id, service_id: service?.id });
+      await supabase
+        .from("favorites")
+        .insert({ user_id: session.user.id, service_id: service?.id });
       toast.success("تمت الإضافة للمفضلة");
     }
   };
 
   useEffect(() => {
     if (!service) return;
+
     if (isLodging) {
       const nights = Math.max(1, guestCount);
-      setTotalPrice(checkIn ? nights * service.price : 0);
+      setTotalPrice(checkIn ? nights * Number(service.price || 0) : 0);
     } else if (isEvent) {
-      const adultTotal = guestCount * service.price;
-      const childPrice = service.details?.event_info?.child_price || 0;
+      const adultTotal = guestCount * Number(service.price || 0);
+      const childPrice = Number(service.details?.event_info?.child_price || 0);
       const childTotal = childCount * childPrice;
       setTotalPrice(adultTotal + childTotal);
     } else {
-      setTotalPrice(service.price * guestCount);
+      setTotalPrice(Number(service.price || 0) * guestCount);
     }
   }, [guestCount, childCount, checkIn, service, isLodging, isEvent]);
 
   useEffect(() => {
     if (!service || isLodging) return;
+
     if (!bookingDate) {
       setDateTimeError("");
       return;
@@ -396,36 +488,46 @@ export default function ServiceDetailsPage() {
     }
 
     if (isEvent && eventInfo?.dates) {
-      if (bookingDate < eventInfo.dates.startDate || bookingDate > eventInfo.dates.endDate) {
+      if (
+        bookingDate < eventInfo.dates.startDate ||
+        bookingDate > eventInfo.dates.endDate
+      ) {
         setDateTimeError("هذا التاريخ يقع خارج فترة إقامة الفعالية.");
         return;
       }
+
       if (bookingTime && eventInfo.dates.startTime && eventInfo.dates.endTime) {
         const parseTime = (timeStr: string) => {
           if (!timeStr) return 0;
           const [h, m] = timeStr.split(":").map(Number);
           return h * 60 + (m || 0);
         };
+
         const tMin = parseTime(bookingTime);
         const sMin = parseTime(eventInfo.dates.startTime);
         const eMin = parseTime(eventInfo.dates.endTime);
         let isTimeValid = false;
+
         if (eMin <= sMin) {
           if (tMin >= sMin || tMin <= eMin) isTimeValid = true;
         } else {
           if (tMin >= sMin && tMin <= eMin) isTimeValid = true;
         }
+
         if (isTimeValid) setDateTimeError("");
         else setDateTimeError("الوقت المختار خارج ساعات عمل الفعالية.");
       } else {
         setDateTimeError("");
       }
+
       return;
     }
 
     if (isExperience && expDates.length > 0) {
       if (!expDates.includes(bookingDate)) {
-        setDateTimeError("التجربة غير متاحة في هذا التاريخ. يرجى اختيار تاريخ من المواعيد المتاحة.");
+        setDateTimeError(
+          "التجربة غير متاحة في هذا التاريخ. يرجى اختيار تاريخ من المواعيد المتاحة."
+        );
       } else {
         setDateTimeError("");
       }
@@ -438,27 +540,56 @@ export default function ServiceDetailsPage() {
   const fetchServiceDetails = async () => {
     try {
       setLoading(true);
-      const { data: serviceData, error } = await supabase.from("services").select("*").eq("id", id).single();
+
+      const { data: serviceData, error } = await supabase
+        .from("services")
+        .select("*")
+        .eq("id", id)
+        .single();
+
       if (error) throw error;
+
       if (serviceData) {
         let profileData = null;
+
         if (serviceData.provider_id) {
-          const { data: pData } = await supabase.from("profiles").select("full_name, avatar_url, email, phone").eq("id", serviceData.provider_id).maybeSingle();
-          profileData = pData ? { ...pData, avatar_url: resolveSupabaseMediaUrl(pData.avatar_url || "") } : null;
+          const { data: pData } = await supabase
+            .from("profiles")
+            .select("full_name, avatar_url, email, phone")
+            .eq("id", serviceData.provider_id)
+            .maybeSingle();
+
+          profileData = pData
+            ? {
+                ...pData,
+                avatar_url: resolveSupabaseMediaUrl(pData.avatar_url || ""),
+              }
+            : null;
         }
+
         const normalizedService = {
           ...serviceData,
           image_url: normalizeMediaList(serviceData.image_url)[0] || "",
           profiles: profileData,
           details: {
             ...(serviceData.details || {}),
-            images: normalizeMediaList(serviceData?.details?.images, serviceData?.image_url),
-            facility_services: normalizeFacilityServices(serviceData?.details?.facility_services || []),
+            images: normalizeMediaList(
+              serviceData?.details?.images,
+              serviceData?.image_url
+            ),
+            facility_services: normalizeFacilityServices(
+              serviceData?.details?.facility_services || []
+            ),
           },
           menu_items: normalizeMenuItems(serviceData.menu_items || []),
         };
+
         setService(normalizedService);
-        const isLimited = serviceData.service_category === "experience" && serviceData.sub_category !== "event";
+
+        const isLimited =
+          serviceData.service_category === "experience" &&
+          serviceData.sub_category !== "event";
+
         if (isLimited && (serviceData.max_capacity === 0 || serviceData.max_capacity === null)) {
           setGuestCount(0);
         }
@@ -472,8 +603,15 @@ export default function ServiceDetailsPage() {
   };
 
   const isLimitedCapacity = isExperience;
-  const isSoldOut = isLimitedCapacity ? service?.max_capacity === null || service?.max_capacity <= 0 : false;
-  const quantityLabel = isLodging ? "عدد الليالي" : isEvent ? "عدد التذاكر (بالغين)" : "عدد الأشخاص";
+  const isSoldOut = isLimitedCapacity
+    ? service?.max_capacity === null || service?.max_capacity <= 0
+    : false;
+
+  const quantityLabel = isLodging
+    ? "عدد الليالي"
+    : isEvent
+    ? "عدد التذاكر (بالغين)"
+    : "عدد الأشخاص";
 
   const incrementGuests = () => {
     if (isLimitedCapacity) {
@@ -492,67 +630,118 @@ export default function ServiceDetailsPage() {
   };
 
   const decrementGuests = () => {
-    if (guestCount > (isEvent ? 0 : 1)) setGuestCount((prev) => prev - 1);
+    if (guestCount > (isEvent ? 0 : 1)) {
+      setGuestCount((prev) => prev - 1);
+    }
   };
 
   const handleBookingRequest = async () => {
-    if (!agreedToPolicies && service.details?.policies) return toast.warning("الرجاء الموافقة على سياسات المزود أولاً.");
+    if (!agreedToPolicies && service.details?.policies) {
+      toast.warning("الرجاء الموافقة على سياسات المزود أولاً.");
+      return;
+    }
 
-    let finalCheckIn = null;
-    let finalCheckOut = null;
+    let finalCheckIn: string | null = null;
+    let finalCheckOut: string | null = null;
 
     if (isLodging) {
-      if (!checkIn) return toast.warning("الرجاء تحديد تاريخ الوصول.");
-      if (guestCount < 1) return toast.warning("الرجاء اختيار عدد الليالي.");
+      if (!checkIn) {
+        toast.warning("الرجاء تحديد تاريخ الوصول.");
+        return;
+      }
+
+      if (guestCount < 1) {
+        toast.warning("الرجاء اختيار عدد الليالي.");
+        return;
+      }
+
       finalCheckIn = checkIn;
       finalCheckOut = addDaysToDate(checkIn, guestCount);
     } else {
-      if (!bookingDate) return toast.warning("الرجاء تحديد تاريخ الحضور.");
-      if (!isExperience && !bookingTime) return toast.warning("الرجاء تحديد وقت الحضور.");
-      if (isExperience && !service.details?.experience_info?.start_time && !bookingTime) return toast.warning("الرجاء تحديد وقت الحضور.");
-      if (dateTimeError) return toast.error("توجد مشكلة في التاريخ أو الوقت المختار.");
+      if (!bookingDate) {
+        toast.warning("الرجاء تحديد تاريخ الحضور.");
+        return;
+      }
 
-      finalCheckIn = `${bookingDate} ${bookingTime || service.details?.experience_info?.start_time || "00:00"}`;
+      if (!isExperience && !bookingTime) {
+        toast.warning("الرجاء تحديد وقت الحضور.");
+        return;
+      }
+
+      if (
+        isExperience &&
+        !service.details?.experience_info?.start_time &&
+        !bookingTime
+      ) {
+        toast.warning("الرجاء تحديد وقت الحضور.");
+        return;
+      }
+
+      if (dateTimeError) {
+        toast.error("توجد مشكلة في التاريخ أو الوقت المختار.");
+        return;
+      }
+
+      const chosenTime =
+        bookingTime || service.details?.experience_info?.start_time || "00:00";
+
+      finalCheckIn = `${bookingDate}T${chosenTime}`;
     }
 
-    if (isEvent && guestCount === 0 && childCount === 0) return toast.warning("الرجاء اختيار تذكرة واحدة على الأقل.");
+    if (isEvent && guestCount === 0 && childCount === 0) {
+      toast.warning("الرجاء اختيار تذكرة واحدة على الأقل.");
+      return;
+    }
 
     setBookingLoading(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error("يجب تسجيل الدخول لإرسال طلب حجز."); router.push("/login"); return; }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      const isAutoApprove = isEvent;
-      const bookingStatus = isAutoApprove ? "approved_unpaid" : "pending";
-
-      const { data: bookingData, error: bookingError } = await supabase
-        .from("bookings")
-        .insert([{
-            user_id: session.user.id,
-            service_id: service.id,
-            provider_id: service.provider_id,
-            quantity: guestCount,
-            total_price: totalPrice,
-            check_in: finalCheckIn,
-            check_out: finalCheckOut,
-            execution_date: finalCheckIn,
-            additional_notes: additionalNotes,
-            status: bookingStatus,
-            booking_date: new Date(),
-            details: { child_count: childCount },
-        }]).select().single();
-
-      if (bookingError) throw bookingError;
-
-      if (isLimitedCapacity) {
-        const { data: refreshService } = await supabase.from("services").select("max_capacity").eq("id", service.id).single();
-        if (refreshService && refreshService.max_capacity >= guestCount) {
-          await supabase.from("services").update({ max_capacity: refreshService.max_capacity - guestCount }).eq("id", service.id);
-        }
+      if (!session?.user) {
+        toast.error("يجب تسجيل الدخول لإرسال طلب حجز.");
+        router.push("/login");
+        return;
       }
 
-      // ✅ تم إصلاح الإيميل ليعمل بنفس الطريقة الناجحة في النظام
+      const response = await fetch("/api/bookings/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          serviceId: service.id,
+          userId: session.user.id,
+          quantity: guestCount,
+          guests: guestCount,
+          checkIn: finalCheckIn,
+          checkOut: finalCheckOut,
+          bookingDate: finalCheckIn
+            ? new Date(finalCheckIn).toISOString().split("T")[0]
+            : null,
+          bookingTime:
+            finalCheckIn && !isLodging
+              ? finalCheckIn.split("T")[1] || null
+              : null,
+          notes: additionalNotes || null,
+          childCount,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result?.error || "فشل إنشاء الحجز");
+      }
+
+      const bookingData = result?.booking;
+
+      if (!bookingData?.id) {
+        throw new Error("تم إنشاء الحجز لكن لم يتم استلام بياناته بشكل صحيح");
+      }
+
       try {
         const { data: clientProfile } = await supabase
           .from("profiles")
@@ -572,17 +761,18 @@ export default function ServiceDetailsPage() {
               serviceName: service.title,
               clientName: clientProfile?.full_name || "عميل سيّر",
               date: formatDateAr(finalCheckIn),
-              time: isLodging ? "لا يوجد" : formatTime12H(finalCheckIn || ""),
+              time: isLodging ? "طوال اليوم" : formatTime12H(finalCheckIn || ""),
               guests: guestCount.toString(),
               bookingId: bookingData.id.split('-')[0].toUpperCase()
             }
           }),
         });
+
       } catch (notifyError) {
         console.error("فشل إرسال إشعار المزود:", notifyError);
       }
 
-      if (isAutoApprove) {
+      if (isEvent) {
         toast.success("تم تأكيد الحجز المبدئي، جاري توجيهك للدفع...");
         router.push(`/checkout/${bookingData.id}`);
       } else {
@@ -590,8 +780,8 @@ export default function ServiceDetailsPage() {
         router.push("/client/dashboard");
       }
     } catch (error: any) {
-      console.error(error);
-      toast.error("حدث خطأ أثناء إرسال الطلب: " + error.message);
+      console.error("SERVICE BOOKING ERROR:", error);
+      toast.error("حدث خطأ أثناء إرسال الطلب: " + (error?.message || "خطأ غير معروف"));
     } finally {
       setBookingLoading(false);
     }
@@ -601,17 +791,44 @@ export default function ServiceDetailsPage() {
     const feat = ALL_FEATURES_DICT[id];
     if (feat) {
       return (
-        <span key={id} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5">
+        <span
+          key={id}
+          className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"
+        >
           <feat.icon size={14} className="text-[#C89B3C]" /> {feat.label}
         </span>
       );
     }
+
     return (
-      <span key={id} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5">
+      <span
+        key={id}
+        className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"
+      >
         <CheckSquare size={14} className="text-[#C89B3C]" /> {id}
       </span>
     );
   };
+
+  const eventTimeSlots = useMemo(() => {
+    if (!isEvent || !service?.details?.event_info?.dates) return [];
+    return generateTimeSlots(
+      service.details.event_info.dates.startTime,
+      service.details.event_info.dates.endTime,
+      30
+    );
+  }, [isEvent, service]);
+
+  const experienceTimeSlots = useMemo(() => {
+    if (!isExperience || !service?.details?.experience_info?.start_time) return [];
+    const start = service.details.experience_info.start_time;
+    const duration = service.details.experience_info.duration || "";
+    const end = service.details.experience_info.end_time || start;
+    if (end === start) {
+      return [{ value: start, label: formatTime12H(start) }];
+    }
+    return generateTimeSlots(start, end, 30);
+  }, [isExperience, service]);
 
   if (loading) {
     return (
@@ -651,7 +868,9 @@ export default function ServiceDetailsPage() {
             src={firstImage || FALLBACK_IMAGE}
             alt={service.title}
             className="w-full h-full object-cover opacity-80"
-            onError={(e) => { e.currentTarget.src = FALLBACK_IMAGE; }}
+            onError={(e) => {
+              e.currentTarget.src = FALLBACK_IMAGE;
+            }}
           />
         )}
 
@@ -698,7 +917,9 @@ export default function ServiceDetailsPage() {
                     : "مرفق / مكان"}
                 </span>
 
-                <h1 className="text-3xl md:text-5xl font-bold mb-2 drop-shadow-lg">{service.title}</h1>
+                <h1 className="text-3xl md:text-5xl font-bold mb-2 drop-shadow-lg">
+                  {service.title}
+                </h1>
 
                 <div className="flex flex-wrap items-center gap-4 text-white/80 mt-2">
                   <div className="flex items-center gap-1">
@@ -725,6 +946,13 @@ export default function ServiceDetailsPage() {
                   )}
                 </div>
               </div>
+
+              <div className="bg-black/40 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10">
+                <div className="text-xs text-white/50 mb-1">السعر</div>
+                <div className="text-2xl font-bold text-[#C89B3C]">
+                  {Number(service.price || 0)} ر.س
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -732,7 +960,6 @@ export default function ServiceDetailsPage() {
 
       <div className="container mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          
           {galleryImages.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -765,7 +992,9 @@ export default function ServiceDetailsPage() {
                         src={url}
                         className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
                         alt={`img-${index}`}
-                        onError={(e) => { e.currentTarget.src = FALLBACK_IMAGE; }}
+                        onError={(e) => {
+                          e.currentTarget.src = FALLBACK_IMAGE;
+                        }}
                       />
                     )}
                   </div>
@@ -778,7 +1007,9 @@ export default function ServiceDetailsPage() {
             <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Info size={20} className="text-[#C89B3C]" /> الوصف والتفاصيل
             </h3>
-            <p className="text-gray-300 leading-loose whitespace-pre-line text-base">{service.description}</p>
+            <p className="text-gray-300 leading-loose whitespace-pre-line text-base">
+              {service.description}
+            </p>
           </div>
 
           {/* ساعات العمل للمرافق والخدمات */}
@@ -789,18 +1020,29 @@ export default function ServiceDetailsPage() {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {safeArray(service.work_schedule).map((schedule: any, idx: number) => (
-                  <div key={idx} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/10">
-                    <span className="font-bold text-white/90">{DAYS_MAP[schedule.day] || schedule.day}</span>
+                  <div
+                    key={idx}
+                    className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/10"
+                  >
+                    <span className="font-bold text-white/90">
+                      {DAYS_MAP[schedule.day] || schedule.day}
+                    </span>
+
                     {schedule.active ? (
                       <div className="flex flex-col items-end gap-1">
                         {safeArray(schedule.shifts).map((shift: any, sIdx: number) => (
-                          <span key={sIdx} className="text-xs text-[#C89B3C] font-mono bg-[#C89B3C]/10 px-2 py-1 rounded">
+                          <span
+                            key={sIdx}
+                            className="text-xs text-[#C89B3C] font-mono bg-[#C89B3C]/10 px-2 py-1 rounded"
+                          >
                             {formatTime12H(shift.from)} - {formatTime12H(shift.to)}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <span className="text-xs text-red-400 font-bold bg-red-500/10 px-3 py-1 rounded border border-red-500/20">مغلق</span>
+                      <span className="text-xs text-red-400 font-bold bg-red-500/10 px-3 py-1 rounded border border-red-500/20">
+                        مغلق
+                      </span>
                     )}
                   </div>
                 ))}
@@ -897,7 +1139,9 @@ export default function ServiceDetailsPage() {
                     <Sparkles size={16} className="text-[#C89B3C]" /> مميزات المكان
                   </h4>
                   <div className="flex flex-wrap gap-2">
-                    {safeArray(service.details.features).map((feat: string) => getTranslatedFeature(feat))}
+                    {safeArray(service.details.features).map((feat: string) =>
+                      getTranslatedFeature(feat)
+                    )}
                     {safeArray(service.details.custom_features).map((feat: string, idx: number) => (
                       <span
                         key={`c-${idx}`}
@@ -943,7 +1187,9 @@ export default function ServiceDetailsPage() {
                     <h4 className="text-orange-400 font-bold mb-1">تأمين مسترد على المحتويات</h4>
                     <p className="text-white/80 text-sm">
                       يشترط دفع مبلغ تأمين بقيمة{" "}
-                      <strong className="text-orange-400">{service.details.deposit_config.amount} ريال</strong>{" "}
+                      <strong className="text-orange-400">
+                        {service.details.deposit_config.amount} ريال
+                      </strong>{" "}
                       {service.details.deposit_config.paymentTime === "with_booking"
                         ? "يتم سداده مع الحجز"
                         : "يُدفع نقداً عند الوصول"}
@@ -966,7 +1212,9 @@ export default function ServiceDetailsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                 <div className="bg-black/20 p-3 rounded-xl border border-white/5">
                   <span className="block text-xs text-white/50 mb-1">المدة</span>
-                  <span className="font-bold text-sm text-white">{service.details.experience_info.duration}</span>
+                  <span className="font-bold text-sm text-white">
+                    {service.details.experience_info.duration}
+                  </span>
                 </div>
                 <div className="bg-black/20 p-3 rounded-xl border border-white/5">
                   <span className="block text-xs text-white/50 mb-1">الصعوبة</span>
@@ -992,7 +1240,9 @@ export default function ServiceDetailsPage() {
                   <span className="block text-xs text-white/50 mb-1">الأطفال</span>
                   <span
                     className={`font-bold text-sm ${
-                      service.details.experience_info.children_allowed ? "text-emerald-400" : "text-red-400"
+                      service.details.experience_info.children_allowed
+                        ? "text-emerald-400"
+                        : "text-red-400"
                     }`}
                   >
                     {service.details.experience_info.children_allowed ? "مسموح" : "غير مسموح"}
@@ -1000,16 +1250,18 @@ export default function ServiceDetailsPage() {
                 </div>
               </div>
 
-              {safeArray(service.details.experience_info.dates).length > 0 && (
+              {validExpDates.length > 0 && (
                 <div className="pt-4 border-t border-white/10">
                   <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">
                     <CalendarDays size={16} className="text-[#C89B3C]" />
                     المواعيد المتاحة للتجربة
                   </h4>
                   <div className="flex flex-wrap gap-2">
-                    <span className="text-xs bg-[#C89B3C] text-black px-3 py-1.5 rounded-lg font-bold">
-                      يبدأ الساعة: {formatTime12H(service.details.experience_info.start_time)}
-                    </span>
+                    {service.details.experience_info.start_time && (
+                      <span className="text-xs bg-[#C89B3C] text-black px-3 py-1.5 rounded-lg font-bold">
+                        يبدأ الساعة: {formatTime12H(service.details.experience_info.start_time)}
+                      </span>
+                    )}
                     {validExpDates.map((d: string, i: number) => (
                       <span
                         key={i}
@@ -1029,17 +1281,19 @@ export default function ServiceDetailsPage() {
                     <Briefcase size={16} className="text-[#C89B3C]" /> ماذا تشمل التجربة؟
                   </h4>
                   <div className="flex flex-wrap gap-2">
-                    {safeArray(service.details.experience_info.included_services).map((srv: string) =>
-                      getTranslatedFeature(srv)
+                    {safeArray(service.details.experience_info.included_services).map(
+                      (srv: string) => getTranslatedFeature(srv)
                     )}
-                    {safeArray(service.details.experience_info.custom_services).map((srv: string, idx: number) => (
-                      <span
-                        key={`cust-${idx}`}
-                        className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"
-                      >
-                        <CheckSquare size={14} className="text-[#C89B3C]" /> {srv}
-                      </span>
-                    ))}
+                    {safeArray(service.details.experience_info.custom_services).map(
+                      (srv: string, idx: number) => (
+                        <span
+                          key={`cust-${idx}`}
+                          className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"
+                        >
+                          <CheckSquare size={14} className="text-[#C89B3C]" /> {srv}
+                        </span>
+                      )
+                    )}
                   </div>
                 </div>
               )}
@@ -1052,17 +1306,23 @@ export default function ServiceDetailsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 text-sm">
                     <p>
                       <span className="text-white/50">نوع الوجبة:</span>{" "}
-                      <span className="font-bold text-white">{service.details.experience_info.food_details.mealType}</span>
+                      <span className="font-bold text-white">
+                        {service.details.experience_info.food_details.mealType}
+                      </span>
                     </p>
                     {service.details.experience_info.food_details.calories && (
                       <p>
                         <span className="text-white/50">السعرات الحرارية:</span>{" "}
-                        <span className="font-bold text-white">{service.details.experience_info.food_details.calories}</span>
+                        <span className="font-bold text-white">
+                          {service.details.experience_info.food_details.calories}
+                        </span>
                       </p>
                     )}
                     <p className="md:col-span-2">
                       <span className="text-white/50">المشروبات:</span>{" "}
-                      <span className="text-white">{service.details.experience_info.food_details.drinks}</span>
+                      <span className="text-white">
+                        {service.details.experience_info.food_details.drinks}
+                      </span>
                     </p>
                     <p className="md:col-span-2">
                       <span className="text-white/50 block mb-1">المكونات والمحتويات:</span>
@@ -1112,11 +1372,15 @@ export default function ServiceDetailsPage() {
               <div className="bg-linear-to-r from-[#C89B3C]/10 to-transparent p-5 rounded-2xl border border-[#C89B3C]/20 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                 <div>
                   <p className="text-[10px] text-white/50 mb-1">من تاريخ</p>
-                  <p className="font-bold text-sm dir-ltr">{service.details.event_info.dates?.startDate}</p>
+                  <p className="font-bold text-sm dir-ltr">
+                    {service.details.event_info.dates?.startDate}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[10px] text-white/50 mb-1">إلى تاريخ</p>
-                  <p className="font-bold text-sm dir-ltr">{service.details.event_info.dates?.endDate}</p>
+                  <p className="font-bold text-sm dir-ltr">
+                    {service.details.event_info.dates?.endDate}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[10px] text-white/50 mb-1">فتح الأبواب</p>
@@ -1142,14 +1406,16 @@ export default function ServiceDetailsPage() {
                     {safeArray(service.details.event_info.activities).map((act: string) =>
                       getTranslatedFeature(act)
                     )}
-                    {safeArray(service.details.event_info.custom_activities).map((act: string, idx: number) => (
-                      <span
-                        key={`cust-${idx}`}
-                        className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"
-                      >
-                        <CheckSquare size={14} className="text-[#C89B3C]" /> {act}
-                      </span>
-                    ))}
+                    {safeArray(service.details.event_info.custom_activities).map(
+                      (act: string, idx: number) => (
+                        <span
+                          key={`cust-${idx}`}
+                          className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"
+                        >
+                          <CheckSquare size={14} className="text-[#C89B3C]" /> {act}
+                        </span>
+                      )
+                    )}
                   </div>
                 </div>
               )}
@@ -1684,7 +1950,7 @@ export default function ServiceDetailsPage() {
 
       {zoomedImage && (
         <div
-          className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"
+          className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"
           onClick={() => setZoomedImage(null)}
         >
           <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full">

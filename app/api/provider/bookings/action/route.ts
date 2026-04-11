@@ -77,8 +77,6 @@ export async function POST(request: Request) {
     console.log('PROVIDER DATA FOR EMAIL:', provider);
     console.log('SERVICE DATA FOR EMAIL:', service);
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(request.url).origin;
-
     if (action === 'approve') {
       const now = new Date();
       const executionDate = booking.execution_date ? new Date(booking.execution_date) : null;
@@ -114,7 +112,10 @@ export async function POST(request: Request) {
         );
       }
 
-      const paymentPageUrl = `${baseUrl}/checkout/${bookingId}`;
+      // ✅ التعديل هنا: جلب الرابط الأساسي وتوجيه العميل إلى صفحة "رحلاتي" في الداشبورد
+      const currentOrigin = new URL(request.url).origin;
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || currentOrigin;
+      const clientDashboardUrl = `${baseUrl}/client/dashboard`;
 
       if (client?.email || client?.phone) {
         const approvePayload = {
@@ -122,10 +123,10 @@ export async function POST(request: Request) {
           email: client?.email,
           phone: client?.phone,
           data: {
-            bookingId: updatedBooking.id,
+            bookingId: updatedBooking.id.split('-')[0].toUpperCase(),
             clientName: client?.full_name || 'عميل',
             serviceName: service?.title || service?.name || 'خدمة سيّر',
-            paymentLink: paymentPageUrl
+            paymentLink: clientDashboardUrl // ✅ تمرير رابط الداشبورد بدلاً من التشيك آوت
           }
         };
 
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: 'تمت الموافقة على الحجز وإرسال رابط الدفع للعميل',
+        message: 'تمت الموافقة على الحجز وإرسال رابط الداشبورد للعميل',
         booking: updatedBooking
       });
     }
@@ -180,12 +181,15 @@ export async function POST(request: Request) {
     }
 
     if (client?.email || client?.phone) {
+      const currentOrigin = new URL(request.url).origin;
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || currentOrigin;
+
       const rejectPayload = {
         templateId: 'booking_rejected',
         email: client?.email,
         phone: client?.phone,
         data: {
-          bookingId: rejectedBooking.id,
+          bookingId: rejectedBooking.id.split('-')[0].toUpperCase(),
           clientName: client?.full_name || 'عميل',
           serviceName: service?.title || service?.name || 'خدمة سيّر',
           reason: finalRejectReason
