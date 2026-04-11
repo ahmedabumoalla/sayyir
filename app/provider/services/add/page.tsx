@@ -173,7 +173,6 @@ export default function AddServicePage() {
   const [targetAudience, setTargetAudience] = useState<'singles' | 'families' | 'both'>('both');
   const [capacity, setCapacity] = useState("");
   
-  // ✅ تم إضافة amount إلى إعدادات التأمين
   const [depositConfig, setDepositConfig] = useState({ required: false, isRefundable: true, paymentTime: 'with_booking', amount: "" });
 
   // 4. المرفق (Facility)
@@ -207,7 +206,6 @@ export default function AddServicePage() {
   const [images, setImages] = useState<string[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   
-  // ✅ التراخيص تم تعديلها لتصبح مصفوفة لدعم أكثر من ملف
   const [commercialLicenses, setCommercialLicenses] = useState<File[]>([]);
   const [policies, setPolicies] = useState("");
   const [workDays, setWorkDays] = useState(["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"].map(d => ({ day: d, active: true, shifts: [{ from: "08:00", to: "23:59" }] })));
@@ -291,12 +289,10 @@ export default function AddServicePage() {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) throw new Error("غير مصرح");
 
-          // ✅ رفع المستندات المتعددة
           let licenseUrls: string[] = [];
           if (commercialLicenses.length > 0) {
               licenseUrls = await Promise.all(commercialLicenses.map(file => uploadSingleFile(file, 'licenses')));
           }
-          const licenseString = licenseUrls.length > 0 ? licenseUrls.join(',') : null;
 
           const processedFacServices = await Promise.all(facilityServices.map(async (fs) => {
               let url = null;
@@ -416,9 +412,9 @@ export default function AddServicePage() {
             <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-xl">
                 <h2 className="text-lg font-bold mb-5 flex items-center gap-2"><Compass className="text-[#C89B3C]"/> 1. حدد القسم الرئيسي</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div onClick={() => {setMainCategory('facility_lodging'); setSubCategory(null);}} className={`p-5 rounded-2xl border-2 cursor-pointer transition flex items-center gap-4 ${mainCategory === 'facility_lodging' ? 'border-[#C89B3C] bg-[#C89B3C]/10' : 'border-white/10 bg-black/20 hover:border-white/30'}`}>
+                    <div onClick={() => {setMainCategory('facility_lodging'); setSubCategory('lodging');}} className={`p-5 rounded-2xl border-2 cursor-pointer transition flex items-center gap-4 ${mainCategory === 'facility_lodging' ? 'border-[#C89B3C] bg-[#C89B3C]/10' : 'border-white/10 bg-black/20 hover:border-white/30'}`}>
                         <Building size={32} className={mainCategory === 'facility_lodging' ? 'text-[#C89B3C]' : 'text-white/40'}/>
-                        <span className="font-bold text-lg">مرفق أو نزل</span>
+                        <span className="font-bold text-lg">نزل وتأجير</span>
                     </div>
                     <div onClick={() => {setMainCategory('experience_event'); setSubCategory(null);}} className={`p-5 rounded-2xl border-2 cursor-pointer transition flex items-center gap-4 ${mainCategory === 'experience_event' ? 'border-[#C89B3C] bg-[#C89B3C]/10' : 'border-white/10 bg-black/20 hover:border-white/30'}`}>
                         <Tent size={32} className={mainCategory === 'experience_event' ? 'text-[#C89B3C]' : 'text-white/40'}/>
@@ -426,21 +422,12 @@ export default function AddServicePage() {
                     </div>
                 </div>
 
-                {mainCategory && (
+                {mainCategory === 'experience_event' && (
                     <div className="mt-6 pt-5 border-t border-white/10 animate-in fade-in">
                         <h3 className="text-xs text-white/50 mb-3">حدد التصنيف الفرعي الدقيق:</h3>
                         <div className="flex flex-wrap gap-3">
-                            {mainCategory === 'facility_lodging' ? (
-                                <>
-                                    <button onClick={() => setSubCategory('facility')} className={`px-6 py-3 rounded-xl border transition font-bold text-sm ${subCategory === 'facility' ? 'bg-[#C89B3C] text-black border-[#C89B3C]' : 'bg-black/40 border-white/10 text-white/70 hover:bg-white/5'}`}>مرفق</button>
-                                    <button onClick={() => setSubCategory('lodging')} className={`px-6 py-3 rounded-xl border transition font-bold text-sm ${subCategory === 'lodging' ? 'bg-[#C89B3C] text-black border-[#C89B3C]' : 'bg-black/40 border-white/10 text-white/70 hover:bg-white/5'}`}>نزل وتأجير</button>
-                                </>
-                            ) : (
-                                <>
-                                    <button onClick={() => setSubCategory('experience')} className={`px-6 py-3 rounded-xl border transition font-bold text-sm ${subCategory === 'experience' ? 'bg-[#C89B3C] text-black border-[#C89B3C]' : 'bg-black/40 border-white/10 text-white/70 hover:bg-white/5'}`}>تجربة سياحية</button>
-                                    <button onClick={() => setSubCategory('event')} className={`px-6 py-3 rounded-xl border transition font-bold text-sm ${subCategory === 'event' ? 'bg-[#C89B3C] text-black border-[#C89B3C]' : 'bg-black/40 border-white/10 text-white/70 hover:bg-white/5'}`}>فعالية</button>
-                                </>
-                            )}
+                            <button onClick={() => setSubCategory('experience')} className={`px-6 py-3 rounded-xl border transition font-bold text-sm ${subCategory === 'experience' ? 'bg-[#C89B3C] text-black border-[#C89B3C]' : 'bg-black/40 border-white/10 text-white/70 hover:bg-white/5'}`}>تجربة سياحية</button>
+                            <button onClick={() => setSubCategory('event')} className={`px-6 py-3 rounded-xl border transition font-bold text-sm ${subCategory === 'event' ? 'bg-[#C89B3C] text-black border-[#C89B3C]' : 'bg-black/40 border-white/10 text-white/70 hover:bg-white/5'}`}>فعالية</button>
                         </div>
                     </div>
                 )}
@@ -518,43 +505,6 @@ export default function AddServicePage() {
                             )}
                         </div>
                     </div>
-
-                    {/* أ. المرفق (Facility) */}
-                    {subCategory === 'facility' && (
-                        <div className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 shadow-xl space-y-5">
-                            <h2 className="text-lg font-bold flex items-center gap-2"><Activity className="text-[#C89B3C]"/> الخدمات المتوفرة في المرفق</h2>
-                            <p className="text-xs text-white/50">أضف الخدمات والمميزات المتاحة (مثال: مقهى، جلسات، ألعاب أطفال) مع إمكانية إرفاق صورة ووصف لكل خدمة.</p>
-                            
-                            <div className="bg-black/20 p-4 rounded-xl border border-white/10 space-y-3">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <input type="text" placeholder="اسم الخدمة (مثال: ركن القهوة)" value={facServName} onChange={e=>setFacServName(e.target.value)} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/>
-                                    <input type="text" placeholder="وصف الخدمة (اختياري)" value={facServDesc} onChange={e=>setFacServDesc(e.target.value)} className="bg-black/40 border border-white/10 rounded-lg p-2 text-sm text-white outline-none"/>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <label className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-2 rounded-lg cursor-pointer hover:bg-white/10 transition text-xs">
-                                        <ImageIcon size={14}/> {facServImg ? 'تم اختيار صورة' : 'صورة الخدمة (اختياري)'}
-                                        <input type="file" accept="image/*" hidden ref={facilityServiceFileRef} onChange={e => setFacServImg(e.target.files?.[0] || null)}/>
-                                    </label>
-                                    <button type="button" onClick={addFacilityService} className="bg-[#C89B3C] text-black px-4 py-2 rounded-lg text-xs font-bold hover:bg-[#b38a35]">إضافة الخدمة ✅</button>
-                                </div>
-                            </div>
-
-                            {facilityServices.length > 0 && (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-                                    {facilityServices.map((fs, idx) => (
-                                        <div key={idx} className="flex gap-3 bg-white/5 p-3 rounded-xl border border-white/10 items-center">
-                                            {fs.imagePreview ? <Image src={fs.imagePreview} width={40} height={40} className="rounded-lg object-cover" alt="img"/> : <div className="w-10 h-10 bg-black/40 rounded-lg flex items-center justify-center"><ImageIcon size={16} className="text-white/20"/></div>}
-                                            <div className="flex-1">
-                                                <p className="font-bold text-sm text-white">{fs.name}</p>
-                                                {fs.description && <p className="text-xs text-white/50 truncate">{fs.description}</p>}
-                                            </div>
-                                            <button type="button" onClick={() => setFacilityServices(facilityServices.filter(item => item.id !== fs.id))} className="text-red-400 hover:text-red-300 p-2"><Trash2 size={16}/></button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
 
                     {/* ب. النزل (Lodging) */}
                     {subCategory === 'lodging' && (
@@ -837,7 +787,6 @@ export default function AddServicePage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-1">
                                         <label className="text-xs text-white/50">تاريخ بدء الفعالية</label>
-                                        {/* ✅ تطبيق min لتاريخ اليوم */}
                                         <input type="date" min={todayDate} value={eventDates.startDate} onChange={e => setEventDates({...eventDates, startDate: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white outline-none scheme-dark"/>
                                     </div>
                                     <div className="space-y-1">
