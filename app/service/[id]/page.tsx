@@ -266,6 +266,11 @@ const normalizeFacilityServices = (items: any[]) => {
   });
 };
 
+const formatDateAr = (dateStr: string | null) => {
+  if (!dateStr) return "";
+  return new Date(dateStr).toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+};
+
 export default function ServiceDetailsPage() {
   const params = useParams();
   const id = params?.id as string;
@@ -295,13 +300,11 @@ export default function ServiceDetailsPage() {
 
   const todayDate = new Date().toISOString().split("T")[0];
 
-  // ✅ تعريف تصنيفات الخدمة بدقة 100% لتجنب أي تداخل
   const isEvent = service?.sub_category === "event";
   const isLodging = service?.sub_category === "lodging";
   const isExperience = service?.service_category === "experience" && !isEvent;
   const isFacility = service?.sub_category === "facility";
 
-  // استخراج التواريخ الصالحة فقط للتجارب السياحية
   const validExpDates = isExperience 
     ? safeArray(service?.details?.experience_info?.dates).filter((d: string) => d >= todayDate).sort() 
     : [];
@@ -440,7 +443,8 @@ export default function ServiceDetailsPage() {
       if (serviceData) {
         let profileData = null;
         if (serviceData.provider_id) {
-          const { data: pData } = await supabase.from("profiles").select("full_name, avatar_url, email, phone").eq("id", serviceData.provider_id).maybeSingle();          profileData = pData ? { ...pData, avatar_url: resolveSupabaseMediaUrl(pData.avatar_url || "") } : null;
+          const { data: pData } = await supabase.from("profiles").select("full_name, avatar_url, email, phone").eq("id", serviceData.provider_id).maybeSingle();
+          profileData = pData ? { ...pData, avatar_url: resolveSupabaseMediaUrl(pData.avatar_url || "") } : null;
         }
         const normalizedService = {
           ...serviceData,
@@ -547,28 +551,37 @@ export default function ServiceDetailsPage() {
           await supabase.from("services").update({ max_capacity: refreshService.max_capacity - guestCount }).eq("id", service.id);
         }
       }
-// ✅ تشغيل API الإشعارات لإرسال الإيميلات والواتساب للطرفين
-try {
-  // نجلب بيانات العميل الحالي (المرسل)
-  const { data: clientProfile } = await supabase.from("profiles").select("full_name, email, phone").eq("id", session.user.id).single();
 
-  await fetch("/api/notifications", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      type: "new_booking_request",
-      clientEmail: session.user.email || clientProfile?.email,
-      clientPhone: clientProfile?.phone,
-      clientName: clientProfile?.full_name,
-      providerEmail: service.profiles?.email,
-      providerPhone: service.profiles?.phone,
-      providerName: service.profiles?.full_name,
-      serviceTitle: service.title,
-    }),
-  });
-} catch (notifyError) {
-  console.error("فشل إرسال الإشعار:", notifyError);
-}
+      // ✅ تم إصلاح الإيميل ليعمل بنفس الطريقة الناجحة في النظام
+      try {
+        const { data: clientProfile } = await supabase
+          .from("profiles")
+          .select("full_name, email, phone")
+          .eq("id", session.user.id)
+          .single();
+
+        await fetch("/api/emails/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            templateId: "new_booking_provider", 
+            email: service.profiles?.email, 
+            phone: service.profiles?.phone, 
+            data: {
+              providerName: service.profiles?.full_name,
+              serviceName: service.title,
+              clientName: clientProfile?.full_name || "عميل سيّر",
+              date: formatDateAr(finalCheckIn),
+              time: isLodging ? "لا يوجد" : formatTime12H(finalCheckIn || ""),
+              guests: guestCount.toString(),
+              bookingId: bookingData.id.split('-')[0].toUpperCase()
+            }
+          }),
+        });
+      } catch (notifyError) {
+        console.error("فشل إرسال إشعار المزود:", notifyError);
+      }
+
       if (isAutoApprove) {
         toast.success("تم تأكيد الحجز المبدئي، جاري توجيهك للدفع...");
         router.push(`/checkout/${bookingData.id}`);
@@ -1402,25 +1415,25 @@ try {
                              </div>
                            )
                         ) : (
-                           /* ✅ تقويم الفعاليات وباقي الخدمات محمي بالحد الأدنى والأقصى للتواريخ */
-                           <input
-                             type="date"
-                             min={
-                               isEvent && service.details?.event_info?.dates?.startDate && service.details.event_info.dates.startDate > todayDate
-                                 ? service.details.event_info.dates.startDate
-                                 : todayDate
-                             }
-                             max={
-                               isEvent && service.details?.event_info?.dates?.endDate
-                                 ? service.details.event_info.dates.endDate
-                                 : undefined
-                             }
-                             value={bookingDate}
-                             onClick={(e) => e.currentTarget.showPicker()}
-                             onChange={(e) => setBookingDate(e.target.value)}
-                             style={{ colorScheme: "dark" }}
-                             className="w-full bg-transparent p-3 outline-none text-white text-xs cursor-pointer text-center"
-                           />
+                            /* ✅ تقويم الفعاليات وباقي الخدمات محمي بالحد الأدنى والأقصى للتواريخ */
+                            <input
+                              type="date"
+                              min={
+                                isEvent && service.details?.event_info?.dates?.startDate && service.details.event_info.dates.startDate > todayDate
+                                  ? service.details.event_info.dates.startDate
+                                  : todayDate
+                              }
+                              max={
+                                isEvent && service.details?.event_info?.dates?.endDate
+                                  ? service.details.event_info.dates.endDate
+                                  : undefined
+                              }
+                              value={bookingDate}
+                              onClick={(e) => e.currentTarget.showPicker()}
+                              onChange={(e) => setBookingDate(e.target.value)}
+                              style={{ colorScheme: "dark" }}
+                              className="w-full bg-transparent p-3 outline-none text-white text-xs cursor-pointer text-center"
+                            />
                         )}
                       </div>
                     </div>
@@ -1671,7 +1684,7 @@ try {
 
       {zoomedImage && (
         <div
-          className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"
+          className="fixed inset-0 z-100 bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300"
           onClick={() => setZoomedImage(null)}
         >
           <button className="absolute top-6 right-6 text-white/70 hover:text-white transition bg-black/50 p-3 rounded-full">

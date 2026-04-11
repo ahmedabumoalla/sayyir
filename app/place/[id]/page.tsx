@@ -136,7 +136,7 @@ export default function PlaceDetails() {
         return;
     }
 
-    const { error } = await supabase.from('bookings').insert({
+    const { data: bookingData, error } = await supabase.from('bookings').insert({
             user_id: user.id,
             service_id: place?.id, 
             check_in: checkIn || null,
@@ -144,11 +144,35 @@ export default function PlaceDetails() {
             total_price: totalPrice,
             additional_notes: additionalNotes,
             status: 'pending'
-        });
+        }).select().single();
 
     if (error) {
         toast.error("حدث خطأ أثناء الحجز، حاول مرة أخرى");
     } else {
+        // ✅ جلب بيانات العميل لإرسالها في الإيميل
+        const { data: clientProfile } = await supabase.from("profiles").select("full_name, email, phone").eq("id", user.id).single();
+
+        // ✅ تشغيل API الإشعارات لإرسال الإيميلات والواتساب للطرفين
+        try {
+            await fetch("/api/notifications", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    type: "new_booking_request",
+                    clientEmail: user.email || clientProfile?.email,
+                    clientPhone: clientProfile?.phone,
+                    clientName: clientProfile?.full_name,
+                    // بما أن الأماكن (Places) تضاف من الإدارة، نرسل الإشعار لإيميل المنصة
+                    providerEmail: 'info@sayyir.sa', 
+                    providerPhone: '', // ضف رقم جوال الإدارة هنا إذا تبي واتساب للإدارة
+                    providerName: 'إدارة سيّر',
+                    serviceTitle: place?.name,
+                }),
+            });
+        } catch (notifyError) {
+            console.error("فشل إرسال الإشعار:", notifyError);
+        }
+
         toast.success("تم إرسال طلب الحجز بنجاح!");
         setCheckIn(""); setCheckOut(""); setAdditionalNotes("");
     }
