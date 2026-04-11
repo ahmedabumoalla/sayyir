@@ -15,6 +15,40 @@ import Link from "next/link";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
+const resolveSupabaseMediaUrl = (val: string): string => {
+  if (!val || val.startsWith("http")) return val;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const cleaned = val.replace(/^\/+/, "");
+  
+  // ✅ منع تكرار اسم الباكيت لتفادي كسر روابط صور الخدمات
+  if (cleaned.startsWith("provider-files/") || cleaned.startsWith("places/")) {
+      return `${supabaseUrl}/storage/v1/object/public/${cleaned}`;
+  }
+  
+  return `${supabaseUrl}/storage/v1/object/public/provider-files/${cleaned}`;
+};
+
+const normalizeMediaList = (...sources: any[]): string[] => {
+  const rawItems = sources.flatMap((source) => {
+    if (!source) return [];
+    if (Array.isArray(source)) return source;
+    if (typeof source === "string") {
+      try {
+        const parsed = JSON.parse(source);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        return [source];
+      }
+    }
+    return [];
+  });
+  const urls = rawItems
+    .filter(Boolean)
+    .map((item) => (typeof item === "string" ? item : String(item)))
+    .map((url) => resolveSupabaseMediaUrl(url));
+  return Array.from(new Set(urls));
+};
+
 // ==========================================
 // ⏳ مكون العداد التنازلي لشريط الإعلانات
 // ==========================================
@@ -76,6 +110,7 @@ export default function HomePage() {
   const [dashboardLink, setDashboardLink] = useState("/client/dashboard");
 
   const [landmarksData, setLandmarksData] = useState<any[]>([]);
+  const [generalServicesData, setGeneralServicesData] = useState<any[]>([]); 
   const [experiencesData, setExperiencesData] = useState<any[]>([]);
   const [eventsData, setEventsData] = useState<any[]>([]); 
   const [partners, setPartners] = useState<any[]>([]); 
@@ -113,7 +148,7 @@ export default function HomePage() {
         }));
         const formattedServices = (services || []).map((s: any) => ({
             id: s.id, title: s.title, type: s.service_category === 'experience' ? 'تجربة سياحية' : 'خدمة / مرفق',
-            image: s.image_url || "/placeholder.jpg", link: `/service/${s.id}`, icon: s.service_category === 'experience' ? <Tent size={14}/> : <Coffee size={14}/>
+            image: s.image_url ? resolveSupabaseMediaUrl(s.image_url) : "/placeholder.jpg", link: `/service/${s.id}`, icon: s.service_category === 'experience' ? <Tent size={14}/> : <Coffee size={14}/>
         }));
 
         setSearchResults([...formattedPlaces, ...formattedServices]);
@@ -170,6 +205,30 @@ export default function HomePage() {
         .order('created_at', { ascending: false });
       if (activeAnnouncements) setAnnouncements(activeAnnouncements);
 
+      // ✅ التعديل الحاسم: تجهيز بيانات الخدمات بشكل مطابق 100% للمعالم، مع توجيه إجباري للـ Service
+      const { data: generalServices } = await supabase
+        .from('services')
+        .select('*')
+        .eq('status', 'approved')
+        .in('service_category', ['facility', 'lodging', 'general'])
+        .limit(6);
+        
+      if (generalServices) {
+          const formattedGeneral = generalServices.map((item: any) => {
+              const images = normalizeMediaList(item?.details?.images, item?.image_url);
+              return {
+                  ...item,
+                  name: item.title, // المكون يقرأ الاسم من حقل name
+                  media_urls: images.length > 0 ? images : ["/placeholder.jpg"], // الصور تُقرأ من مصفوفة media_urls
+                  link: `/service/${item.id}`, // توجيه مباشر لمسار سيرفس
+                  href: `/service/${item.id}`,
+                  type: 'service', // تحديد النوع كخدمة
+                  source: 'service'
+              };
+          });
+          setGeneralServicesData(formattedGeneral);
+      }
+
       const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
       if (places) setLandmarksData(places);
 
@@ -178,13 +237,13 @@ export default function HomePage() {
 
       const formattedProvider = (providerExp || []).map((item: any) => ({
         id: item.id, title: item.title, description: item.description, price: item.price,
-        image: item.images && item.images.length > 0 ? item.images[0] : (item.image_url ? item.image_url : "/placeholder.jpg"),
+        image: item.images && item.images.length > 0 ? item.images[0] : (item.image_url ? resolveSupabaseMediaUrl(item.image_url) : "/placeholder.jpg"),
         activity_type: item.activity_type || 'تجربة مميزة', duration: item.details?.experience_info?.duration || item.duration, difficulty_level: item.details?.experience_info?.difficulty || item.difficulty_level, meeting_point: item.city || 'عسير', source: 'service'
       }));
 
       const formattedAdmin = (adminExp || []).map((item: any) => ({
         id: item.id, title: item.name, description: item.description, price: item.price || 0,
-        image: item.media_urls && item.media_urls.length > 0 ? item.media_urls[0] : "/placeholder.jpg",
+        image: item.media_urls && item.media_urls.length > 0 ? resolveSupabaseMediaUrl(item.media_urls[0]) : "/placeholder.jpg",
         activity_type: item.category || 'تجربة سياحية', duration: item.duration, difficulty_level: item.difficulty, meeting_point: item.city || 'عسير', source: 'place'
       }));
 
@@ -194,7 +253,7 @@ export default function HomePage() {
       const { data: providerEvents } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'event').eq('status', 'approved');
       const formattedEvents = (providerEvents || []).map((item: any) => ({
         id: item.id, title: item.title, description: item.description, price: item.price,
-        image: item.images && item.images.length > 0 ? item.images[0] : (item.image_url ? item.image_url : "/placeholder.jpg"),
+        image: item.images && item.images.length > 0 ? item.images[0] : (item.image_url ? resolveSupabaseMediaUrl(item.image_url) : "/placeholder.jpg"),
         activity_type: 'فعالية مشوقة', 
         duration: item.details?.event_info?.dates?.startTime ? `تبدأ ${item.details.event_info.dates.startTime}` : '', 
         difficulty_level: null, 
@@ -362,11 +421,26 @@ export default function HomePage() {
 
         {/* Dynamic Data Sections */}
         <div className="bg-linear-to-t from-black via-[#0a0a0a] to-transparent py-10 space-y-24">
+          
+          {/* ✅ قسم أبرز الخدمات المختارة (تم إجبار التوجيه للـ Service) */}
+          {generalServicesData.length > 0 && (
+              <div className="container mx-auto px-4">
+                <DynamicShowcase 
+                   title="أبرز الخدمات والمرافق" 
+                   linkHref="/facilities" 
+                   data={generalServicesData} 
+                   dataType="services" 
+                    
+                />
+              </div>
+          )}
+
           {landmarksData.length > 0 && (
               <div className="container mx-auto px-4">
                 <DynamicShowcase title="أبرز المعالم المختارة" linkHref="/landmarks" data={landmarksData} dataType="places" />
               </div>
           )}
+          
           {experiencesData.length > 0 && (
               <div className="container mx-auto px-4">
                 <div className="flex flex-row items-center justify-between mb-8 w-full">
@@ -385,7 +459,8 @@ export default function HomePage() {
                 </div>
               </div>
           )}
-          {/* ✅ قسم الفعاليات المستقل الجديد */}
+
+          {/* قسم الفعاليات المستقل الجديد */}
           {eventsData.length > 0 && (
               <div className="container mx-auto px-4 mt-24">
                 <div className="flex flex-row items-center justify-between mb-8 w-full">
@@ -543,9 +618,9 @@ export default function HomePage() {
                         </li>
                      )}
                      <div className="flex gap-4 mt-4 justify-center md:justify-start">
-                       {platformInfo?.twitter && <a href={platformInfo.twitter} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Twitter size={18} /></a>}
-                       {platformInfo?.instagram && <a href={platformInfo.instagram} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Instagram size={18} /></a>}
-                       {platformInfo?.linkedin && <a href={platformInfo.linkedin} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Linkedin size={18} /></a>}
+                        {platformInfo?.twitter && <a href={platformInfo.twitter} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Twitter size={18} /></a>}
+                        {platformInfo?.instagram && <a href={platformInfo.instagram} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Instagram size={18} /></a>}
+                        {platformInfo?.linkedin && <a href={platformInfo.linkedin} target="_blank" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/60 hover:text-[#C89B3C] hover:bg-white/10 transition"><Linkedin size={18} /></a>}
                      </div>
                    </ul>
                 </div>

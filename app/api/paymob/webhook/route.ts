@@ -1,100 +1,123 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
-import { generateZatcaQR } from '@/lib/zatca';
+import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const transaction = body.obj;
-    
-    if (!transaction) return NextResponse.json({ error: "No transaction data" }, { status: 400 });
+    const transaction = body?.obj;
 
-    // ✅ التأكد أن الدفع ناجح 100% من بي موب
-    if (transaction.success === true) {
-        
-        // استخراج رقم الحجز
-        const merchantOrderId = transaction.order.merchant_order_id;
-        const bookingId = merchantOrderId.split('-')[1];
-
-        // 1. توليد رمز تذكرة فريد للعميل
-        const uniqueTicketCode = crypto.randomUUID();
-
-        // 2. تحديث حالة الحجز إلى (مدفوع ومؤكد) وجلب بيانات العميل والمزود
-        const { data: booking, error } = await supabase
-            .from('bookings')
-            .update({
-                payment_status: 'paid',
-                status: 'confirmed',
-                ticket_qr_code: uniqueTicketCode,
-                is_ticket_used: false
-            })
-            .eq('id', bookingId)
-            // جلب بيانات العميل، وبيانات الخدمة، وبيانات المزود صاحب الخدمة
-            .select(`
-                *, 
-                client:user_id(full_name, email), 
-                services:service_id(title, provider:provider_id(full_name, email))
-            `)
-            .single();
-
-        if (error || !booking) throw new Error("فشل تحديث الحجز في قاعدة البيانات");
-
-        // معالجة البيانات القادمة من قاعدة البيانات لتجنب أخطاء المصفوفات
-        const clientInfo = Array.isArray(booking.client) ? booking.client[0] : booking.client;
-        const serviceInfo = Array.isArray(booking.services) ? booking.services[0] : booking.services;
-        const providerInfo = Array.isArray(serviceInfo?.provider) ? serviceInfo.provider[0] : serviceInfo?.provider;
-
-        // 3. تجهيز باركود هيئة الزكاة
-        const zatcaBase64 = generateZatcaQR(
-            "منصة سيّر السياحية", 
-            "310000000000003", 
-            new Date().toISOString(),
-            booking.total_price.toString(),
-            (booking.total_price * 0.15).toFixed(2) // افتراض 15% ضريبة
-        );
-
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://sayyir.sa';
-
-        // 📩 4. إرسال الإيميل الأول: للعميل (يحتوي الفاتورة والباركود)
-        await fetch(`${baseUrl}/api/emails/send`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                type: 'booking_ticket_invoice',
-                email: clientInfo?.email,
-                clientName: clientInfo?.full_name,
-                serviceTitle: serviceInfo?.title,
-                ticketCode: uniqueTicketCode, // الباركود الذي سيمسحه المزود
-                zatcaCode: zatcaBase64,       // باركود الضريبة
-                totalPrice: booking.total_price
-            })
-        }).catch(err => console.error("فشل إرسال إيميل العميل:", err));
-
-        // 📩 5. إرسال الإيميل الثاني: لمزود الخدمة (إشعار بأن العميل دفع)
-        if (providerInfo?.email) {
-            await fetch(`${baseUrl}/api/emails/send`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    type: 'provider_payment_received',
-                    email: providerInfo.email,
-                    providerName: providerInfo.full_name,
-                    clientName: clientInfo?.full_name,
-                    serviceTitle: serviceInfo?.title,
-                    quantity: booking.quantity || booking.guests_count,
-                    totalPrice: booking.total_price
-                })
-            }).catch(err => console.error("فشل إرسال إيميل المزود:", err));
-        }
-
-        return NextResponse.json({ message: "تم تأكيد الدفع وإرسال الإيميلات بنجاح" });
+    if (!transaction) {
+      return NextResponse.json({ error: 'No transaction data' }, { status: 400 });
     }
 
-    return NextResponse.json({ message: "عملية دفع غير ناجحة" });
+    if (transaction.success !== true) {
+      return NextResponse.json({ message: 'عملية دفع غير ناجحة' });
+    }
 
+    const merchantOrderId = transaction?.order?.merchant_order_id;
+    if (!merchantOrderId) {
+      return NextResponse.json({ error: 'merchant_order_id is missing' }, { status: 400 });
+    }
+
+    const bookingId = merchantOrderId.startsWith('SAYYIR__')
+      ? merchantOrderId.replace('SAYYIR__', '')
+      : merchantOrderId;
+
+    const { data: currentBooking, error: fetchError } = await supabaseAdmin
+      .from('bookings')
+      .select(`
+        *,
+        users:user_id (full_name, email, phone),
+        services:service_id (title, provider_id),
+        profiles:provider_id (full_name, email, phone)
+      `)
+      .eq('id', bookingId)
+      .single();
+
+    if (fetchError || !currentBooking) {
+      throw new Error('فشل العثور على الحجز في قاعدة البيانات');
+    }
+
+    const existingTicketCode = currentBooking.ticket_qr_code;
+    const ticketCode = existingTicketCode || crypto.randomUUID();
+
+    const { data: updatedBooking, error: updateError } = await supabaseAdmin
+      .from('bookings')
+      .update({
+        payment_status: 'paid',
+        status: 'confirmed',
+        ticket_qr_code: ticketCode,
+        is_ticket_used: false,
+        admin_notes: `تم الدفع عبر Paymob برقم عملية: ${transaction?.id || ''}`
+      })
+      .eq('id', bookingId)
+      .select(`
+        *,
+        users:user_id (full_name, email, phone),
+        services:service_id (title, provider_id),
+        profiles:provider_id (full_name, email, phone)
+      `)
+      .single();
+
+    if (updateError || !updatedBooking) {
+      throw new Error('فشل تحديث الحجز في قاعدة البيانات');
+    }
+
+    const clientInfo = updatedBooking.users;
+    const serviceInfo = updatedBooking.services;
+    const providerInfo = updatedBooking.profiles;
+
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(request.url).origin;
+
+    if (clientInfo?.email) {
+      await fetch(`${baseUrl}/api/emails/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId: 'booking_payment_confirmed',
+          email: clientInfo.email,
+          phone: clientInfo.phone,
+          data: {
+            bookingId: updatedBooking.id,
+            clientName: clientInfo.full_name,
+            serviceName: serviceInfo?.title || 'خدمة سيّر',
+            ticketCode,
+            ticketCodeShort: String(ticketCode).slice(0, 16),
+            totalPrice: `${updatedBooking.total_price || updatedBooking.final_price || 0} ريال`
+          }
+        })
+      }).catch((err) => console.error('فشل إرسال إيميل العميل:', err));
+    }
+
+    if (providerInfo?.email) {
+      await fetch(`${baseUrl}/api/emails/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId: 'provider_payment_received',
+          email: providerInfo.email,
+          phone: providerInfo.phone,
+          data: {
+            bookingId: updatedBooking.id,
+            providerName: providerInfo.full_name,
+            clientName: clientInfo?.full_name || '',
+            serviceName: serviceInfo?.title || 'خدمة سيّر',
+            guests: updatedBooking.quantity || 1,
+            totalPrice: `${updatedBooking.total_price || updatedBooking.final_price || 0} ريال`
+          }
+        })
+      }).catch((err) => console.error('فشل إرسال إيميل المزود:', err));
+    }
+
+    return NextResponse.json({ message: 'تم تأكيد الدفع وإرسال الإشعارات بنجاح' });
   } catch (error: any) {
-    console.error("Webhook Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('Webhook Error:', error);
+    return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
   }
 }
