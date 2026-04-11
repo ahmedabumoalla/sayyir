@@ -1,23 +1,19 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import {
-  CreditCard, Tag, ArrowRight, ShieldCheck, Loader2,
-  FileText, CheckCircle, AlertCircle, MapPin, Clock,
-  Info, Box, CalendarDays, CalendarOff, Calendar, Apple, PlayCircle,
-  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, ShieldAlert, Compass, CheckSquare, Image as ImageIcon, Video, Ticket, Lock as LockIcon, X as XIcon, AlertTriangle, Briefcase, Home, Coffee, Eye, HeartPulse
+  Tag, ArrowRight, ShieldCheck, Loader2,
+  CheckCircle, AlertCircle, MapPin, Clock,
+  CalendarOff, Calendar, Apple, PlayCircle,
+  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, Compass, CheckSquare, Image as ImageIcon, Ticket, Lock as LockIcon, X as XIcon, AlertTriangle, Briefcase, Home, Coffee, HeartPulse
 } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Tajawal } from "next/font/google";
 import { toast, Toaster } from "sonner";
-import dynamic from "next/dynamic";
-
-const QRCodeSVG = dynamic(() => import("qrcode.react").then((mod) => mod.QRCodeSVG), { ssr: false });
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -100,6 +96,16 @@ const formatDate = (dateStr: string) => {
   });
 };
 
+const isVideo = (url: string) => url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes("video");
+
+const formatRemaining = (ms: number) => {
+  if (ms <= 0) return "00:00";
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -114,6 +120,8 @@ function CheckoutContent() {
   const [processing, setProcessing] = useState(false);
   const [booking, setBooking] = useState<any>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
+  const [remainingMs, setRemainingMs] = useState(0);
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"card" | "applepay">("card");
 
@@ -138,8 +146,6 @@ function CheckoutContent() {
     total: 0
   });
 
-  const isVideo = (url: string) => url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes("video");
-
   useEffect(() => {
     const fetchData = async () => {
       if (!bookingId) {
@@ -148,14 +154,19 @@ function CheckoutContent() {
       }
 
       try {
+        const nowIso = new Date().toISOString();
+
         const { data: bookingData, error: bookingError } = await supabase
           .from("bookings")
           .select("*")
           .eq("id", bookingId)
+          .eq("status", "approved_unpaid")
+          .gt("expires_at", nowIso)
           .single();
 
         if (bookingError || !bookingData) {
-          alert("عذراً، لم يتم العثور على الحجز.");
+          setExpired(true);
+          toast.error("انتهت مهلة الدفع أو أن الحجز غير متاح.");
           router.replace("/client/dashboard");
           return;
         }
@@ -173,12 +184,24 @@ function CheckoutContent() {
 
         if (settingsData) setSettings(settingsData);
 
+        if (bookingData.expires_at) {
+          const diff = new Date(bookingData.expires_at).getTime() - Date.now();
+          if (diff <= 0) {
+            setExpired(true);
+            toast.error("انتهت مهلة الدفع لهذا الحجز.");
+            router.replace("/client/dashboard");
+            return;
+          }
+          setRemainingMs(diff);
+        }
+
         setBooking({
           ...bookingData,
           services: serviceData || {}
         });
       } catch (e) {
         console.error("Critical Error:", e);
+        toast.error("حدث خطأ أثناء تحميل بيانات الحجز.");
       } finally {
         setLoading(false);
       }
@@ -186,6 +209,27 @@ function CheckoutContent() {
 
     fetchData();
   }, [bookingId, router]);
+
+  useEffect(() => {
+    if (!booking?.expires_at) return;
+
+    const interval = setInterval(() => {
+      const diff = new Date(booking.expires_at).getTime() - Date.now();
+
+      if (diff <= 0) {
+        clearInterval(interval);
+        setRemainingMs(0);
+        setExpired(true);
+        toast.error("انتهت مهلة الدفع لهذا الحجز.");
+        router.replace("/client/dashboard");
+        return;
+      }
+
+      setRemainingMs(diff);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [booking?.expires_at, router]);
 
   useEffect(() => {
     if (!booking || !booking.services) return;
@@ -219,7 +263,7 @@ function CheckoutContent() {
   }, [booking, appliedCoupon, settings]);
 
   const handleApplyCoupon = async () => {
-    if (!couponCode) return;
+    if (!couponCode || expired) return;
     setCouponError("");
     setAppliedCoupon(null);
 
@@ -239,10 +283,26 @@ function CheckoutContent() {
   };
 
   const handlePayment = async () => {
-    if (!bookingId) return;
+    if (!bookingId || expired) {
+      toast.error("انتهت مهلة الدفع لهذا الحجز.");
+      return;
+    }
+
     setProcessing(true);
 
     try {
+      const currentBookingCheck = await supabase
+        .from("bookings")
+        .select("id, status, expires_at")
+        .eq("id", bookingId)
+        .eq("status", "approved_unpaid")
+        .gt("expires_at", new Date().toISOString())
+        .single();
+
+      if (currentBookingCheck.error || !currentBookingCheck.data) {
+        throw new Error("انتهت مهلة الدفع لهذا الحجز");
+      }
+
       if (totals.total <= 0) {
         const response = await fetch("/api/paymob/free-checkout", {
           method: "POST",
@@ -339,10 +399,20 @@ function CheckoutContent() {
     );
   }
 
-  if (!booking || !booking.services) {
+  if (expired || !booking || !booking.services) {
     return (
-      <div className="min-h-screen bg-[#121212] flex items-center justify-center text-white">
-        لا يوجد بيانات للعرض.
+      <div className="min-h-screen bg-[#121212] flex items-center justify-center text-white px-6 text-center">
+        <div className="bg-[#1e1e1e] border border-red-500/20 rounded-2xl p-8 max-w-md w-full">
+          <AlertTriangle className="mx-auto mb-4 text-red-400" size={42} />
+          <h2 className="text-xl font-bold mb-2">انتهت مهلة الدفع</h2>
+          <p className="text-white/60 text-sm mb-5">هذا الحجز لم يعد متاحًا للدفع أو العرض.</p>
+          <button
+            onClick={() => router.replace("/client/dashboard")}
+            className="w-full bg-white text-black hover:bg-gray-200 rounded-xl py-3 font-bold transition"
+          >
+            العودة إلى حجوزاتي
+          </button>
+        </div>
       </div>
     );
   }
@@ -832,6 +902,16 @@ function CheckoutContent() {
               <span className="text-[10px] bg-white/10 px-2 py-1 rounded text-white/50 font-normal">شامل الضريبة</span>
             </h3>
 
+            <div className="mb-4 bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-red-300 font-bold flex items-center gap-2">
+                  <Clock size={16} />
+                  الوقت المتبقي للدفع
+                </span>
+                <span className="font-mono text-lg text-white">{formatRemaining(remainingMs)}</span>
+              </div>
+            </div>
+
             <div className="mb-6">
               <label className="text-xs text-gray-400 mb-2 block">هل لديك كود خصم إضافي؟</label>
               <div className="flex gap-2">
@@ -840,13 +920,13 @@ function CheckoutContent() {
                   value={couponCode}
                   onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                   placeholder="SAYYIR2024"
-                  disabled={!!appliedCoupon}
+                  disabled={!!appliedCoupon || expired}
                   className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-[#C89B3C] outline-none disabled:opacity-50 tracking-wider font-mono"
                 />
                 {!appliedCoupon ? (
                   <button
                     onClick={handleApplyCoupon}
-                    disabled={!couponCode}
+                    disabled={!couponCode || expired}
                     className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition disabled:opacity-50 font-bold text-xs"
                   >
                     تطبيق
@@ -857,7 +937,8 @@ function CheckoutContent() {
                       setAppliedCoupon(null);
                       setCouponCode("");
                     }}
-                    className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-2 rounded-lg transition"
+                    disabled={expired}
+                    className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-2 rounded-lg transition disabled:opacity-50"
                     title="إلغاء الكوبون"
                   >
                     <XIcon size={18} />
@@ -918,12 +999,12 @@ function CheckoutContent() {
             <h4 className="font-bold text-sm mb-3">اختر طريقة الدفع:</h4>
             <div className="space-y-3 mb-8">
               <div
-                onClick={() => setSelectedPaymentMethod("applepay")}
+                onClick={() => !expired && setSelectedPaymentMethod("applepay")}
                 className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                   selectedPaymentMethod === "applepay"
                     ? "bg-white text-black border-black shadow-[0_0_15px_rgba(255,255,255,0.2)]"
                     : "bg-black/40 border-white/5 hover:border-white/20 hover:bg-white/5"
-                }`}
+                } ${expired ? "opacity-50 pointer-events-none" : ""}`}
               >
                 <div className="flex items-center gap-3">
                   <div
@@ -939,12 +1020,12 @@ function CheckoutContent() {
               </div>
 
               <div
-                onClick={() => setSelectedPaymentMethod("card")}
+                onClick={() => !expired && setSelectedPaymentMethod("card")}
                 className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${
                   selectedPaymentMethod === "card"
                     ? "bg-[#C89B3C] text-black border-[#C89B3C] shadow-[0_0_15px_rgba(200,155,60,0.2)]"
                     : "bg-black/40 border-white/5 hover:border-white/20 hover:bg-white/5"
-                }`}
+                } ${expired ? "opacity-50 pointer-events-none" : ""}`}
               >
                 <div className="flex items-center gap-3">
                   <div
@@ -969,14 +1050,18 @@ function CheckoutContent() {
 
             <button
               onClick={handlePayment}
-              disabled={processing}
+              disabled={processing || expired}
               className={`w-full py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 shadow-lg group ${
-                processing ? "bg-white/10 text-white/50 cursor-not-allowed" : "bg-white text-black hover:bg-gray-200"
+                processing || expired ? "bg-white/10 text-white/50 cursor-not-allowed" : "bg-white text-black hover:bg-gray-200"
               }`}
             >
               {processing ? (
                 <>
                   <Loader2 className="animate-spin" size={20} /> جاري إنشاء رابط الدفع...
+                </>
+              ) : expired ? (
+                <>
+                  انتهت مهلة الدفع
                 </>
               ) : (
                 <>

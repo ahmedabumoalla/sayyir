@@ -8,40 +8,78 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    console.log('🟢 بدأ طلب الدفع');
+    console.log("🟢 PAYMOB INITIATE START");
 
     const body = await request.json();
     const { bookingId, couponCode, paymentMethod } = body;
 
+    console.log("📦 INITIATE BODY:", body);
+
     if (!bookingId) {
-      return NextResponse.json({ error: 'رقم الحجز مفقود' }, { status: 400 });
+      return NextResponse.json({ error: "رقم الحجز مفقود" }, { status: 400 });
     }
 
-    const isApplePay = paymentMethod === 'applepay';
+    const isApplePay = paymentMethod === "applepay";
 
-    if (!process.env.PAYMOB_API_KEY || !process.env.PAYMOB_INTEGRATION_ID || !process.env.PAYMOB_IFRAME_ID) {
-      throw new Error('مفاتيح Paymob الأساسية مفقودة في السيرفر');
+    if (
+      !process.env.PAYMOB_API_KEY ||
+      !process.env.PAYMOB_INTEGRATION_ID ||
+      !process.env.PAYMOB_IFRAME_ID
+    ) {
+      console.error("❌ Missing Paymob env vars", {
+        hasApiKey: !!process.env.PAYMOB_API_KEY,
+        hasIntegrationId: !!process.env.PAYMOB_INTEGRATION_ID,
+        hasIframeId: !!process.env.PAYMOB_IFRAME_ID
+      });
+
+      return NextResponse.json(
+        { error: "مفاتيح Paymob الأساسية مفقودة في السيرفر" },
+        { status: 500 }
+      );
     }
 
     const { data: booking, error: bookingError } = await supabaseAdmin
-      .from('bookings')
+      .from("bookings")
       .select(`
         *,
-        services:service_id (*),
-        profiles:provider_id (custom_commission, full_name, email, phone),
-        users:user_id (full_name, email, phone)
+        services (*),
+        provider_profile:provider_id (custom_commission, full_name, email, phone),
+        client_profile:user_id (full_name, email, phone)
       `)
-      .eq('id', bookingId)
+      .eq("id", bookingId)
       .single();
 
-    if (bookingError || !booking) throw new Error('الحجز غير موجود');
+    if (bookingError || !booking) {
+      console.error("❌ Booking fetch error:", bookingError);
+      return NextResponse.json({ error: "الحجز غير موجود" }, { status: 404 });
+    }
 
-    const { data: settings } = await supabaseAdmin
-      .from('platform_settings')
-      .select('*')
+    console.log("✅ BOOKING FOUND:", booking);
+
+    if (booking.status !== "approved_unpaid") {
+      return NextResponse.json(
+        { error: "هذا الحجز غير متاح للدفع حالياً" },
+        { status: 400 }
+      );
+    }
+
+    if (booking.expires_at && new Date(booking.expires_at).getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: "انتهت مهلة الدفع لهذا الحجز" },
+        { status: 400 }
+      );
+    }
+
+    const { data: settings, error: settingsError } = await supabaseAdmin
+      .from("platform_settings")
+      .select("*")
       .single();
 
-    const quantity = Number(booking.quantity || 1);
+    if (settingsError) {
+      console.error("⚠️ PLATFORM SETTINGS ERROR:", settingsError);
+    }
+
+    const quantity = booking.quantity || 1;
     const unitPrice = Number(booking.services?.price || 0);
     const subtotal = unitPrice * quantity;
 
@@ -53,13 +91,17 @@ export async function POST(request: Request) {
     }
 
     if (couponCode) {
-      const { data: coupon } = await supabaseAdmin
-        .from('coupons')
-        .select('discount_percent')
-        .eq('code', couponCode)
+      const { data: coupon, error: couponError } = await supabaseAdmin
+        .from("coupons")
+        .select("discount_percent, code")
+        .eq("code", couponCode)
         .single();
 
-      if (coupon?.discount_percent) {
+      if (couponError) {
+        console.error("⚠️ COUPON ERROR:", couponError);
+      }
+
+      if (coupon) {
         couponDiscountAmount = (subtotal * Number(coupon.discount_percent)) / 100;
       }
     }
@@ -70,14 +112,21 @@ export async function POST(request: Request) {
     const vatAmount = finalAmountToPay - netAmountBeforeVat;
 
     let commissionRate = 0;
-    if (booking.services?.platform_commission !== null && booking.services?.platform_commission !== undefined) {
+
+    if (
+      booking.services?.platform_commission !== null &&
+      booking.services?.platform_commission !== undefined
+    ) {
       commissionRate = Number(booking.services.platform_commission);
-    } else if (booking.profiles?.custom_commission !== null && booking.profiles?.custom_commission !== undefined) {
-      commissionRate = Number(booking.profiles.custom_commission);
+    } else if (
+      booking.provider_profile?.custom_commission !== null &&
+      booking.provider_profile?.custom_commission !== undefined
+    ) {
+      commissionRate = Number(booking.provider_profile.custom_commission);
     } else {
-      if (booking.services?.service_category === 'experience') {
+      if (booking.services?.service_category === "experience") {
         commissionRate = Number(settings?.commission_tourist || 0);
-      } else if (booking.services?.sub_category === 'lodging') {
+      } else if (booking.services?.sub_category === "lodging") {
         commissionRate = Number(settings?.commission_housing || 0);
       } else {
         commissionRate = Number(settings?.commission_food || 0);
@@ -87,8 +136,8 @@ export async function POST(request: Request) {
     const platformFee = netAmountBeforeVat * (commissionRate / 100);
     const providerEarnings = finalAmountToPay - platformFee;
 
-    await supabaseAdmin
-      .from('bookings')
+    const { error: updateBookingError } = await supabaseAdmin
+      .from("bookings")
       .update({
         subtotal,
         discount_amount: totalDiscount,
@@ -99,93 +148,173 @@ export async function POST(request: Request) {
         provider_earnings: providerEarnings,
         coupon_code: couponCode || null
       })
-      .eq('id', bookingId);
+      .eq("id", bookingId);
+
+    if (updateBookingError) {
+      console.error("❌ Booking financial update error:", updateBookingError);
+      return NextResponse.json(
+        { error: "فشل تحديث بيانات الحجز المالية" },
+        { status: 500 }
+      );
+    }
 
     if (finalAmountToPay === 0) {
+      console.log("✅ FINAL AMOUNT IS ZERO - SKIP PAYMENT");
       return NextResponse.json({ skipPayment: true });
     }
 
-    const authReq = await fetch('https://ksa.paymob.com/api/auth/tokens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: process.env.PAYMOB_API_KEY })
+    console.log("💳 PAYMOB FINANCIALS:", {
+      subtotal,
+      totalDiscount,
+      finalAmountToPay,
+      vatAmount,
+      platformFee,
+      providerEarnings
+    });
+
+    // ==========================================
+    // 1) AUTH TOKEN
+    // ==========================================
+    const authReq = await fetch("https://ksa.paymob.com/api/auth/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: process.env.PAYMOB_API_KEY
+      })
     });
 
     const authRes = await authReq.json();
-    if (!authReq.ok || !authRes.token) throw new Error('فشل المصادقة مع Paymob');
+    console.log("🔐 PAYMOB AUTH RESPONSE:", authRes);
+
+    if (!authReq.ok || !authRes.token) {
+      return NextResponse.json(
+        {
+          error: authRes?.detail || authRes?.message || "فشل المصادقة مع Paymob",
+          paymobAuthResponse: authRes
+        },
+        { status: 500 }
+      );
+    }
+
     const token = authRes.token;
 
-    const merchantOrderId = `SAYYIR__${bookingId}`;
+    // ==========================================
+    // 2) CREATE ORDER
+    // ==========================================
+    const merchantOrderId = `SAYYIR-${bookingId}`;
 
-    const orderReq = await fetch('https://ksa.paymob.com/api/ecommerce/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        auth_token: token,
-        delivery_needed: 'false',
-        amount_cents: Math.round(finalAmountToPay * 100),
-        currency: 'SAR',
-        merchant_order_id: merchantOrderId,
-        items: []
-      })
+    const orderPayload = {
+      auth_token: token,
+      delivery_needed: false,
+      amount_cents: Math.round(finalAmountToPay * 100),
+      currency: "SAR",
+      merchant_order_id: merchantOrderId,
+      items: []
+    };
+
+    console.log("🧾 PAYMOB ORDER PAYLOAD:", orderPayload);
+
+    const orderReq = await fetch("https://ksa.paymob.com/api/ecommerce/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(orderPayload)
     });
 
     const orderRes = await orderReq.json();
-    if (!orderReq.ok || !orderRes.id) throw new Error('فشل إنشاء الطلب في Paymob');
+    console.log("🧾 PAYMOB ORDER RESPONSE:", orderRes);
+
+    if (!orderReq.ok || !orderRes.id) {
+      return NextResponse.json(
+        {
+          error: orderRes?.detail || orderRes?.message || "فشل إنشاء الطلب في Paymob",
+          paymobOrderResponse: orderRes
+        },
+        { status: 500 }
+      );
+    }
 
     const orderId = orderRes.id;
 
-    const fullName = String(booking.users?.full_name || 'Customer Sayyir').trim();
-    const [firstName = 'Customer', ...restNames] = fullName.split(' ');
-    const lastName = restNames.join(' ') || 'Sayyir';
-    const email = booking.users?.email || 'info@sayyir.sa';
-    const phone = booking.users?.phone || '+966500000000';
+    // ==========================================
+    // 3) PAYMENT KEY
+    // ==========================================
+    const fullName = booking.client_profile?.full_name || "Customer Sayyir";
+    const firstName = fullName.split(" ")[0] || "Customer";
+    const lastName = fullName.split(" ").slice(1).join(" ") || "Sayyir";
+    const email = booking.client_profile?.email || "info@sayyir.sa";
 
-    const paymentKeyReq = await fetch('https://ksa.paymob.com/api/acceptance/payment_keys', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        auth_token: token,
-        amount_cents: Math.round(finalAmountToPay * 100),
-        expiration: 3600,
-        order_id: orderId,
-        billing_data: {
-          apartment: 'NA',
-          email,
-          floor: 'NA',
-          first_name: firstName,
-          street: 'NA',
-          building: 'NA',
-          phone_number: phone,
-          shipping_method: 'NA',
-          postal_code: 'NA',
-          city: 'NA',
-          country: 'SA',
-          last_name: lastName,
-          state: 'NA'
-        },
-        currency: 'SAR',
-        integration_id: isApplePay ? 23347 : Number(process.env.PAYMOB_INTEGRATION_ID)
-      })
+    let phone = booking.client_profile?.phone || "+966500000000";
+    phone = String(phone).trim();
+
+    if (!phone.startsWith("+")) {
+      phone = `+${phone}`;
+    }
+
+    const paymentKeyPayload = {
+      auth_token: token,
+      amount_cents: Math.round(finalAmountToPay * 100),
+      expiration: 3600,
+      order_id: orderId,
+      billing_data: {
+        apartment: "NA",
+        email,
+        floor: "NA",
+        first_name: firstName,
+        street: "NA",
+        building: "NA",
+        phone_number: phone,
+        shipping_method: "NA",
+        postal_code: "NA",
+        city: "Abha",
+        country: "SA",
+        last_name: lastName,
+        state: "Asir"
+      },
+      currency: "SAR",
+      integration_id: isApplePay
+        ? Number(process.env.PAYMOB_APPLEPAY_INTEGRATION_ID || process.env.PAYMOB_INTEGRATION_ID)
+        : Number(process.env.PAYMOB_INTEGRATION_ID)
+    };
+
+    console.log("🔑 PAYMOB PAYMENT KEY PAYLOAD:", paymentKeyPayload);
+
+    const paymentKeyReq = await fetch("https://ksa.paymob.com/api/acceptance/payment_keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(paymentKeyPayload)
     });
 
     const paymentKeyRes = await paymentKeyReq.json();
-    if (!paymentKeyReq.ok || !paymentKeyRes.token) throw new Error('فشل توليد مفتاح الدفع');
+    console.log("🔑 PAYMOB PAYMENT KEY RESPONSE:", paymentKeyRes);
+
+    if (!paymentKeyReq.ok || !paymentKeyRes.token) {
+      return NextResponse.json(
+        {
+          error: paymentKeyRes?.detail || paymentKeyRes?.message || "فشل توليد مفتاح الدفع",
+          paymobPaymentKeyResponse: paymentKeyRes
+        },
+        { status: 500 }
+      );
+    }
 
     const paymentToken = paymentKeyRes.token;
 
-    let redirectUrl = '';
+    let redirectUrl = "";
+
     if (isApplePay) {
       redirectUrl = `https://ksa.paymob.com/standalone/?ref=${paymentToken}`;
     } else {
-      redirectUrl = `https://ksa.paymob.com/api/acceptance/iframes/${process.env.PAYMOB_IFRAME_ID}?payment_token=${paymentToken}`;
+      const cardIframeId = process.env.PAYMOB_IFRAME_ID!;
+      redirectUrl = `https://ksa.paymob.com/api/acceptance/iframes/${cardIframeId}?payment_token=${paymentToken}`;
     }
+
+    console.log("✅ PAYMOB REDIRECT URL:", redirectUrl);
 
     return NextResponse.json({ iframeUrl: redirectUrl });
   } catch (error: any) {
-    console.error('🔴 CRITICAL API ERROR:', error);
+    console.error("🔴 CRITICAL PAYMOB INITIATE ERROR:", error);
     return NextResponse.json(
-      { error: error?.message || 'حدث خطأ غير معروف في السيرفر' },
+      { error: error?.message || "حدث خطأ غير معروف في السيرفر" },
       { status: 500 }
     );
   }

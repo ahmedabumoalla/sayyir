@@ -16,9 +16,6 @@ type Template = {
 };
 
 const TEMPLATES: Record<string, Template> = {
-  // ==========================================
-  // إشعارات الحجوزات
-  // ==========================================
   new_booking_provider: {
     subject: '🔔 طلب حجز جديد بانتظار تأكيدك! (#{{bookingId}})',
     html: `
@@ -113,9 +110,6 @@ const TEMPLATES: Record<string, Template> = {
     `
   },
 
-  // ==========================================
-  // إشعارات المزودين والخدمات
-  // ==========================================
   new_provider_request: {
     subject: '🚀 طلب انضمام شريك جديد: {{providerName}}',
     html: `
@@ -164,7 +158,6 @@ const TEMPLATES: Record<string, Template> = {
   }
 };
 
-// aliases للتوافق مع الأكواد القديمة
 const TEMPLATE_ALIASES: Record<string, string> = {
   booking_confirmed: 'booking_payment_confirmed',
   booking_ticket_invoice: 'booking_payment_confirmed',
@@ -200,6 +193,15 @@ export async function POST(req: Request) {
     const incomingTemplateId = templateId || type;
     const activeTemplateId = TEMPLATE_ALIASES[incomingTemplateId] || incomingTemplateId;
 
+    console.log('EMAIL API INPUT:', {
+      templateId: incomingTemplateId,
+      activeTemplateId,
+      email,
+      phone,
+      hasResendKey: !!process.env.RESEND_API_KEY,
+      body
+    });
+
     if (!activeTemplateId || !TEMPLATES[activeTemplateId]) {
       return NextResponse.json(
         { error: `قالب الإشعار (${incomingTemplateId}) غير موجود` },
@@ -224,6 +226,8 @@ export async function POST(req: Request) {
       mergedData.totalPrice = `${mergedData.price} ريال`;
     }
 
+    console.log('EMAIL MERGED DATA:', mergedData);
+
     const template = TEMPLATES[activeTemplateId];
     const messageBody = fillTemplate(template.html, mergedData);
     const messageSubject = fillTemplate(template.subject, mergedData);
@@ -233,6 +237,7 @@ export async function POST(req: Request) {
     };
 
     if (!email && !phone) {
+      console.error('EMAIL API SKIPPED: no email and no phone');
       return NextResponse.json(
         { error: 'لا يوجد email أو phone للإرسال', results },
         { status: 400 }
@@ -241,17 +246,32 @@ export async function POST(req: Request) {
 
     if (email && process.env.RESEND_API_KEY) {
       try {
-        const emailRes = await resend.emails.send({
+        const resendPayload = {
           from: 'منصة سَيّر <info@emails.sayyir.sa>',
           to: Array.isArray(email) ? email : [email],
-          subject: messageSubject,
+          subject: messageSubject
+        };
+
+        console.log('RESEND PAYLOAD:', resendPayload);
+
+        const emailRes = await resend.emails.send({
+          from: resendPayload.from,
+          to: resendPayload.to,
+          subject: resendPayload.subject,
           html: messageBody
         });
+
+        console.log('RESEND SUCCESS RESPONSE:', emailRes);
+
         results.email = emailRes;
       } catch (e: any) {
-        console.error('❌ Resend Email Error:', e);
+        console.error('❌ RESEND EMAIL ERROR FULL:', e);
         results.emailError = e?.message || 'Email send failed';
+        results.emailErrorFull = e;
       }
+    } else if (email && !process.env.RESEND_API_KEY) {
+      console.error('RESEND_API_KEY MISSING');
+      results.emailError = 'RESEND_API_KEY is missing';
     }
 
     if (phone) {
@@ -263,6 +283,12 @@ export async function POST(req: Request) {
           .single();
 
         if (error) throw error;
+
+        console.log('TWILIO SETTINGS FOUND:', {
+          hasSid: !!settings?.twilio_account_sid,
+          hasToken: !!settings?.twilio_auth_token,
+          phoneNumber: settings?.twilio_phone_number || null
+        });
 
         if (settings?.twilio_account_sid && settings?.twilio_auth_token && settings?.twilio_phone_number) {
           const client = twilio(settings.twilio_account_sid, settings.twilio_auth_token);
@@ -278,17 +304,25 @@ export async function POST(req: Request) {
             to: formattedTo
           });
 
+          console.log('TWILIO SUCCESS RESPONSE:', waRes);
+
           results.whatsapp = waRes.sid;
+        } else {
+          console.error('TWILIO CONFIG INCOMPLETE');
+          results.whatsappError = 'Twilio config incomplete';
         }
       } catch (e: any) {
-        console.error('❌ Twilio WhatsApp Error:', e);
+        console.error('❌ TWILIO WHATSAPP ERROR FULL:', e);
         results.whatsappError = e?.message || 'WhatsApp send failed';
+        results.whatsappErrorFull = e;
       }
     }
 
+    console.log('EMAIL API FINAL RESULT:', results);
+
     return NextResponse.json({ success: true, results });
   } catch (error: any) {
-    console.error('❌ Notification API Error:', error);
+    console.error('❌ NOTIFICATION API ERROR FULL:', error);
     return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });
   }
 }

@@ -115,21 +115,18 @@ export async function POST(request: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          templateId: 'new_booking_provider',
-          email: provider.email,
-          phone: provider.phone,
+          templateId: 'booking_pending_client',
+          email: client?.email || null,
+          phone: client?.phone || null,
           data: {
             bookingId: booking.id,
-            providerName: provider.full_name || 'مزود الخدمة',
-            serviceName: service.title || service.name || 'خدمة سيّر',
-            clientName: client.full_name || 'عميل',
+            clientName: client?.full_name || 'عميل',
+            serviceName: service?.title || service?.name || 'خدمة سيّر',
             date: booking.booking_date || booking.check_in || '',
             time: booking.booking_time || '',
             guests: booking.quantity || 1
           }
         })
-      }).catch((err) => {
-        console.error('فشل إرسال إشعار الحجز للمزود:', err);
       });
     }
 
