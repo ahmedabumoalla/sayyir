@@ -7,13 +7,12 @@ import { supabase } from "@/lib/supabaseClient";
 import { 
   DollarSign, Settings, Save, Loader2, CreditCard, CheckCircle, Banknote, Briefcase,
   Ticket, Percent, Trash2, Plus, FileText, Download, Printer, Clock, XCircle, 
-  AlertTriangle, UploadCloud, MessageSquare, Gavel, X, User, MapPin
+  AlertTriangle, UploadCloud, MessageSquare, Gavel, X, User, MapPin, CalendarDays
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
-// --- Types ---
 interface PayoutRequest {
   id: string;
   provider_id: string;
@@ -27,9 +26,13 @@ interface PayoutRequest {
 }
 
 interface PlatformSettings {
-  commission_tourist: string;
-  commission_housing: string;
-  commission_food: string;
+  commission_tourist: string; 
+  commission_housing: string; 
+  commission_food: string; 
+  commission_lodging: string;
+  commission_experience: string;
+  commission_event: string;
+  commission_facility: string;
   general_discount_code: string;
   general_discount_percent: string;
   is_general_discount_active: boolean;
@@ -50,6 +53,8 @@ interface Marketer {
   commercial_register?: string;
   tax_number?: string;
   national_address?: string;
+  start_date?: string;
+  end_date?: string;
   created_at: string;
   uses_count?: number; 
   marketer_earnings?: number;
@@ -70,7 +75,47 @@ interface BookingReport {
     coupon_code: string;
     cancellation_reason?: string;
     created_at: string;
+    expires_at?: string;
+    booking_date?: string;
+    service_category?: string;
+    sub_category?: string;
 }
+
+const CountdownTimer = ({ expiresAt }: { expiresAt: string }) => {
+  const [timeLeft, setTimeLeft] = useState<string>("--:--:--");
+  const [isExpired, setIsExpired] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date().getTime();
+      const exp = new Date(expiresAt).getTime();
+      const diff = exp - now;
+
+      if (diff <= 0) {
+        setTimeLeft("انتهت المهلة");
+        setIsExpired(true);
+        clearInterval(interval);
+      } else {
+        const totalSeconds = Math.floor(diff / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        setTimeLeft(
+          `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        );
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+
+  return (
+    <div className={`mt-2 flex items-center gap-1.5 w-fit px-2 py-1 rounded text-xs font-bold border ${isExpired ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20 animate-pulse'}`}>
+      <Clock size={12} />
+      <span className="font-mono dir-ltr">{timeLeft}</span>
+    </div>
+  );
+};
 
 export default function FinancePage() {
   const [loading, setLoading] = useState(true);
@@ -79,6 +124,7 @@ export default function FinancePage() {
 
   const [settings, setSettings] = useState<PlatformSettings>({
     commission_tourist: "0", commission_housing: "0", commission_food: "0",
+    commission_lodging: "0", commission_experience: "0", commission_event: "0", commission_facility: "0",
     general_discount_code: "", general_discount_percent: "0", is_general_discount_active: false,
     general_discount_categories: []
   });
@@ -88,14 +134,12 @@ export default function FinancePage() {
   const [bookings, setBookings] = useState<BookingReport[]>([]); 
   const [providers, setProviders] = useState<{id: string, full_name: string}[]>([]);
 
-  // Modals States
   const [isMarketerModalOpen, setIsMarketerModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isPenaltyModalOpen, setIsPenaltyModalOpen] = useState(false);
   const [selectedCancellation, setSelectedCancellation] = useState<BookingReport | null>(null);
 
-  // Form States
-  const [newMarketer, setNewMarketer] = useState<Partial<Marketer>>({ marketer_type: 'individual' });
+  const [newMarketer, setNewMarketer] = useState<Partial<Marketer>>({ marketer_type: 'individual', start_date: new Date().toISOString().split('T')[0], end_date: '' });
   const [addingMarketer, setAddingMarketer] = useState(false);
   
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -126,6 +170,10 @@ export default function FinancePage() {
                 commission_tourist: settingsData.commission_tourist?.toString() || "0",
                 commission_housing: settingsData.commission_housing?.toString() || "0",
                 commission_food: settingsData.commission_food?.toString() || "0",
+                commission_lodging: settingsData.commission_lodging?.toString() || settingsData.commission_housing?.toString() || "0",
+                commission_experience: settingsData.commission_experience?.toString() || settingsData.commission_tourist?.toString() || "0",
+                commission_event: settingsData.commission_event?.toString() || settingsData.commission_tourist?.toString() || "0",
+                commission_facility: settingsData.commission_facility?.toString() || settingsData.commission_food?.toString() || "0",
                 general_discount_code: settingsData.general_discount_code || "",
                 general_discount_percent: settingsData.general_discount_percent?.toString() || "0",
                 is_general_discount_active: settingsData.is_general_discount_active || false,
@@ -140,29 +188,77 @@ export default function FinancePage() {
         const { data: bookingsData } = await supabase
             .from('bookings')
             .select(`
-                id, status, payment_status, total_price, subtotal, platform_fee, coupon_code, created_at, cancellation_reason,
-                services:service_id (title),
+                id, status, payment_status, total_price, subtotal, platform_fee, coupon_code, created_at, expires_at, cancellation_reason, check_in, execution_date, booking_date,
+                services:service_id (title, service_category, sub_category),
                 provider:provider_id (full_name, email),
                 client:user_id (full_name, email)
             `)
             .order('created_at', { ascending: false });
 
-        const formattedBookings: BookingReport[] = bookingsData ? bookingsData.map((b: any) => ({
-            id: b.id,
-            service_title: b.services?.title || "خدمة محذوفة",
-            provider_name: b.provider?.full_name || "غير معروف",
-            provider_email: b.provider?.email || "",
-            client_name: b.client?.full_name || "غير معروف",
-            client_email: b.client?.email || "",
-            status: b.status,
-            payment_status: b.payment_status || 'unpaid',
-            total_price: Number(b.total_price || 0),
-            subtotal: Number(b.subtotal || 0),
-            platform_fee: Number(b.platform_fee || 0),
-            coupon_code: b.coupon_code || '',
-            created_at: b.created_at,
-            cancellation_reason: b.cancellation_reason
-        })) : [];
+        let currentBookings = bookingsData || [];
+        const nowMs = new Date().getTime();
+        const expiredIds: string[] = [];
+
+        currentBookings = currentBookings.map((b: any) => {
+            if (b.status === 'approved_unpaid' && b.expires_at) {
+                if (new Date(b.expires_at).getTime() < nowMs) {
+                    expiredIds.push(b.id);
+                    b.status = 'cancelled';
+                    b.payment_status = 'expired';
+                }
+            }
+            return b;
+        });
+
+        if (expiredIds.length > 0) {
+            await supabase
+                .from('bookings')
+                .update({ status: 'cancelled', payment_status: 'expired' })
+                .in('id', expiredIds);
+        }
+
+        const formattedBookings: BookingReport[] = currentBookings.map((b: any) => {
+            const subtotal = Number(b.subtotal || 0);
+            const serviceCat = b.services?.service_category;
+            const subCat = b.services?.sub_category;
+            
+            let commissionRate = 0;
+            if (subCat === 'lodging') {
+                commissionRate = Number(settingsData?.commission_lodging || settingsData?.commission_housing || 0);
+            } else if (subCat === 'event') {
+                commissionRate = Number(settingsData?.commission_event || settingsData?.commission_tourist || 0);
+            } else if (serviceCat === 'experience' || subCat === 'experience') {
+                commissionRate = Number(settingsData?.commission_experience || settingsData?.commission_tourist || 0);
+            } else if (subCat === 'facility') {
+                commissionRate = Number(settingsData?.commission_facility || settingsData?.commission_food || 0);
+            }
+
+            const calculatedPlatformFee = (subtotal * commissionRate) / 100;
+            const finalPlatformFee = b.platform_fee > 0 ? Number(b.platform_fee) : calculatedPlatformFee;
+            
+            const bookingTargetDate = b.check_in || b.execution_date || b.booking_date;
+
+            return {
+                id: b.id,
+                service_title: b.services?.title || "خدمة محذوفة",
+                service_category: serviceCat,
+                sub_category: subCat,
+                provider_name: b.provider?.full_name || "غير معروف",
+                provider_email: b.provider?.email || "",
+                client_name: b.client?.full_name || "غير معروف",
+                client_email: b.client?.email || "",
+                status: b.status,
+                payment_status: b.payment_status || 'unpaid',
+                total_price: Number(b.total_price || 0),
+                subtotal: subtotal,
+                platform_fee: finalPlatformFee,
+                coupon_code: b.coupon_code || '',
+                created_at: b.created_at,
+                expires_at: b.expires_at,
+                booking_date: bookingTargetDate,
+                cancellation_reason: b.cancellation_reason
+            };
+        });
 
         setBookings(formattedBookings);
 
@@ -202,17 +298,22 @@ export default function FinancePage() {
     setSaving(true);
     try {
       const { error } = await supabase.from('platform_settings').update({
-            commission_tourist: parseFloat(settings.commission_tourist),
-            commission_housing: parseFloat(settings.commission_housing),
-            commission_food: parseFloat(settings.commission_food),
+            commission_tourist: parseFloat(settings.commission_experience) || 0,
+            commission_housing: parseFloat(settings.commission_lodging) || 0,
+            commission_food: parseFloat(settings.commission_facility) || 0,
+            commission_lodging: parseFloat(settings.commission_lodging) || 0,
+            commission_experience: parseFloat(settings.commission_experience) || 0,
+            commission_event: parseFloat(settings.commission_event) || 0,
+            commission_facility: parseFloat(settings.commission_facility) || 0,
             general_discount_code: settings.general_discount_code,
-            general_discount_percent: parseFloat(settings.general_discount_percent),
+            general_discount_percent: parseFloat(settings.general_discount_percent) || 0,
             is_general_discount_active: settings.is_general_discount_active,
             general_discount_categories: settings.general_discount_categories
         }).eq('id', 1);
 
       if (error) throw error;
-      alert("✅ تم حفظ الإعدادات والخصومات بنجاح");
+      alert("✅ تم حفظ الإعدادات بنجاح");
+      fetchData();
     } catch (error: any) { alert("❌ خطأ: " + error.message); } finally { setSaving(false); }
   };
 
@@ -226,7 +327,7 @@ export default function FinancePage() {
 
   const handleAddMarketer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMarketer.code || !newMarketer.discount_percent || !newMarketer.marketer_name) return alert("يرجى تعبئة الحقول الأساسية");
+    if (!newMarketer.code || !newMarketer.discount_percent || !newMarketer.marketer_name || !newMarketer.start_date) return alert("يرجى تعبئة الحقول الأساسية");
     setAddingMarketer(true);
     try {
         const { data, error } = await supabase.from('coupons').insert([{
@@ -234,11 +335,13 @@ export default function FinancePage() {
             code: newMarketer.code.toUpperCase(),
             discount_percent: parseFloat(newMarketer.discount_percent as any),
             marketer_commission: parseFloat(newMarketer.marketer_commission as any || '0'),
+            start_date: newMarketer.start_date,
+            end_date: newMarketer.end_date || null
         }]).select();
         if (error) throw error;
         if (data) {
             setMarketers([{...data[0], uses_count: 0, marketer_earnings: 0}, ...marketers]);
-            setNewMarketer({ marketer_type: 'individual' });
+            setNewMarketer({ marketer_type: 'individual', start_date: new Date().toISOString().split('T')[0], end_date: '' });
             setIsMarketerModalOpen(false);
             alert("✅ تم إضافة المسوق بنجاح");
         }
@@ -343,10 +446,12 @@ export default function FinancePage() {
   };
 
   const exportToCSV = () => {
-      const headers = ["رقم الحجز", "الخدمة", "المزود", "العميل", "السعر", "عمولة المنصة", "كود الخصم", "حالة الدفع", "تاريخ الحجز"];
+      const headers = ["رقم الحجز", "الخدمة", "المزود", "العميل", "السعر", "عمولة المنصة", "كود الخصم", "حالة الدفع", "تاريخ الحجز", "موعد الحجز"];
       const rows = bookings.map(b => [
           b.id, b.service_title, b.provider_name, b.client_name, b.total_price,
-          b.platform_fee, b.coupon_code || '-', b.payment_status, new Date(b.created_at).toLocaleDateString('ar-SA')
+          b.platform_fee.toFixed(2), b.coupon_code || '-', b.payment_status, 
+          new Date(b.created_at).toLocaleDateString('ar-SA'),
+          b.booking_date ? new Date(b.booking_date).toLocaleDateString('ar-SA') : '-'
       ]);
       let csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
       const encodedUri = encodeURI(csvContent);
@@ -367,6 +472,13 @@ export default function FinancePage() {
       return true;
   });
 
+  const COMMISSIONS = [
+    { key: 'commission_lodging', label: 'النزل والتأجير' },
+    { key: 'commission_experience', label: 'التجارب السياحية' },
+    { key: 'commission_event', label: 'الفعاليات' },
+    { key: 'commission_facility', label: 'المرافق والمنتجات' },
+  ];
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 print:bg-white print:text-black">
       
@@ -382,7 +494,6 @@ export default function FinancePage() {
           </button>
       </header>
 
-      {/* Print Header */}
       <div className="hidden print:block mb-8 text-center border-b border-black pb-4">
           <h1 className="text-2xl font-bold">تقرير الحجوزات والمالية - منصة سيّر</h1>
           <p className="text-sm">تاريخ التقرير: {new Date().toLocaleDateString('ar-SA')}</p>
@@ -392,7 +503,6 @@ export default function FinancePage() {
          <div className="h-[50vh] flex items-center justify-center text-[#C89B3C]"><Loader2 className="animate-spin w-10 h-10" /></div>
       ) : (
         <>
-          {/* 1. Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 print:hidden">
             <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex flex-col justify-between">
                 <p className="text-white/50 text-xs font-bold mb-1">إجمالي الإيرادات (المدفوعة)</p>
@@ -413,7 +523,6 @@ export default function FinancePage() {
             </div>
           </div>
 
-          {/* 2. Bookings Report Section */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 print:border-black print:bg-transparent print:text-black print:p-0">
               <div className="flex flex-wrap justify-between items-center mb-6 print:hidden">
                   <h3 className="font-bold text-lg flex items-center gap-2 text-white"><FileText size={20} className="text-[#C89B3C]"/> تقرير الحجوزات والمراسلة</h3>
@@ -425,8 +534,8 @@ export default function FinancePage() {
 
               <div className="flex gap-2 mb-6 overflow-x-auto pb-2 custom-scrollbar print:hidden">
                   <button onClick={() => setReportTab('all')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap ${reportTab === 'all' ? "bg-[#C89B3C] text-black font-bold" : "bg-black/20 text-white/60"}`}>الكل ({bookings.length})</button>
-                  <button onClick={() => setReportTab('pending_approval')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'pending_approval' ? "bg-amber-500 text-black font-bold" : "bg-black/20 text-white/60"}`}><Clock size={14}/> انتظار الموافقة ({stats.pendingApproval})</button>
-                  <button onClick={() => setReportTab('pending_payment')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'pending_payment' ? "bg-blue-500 text-white font-bold" : "bg-black/20 text-white/60"}`}><CreditCard size={14}/> انتظار الدفع ({stats.pendingPayment})</button>
+                  <button onClick={() => setReportTab('pending_approval')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'pending_approval' ? "bg-amber-500 text-black font-bold" : "bg-black/20 text-white/60"}`}><Clock size={14}/> انتظار موافقة المزود ({stats.pendingApproval})</button>
+                  <button onClick={() => setReportTab('pending_payment')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'pending_payment' ? "bg-blue-500 text-white font-bold" : "bg-black/20 text-white/60"}`}><CreditCard size={14}/> انتظار دفع العميل ({stats.pendingPayment})</button>
                   <button onClick={() => setReportTab('completed')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'completed' ? "bg-emerald-500 text-white font-bold" : "bg-black/20 text-white/60"}`}><CheckCircle size={14}/> مكتملة ({stats.completedBookings})</button>
                   <button onClick={() => setReportTab('cancellations')} className={`px-4 py-2 rounded-xl text-sm transition whitespace-nowrap flex items-center gap-2 ${reportTab === 'cancellations' ? "bg-red-600 text-white font-bold animate-pulse" : "bg-black/20 text-white/60"}`}><AlertTriangle size={14}/> طلبات إلغاء واسترجاع ({stats.cancellationRequests})</button>
               </div>
@@ -435,10 +544,10 @@ export default function FinancePage() {
                   <table className="w-full text-right min-w-250 border-collapse print:min-w-full">
                       <thead className="bg-black/20 text-white/50 text-xs uppercase print:bg-gray-200 print:text-black">
                           <tr>
-                              <th className="px-4 py-3">رقم الحجز</th>
+                              <th className="px-4 py-3">رقم وتاريخ الحجز</th>
                               <th className="px-4 py-3">الخدمة والمزود</th>
                               <th className="px-4 py-3">العميل</th>
-                              <th className="px-4 py-3">السعر النهائي</th>
+                              <th className="px-4 py-3">المبالغ والأرباح</th>
                               <th className="px-4 py-3">الحالة والدفع</th>
                               <th className="px-4 py-3 text-center print:hidden">إجراءات / مراسلة</th>
                           </tr>
@@ -446,26 +555,49 @@ export default function FinancePage() {
                       <tbody className="divide-y divide-white/5 text-sm print:divide-gray-300">
                           {filteredBookings.map((booking) => (
                               <tr key={booking.id} className="hover:bg-white/5 transition print:hover:bg-transparent">
-                                  <td className="px-4 py-3 font-mono text-xs">{booking.id.slice(0,6)}</td>
+                                  <td className="px-4 py-3">
+                                      <div className="font-mono text-xs mb-1">#{booking.id.slice(0,6)}</div>
+                                      <div className="text-[11px] text-white/50 print:text-black">الطلب: {new Date(booking.created_at).toLocaleDateString('ar-SA')}</div>
+                                      {booking.booking_date && (
+                                          <div className="text-[11px] text-[#C89B3C] font-bold mt-1 flex items-center gap-1">
+                                              <CalendarDays size={10} /> الموعد: {new Date(booking.booking_date).toLocaleDateString('ar-SA')}
+                                          </div>
+                                      )}
+                                      {booking.status === 'approved_unpaid' && booking.expires_at && (
+                                          <CountdownTimer expiresAt={booking.expires_at} />
+                                      )}
+                                  </td>
                                   <td className="px-4 py-3">
                                       <p className="font-bold text-white print:text-black">{booking.service_title}</p>
                                       <p className="text-xs text-white/50 print:text-black">المزود: {booking.provider_name}</p>
                                   </td>
                                   <td className="px-4 py-3">{booking.client_name}</td>
-                                  <td className="px-4 py-3 font-bold text-[#C89B3C] print:text-black">{booking.total_price} ﷼</td>
+                                  <td className="px-4 py-3">
+                                      <div className="font-bold text-[#C89B3C] print:text-black">{booking.total_price} ﷼</div>
+                                      <div className="text-[11px] text-emerald-400 mt-1 font-bold bg-emerald-500/10 px-2 py-1 rounded w-fit border border-emerald-500/20">ربح المنصة: {booking.platform_fee.toFixed(2)} ﷼</div>
+                                  </td>
                                   <td className="px-4 py-3 space-y-1">
-                                      <span className={`px-2 py-1 rounded text-[10px] font-bold block w-fit ${booking.payment_status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                          {booking.payment_status === 'paid' ? 'مدفوع' : 'غير مدفوع'}
+                                      <span className={`px-2 py-1 rounded text-[10px] font-bold block w-fit ${
+                                          booking.payment_status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : 
+                                          booking.payment_status === 'expired' ? 'bg-red-500/20 text-red-400' : 
+                                          'bg-amber-500/20 text-amber-400'
+                                      }`}>
+                                          {booking.payment_status === 'paid' ? 'مدفوع' : 
+                                           booking.payment_status === 'expired' ? 'لم يتم الدفع (انتهت المهلة)' : 
+                                           'انتظار دفع العميل'}
                                       </span>
                                       <span className={`px-2 py-1 rounded text-[10px] font-bold block w-fit ${
                                           booking.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-400' :
-                                          booking.status === 'pending' ? 'bg-amber-500/10 text-amber-400' :
+                                          booking.status === 'pending' ? 'bg-blue-500/10 text-blue-400' :
+                                          booking.status === 'approved_unpaid' ? 'bg-amber-500/10 text-amber-400' :
                                           booking.status === 'cancellation_requested' ? 'bg-red-600 text-white' :
                                           'bg-red-500/10 text-red-400'
                                       }`}>
                                           {booking.status === 'confirmed' ? 'مكتمل' : 
-                                           booking.status === 'pending' ? 'انتظار موافقة' : 
+                                           booking.status === 'pending' ? 'انتظار موافقة المزود' : 
+                                           booking.status === 'approved_unpaid' ? 'تم القبول (انتظار الدفع)' :
                                            booking.status === 'cancellation_requested' ? 'طلب إلغاء' :
+                                           booking.status === 'cancelled' && booking.payment_status === 'expired' ? 'لم يتم الدفع من قبل العميل وتم انتهاء المهلة' :
                                            'مرفوض/ملغي'}
                                       </span>
                                   </td>
@@ -491,9 +623,7 @@ export default function FinancePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
             
-            {/* 3. Settings Column */}
             <div className="lg:col-span-1 space-y-6">
-                {/* General Discount */}
                 <div className={`border rounded-2xl p-6 transition-all duration-300 ${settings.is_general_discount_active ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex items-center justify-between mb-4">
                       <h3 className="font-bold text-lg flex items-center gap-2"><Percent size={20} className={settings.is_general_discount_active ? "text-indigo-400" : "text-gray-400"}/> كود الخصم العام</h3>
@@ -514,10 +644,10 @@ export default function FinancePage() {
                       <div>
                           <label className="text-xs text-white/60 mb-2 block">يطبق على الفئات التالية:</label>
                           <div className="grid grid-cols-2 gap-2">
-                              {['experience', 'tourist', 'heritage', 'housing'].map((cat) => (
+                              {['lodging', 'experience', 'event', 'facility'].map((cat) => (
                                   <label key={cat} className={`flex items-center gap-2 text-sm cursor-pointer ${!settings.is_general_discount_active ? 'opacity-50 pointer-events-none' : ''}`}>
                                       <input type="checkbox" checked={settings.general_discount_categories.includes(cat)} onChange={() => handleCategoryToggle(cat)} className="accent-indigo-500" />
-                                      {cat === 'experience' ? 'التجارب' : cat === 'tourist' ? 'المعالم السياحية' : cat === 'heritage' ? 'المواقع التراثية' : 'السكن والنزل'}
+                                      {cat === 'lodging' ? 'النزل والتأجير' : cat === 'experience' ? 'التجارب' : cat === 'event' ? 'الفعاليات' : 'المرافق'}
                                   </label>
                               ))}
                           </div>
@@ -525,17 +655,14 @@ export default function FinancePage() {
                   </div>
                 </div>
 
-                {/* Commissions Settings */}
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
-                    <h3 className="font-bold text-lg flex items-center gap-2 text-white"><Settings size={20} className="text-[#C89B3C]"/> نسب العمولة العامة للمنصة</h3>
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-white"><Settings size={20} className="text-[#C89B3C]"/> نسبة ربح المنصة</h3>
                   </div>
                   <div className="space-y-4">
-                    {['commission_tourist', 'commission_housing', 'commission_food'].map((key) => (
+                    {COMMISSIONS.map(({key, label}) => (
                         <div key={key}>
-                          <label className="text-xs text-white/60 mb-2 block">
-                              {key === 'commission_tourist' ? 'السياحة والتجارب' : key === 'commission_housing' ? 'السكن والنُزل' : 'المطاعم والكافيهات'}
-                          </label>
+                          <label className="text-xs text-white/60 mb-2 block">{label}</label>
                           <div className="relative">
                               <input type="number" value={settings[key as keyof PlatformSettings] as string} onChange={e => setSettings({...settings, [key]: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-white focus:border-[#C89B3C] outline-none" />
                               <span className="absolute left-4 top-3.5 text-white/30 font-bold">%</span>
@@ -549,10 +676,8 @@ export default function FinancePage() {
                 </div>
             </div>
 
-            {/* 4. Operations (Coupons & Payouts) */}
             <div className="lg:col-span-2 space-y-6">
               
-              {/* Coupons & Marketers */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
                       <h3 className="font-bold text-lg flex items-center gap-2 text-white"><Ticket size={20} className="text-[#C89B3C]"/> نظام التسويق بالعمولة (المسوقين)</h3>
@@ -566,6 +691,10 @@ export default function FinancePage() {
                                   <div className="flex items-center gap-2">
                                       <span className="font-mono font-bold text-[#C89B3C] bg-[#C89B3C]/10 px-2 py-0.5 rounded text-xs border border-[#C89B3C]/20">{coupon.code}</span>
                                       <span className="text-[10px] font-bold text-white bg-white/10 px-2 py-1 rounded">يخصم للعميل {coupon.discount_percent}%</span>
+                                  </div>
+                                  <div className="text-[10px] text-white/40 mt-1 flex gap-2">
+                                      <span>صالح من: {coupon.start_date ? new Date(coupon.start_date).toLocaleDateString('ar-SA') : '-'}</span>
+                                      <span>إلى: {coupon.end_date ? new Date(coupon.end_date).toLocaleDateString('ar-SA') : '-'}</span>
                                   </div>
                               </div>
                               
@@ -591,7 +720,6 @@ export default function FinancePage() {
                   </div>
               </div>
 
-              {/* Payouts */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                   <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
                       <h3 className="font-bold text-lg flex items-center gap-2 text-white"><Banknote size={20} className="text-[#C89B3C]"/> طلبات سحب الرصيد للمزودين</h3>
@@ -632,9 +760,6 @@ export default function FinancePage() {
         </>
       )}
 
-      {/* ================= MODALS ================= */}
-
-      {/* 1. Add Marketer Modal */}
       {isMarketerModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
               <div className="bg-[#1e1e1e] w-full max-w-2xl rounded-3xl border border-white/10 shadow-2xl max-h-[90vh] flex flex-col">
@@ -665,6 +790,16 @@ export default function FinancePage() {
                               <label className="text-xs text-white/60 mb-1 block">نسبة عمولة المسوق (من الدخل) % *</label>
                               <input required type="number" min="0" max="100" value={newMarketer.marketer_commission || ''} onChange={e=>setNewMarketer({...newMarketer, marketer_commission: parseFloat(e.target.value)})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-[#C89B3C] outline-none" />
                           </div>
+                          
+                          <div>
+                              <label className="text-xs text-white/60 mb-1 block">تاريخ بداية الصلاحية *</label>
+                              <input required type="date" value={newMarketer.start_date || ''} onChange={e=>setNewMarketer({...newMarketer, start_date: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-[#C89B3C] outline-none scheme-dark" />
+                          </div>
+                          <div>
+                              <label className="text-xs text-white/60 mb-1 block">تاريخ نهاية الصلاحية (يترك فارغاً لو دائم)</label>
+                              <input type="date" value={newMarketer.end_date || ''} onChange={e=>setNewMarketer({...newMarketer, end_date: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-[#C89B3C] outline-none scheme-dark" />
+                          </div>
+
                           <div>
                               <label className="text-xs text-white/60 mb-1 block">رقم الجوال للتواصل</label>
                               <input type="text" value={newMarketer.phone || ''} onChange={e=>setNewMarketer({...newMarketer, phone: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-[#C89B3C] outline-none dir-ltr text-left" />
@@ -712,7 +847,6 @@ export default function FinancePage() {
           </div>
       )}
 
-      {/* 2. Upload Receipt Modal */}
       {isReceiptModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
              <div className="bg-[#1e1e1e] w-full max-w-md rounded-3xl border border-white/10 p-6 shadow-2xl text-center">
@@ -736,7 +870,6 @@ export default function FinancePage() {
           </div>
       )}
 
-      {/* 3. Penalty Modal */}
       {isPenaltyModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
              <div className="bg-[#1e1e1e] w-full max-w-md rounded-3xl border border-white/10 p-6 shadow-2xl">
@@ -769,7 +902,6 @@ export default function FinancePage() {
           </div>
       )}
 
-      {/* 4. Cancellation Review Modal */}
       {selectedCancellation && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
              <div className="bg-[#1e1e1e] w-full max-w-2xl rounded-3xl border border-white/10 shadow-2xl flex flex-col max-h-[90vh]">

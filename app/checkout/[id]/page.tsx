@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import {
   Tag, ArrowRight, ShieldCheck, Loader2,
   CheckCircle, AlertCircle, MapPin, Clock,
   CalendarOff, Calendar, Apple, PlayCircle,
-  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, Compass, CheckSquare, Image as ImageIcon, Ticket, Lock as LockIcon, X as XIcon, AlertTriangle, Briefcase, Home, Coffee, HeartPulse
+  Mountain, Wifi, Car, Flame, Waves, Sparkles, Wind, Tv, Utensils, Activity, Users, Tent, Building, Compass, CheckSquare, Image as ImageIcon, Ticket, Lock as LockIcon, XIcon, AlertTriangle, Briefcase, Home, Coffee, HeartPulse,
+  CalendarDays, X
 } from "lucide-react";
 import Image from "next/image";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
@@ -17,6 +18,13 @@ import { toast, Toaster } from "sonner";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const FALLBACK_IMAGE = "/placeholder.jpg";
+
+const DAYS_MAP: Record<string, string> = {
+  'Sunday': 'الأحد', 'Monday': 'الإثنين', 'Tuesday': 'الثلاثاء',
+  'Wednesday': 'الأربعاء', 'Thursday': 'الخميس', 'Friday': 'الجمعة', 'Saturday': 'السبت',
+  'Sun': 'الأحد', 'Mon': 'الإثنين', 'Tue': 'الثلاثاء', 'Wed': 'الأربعاء', 'Thu': 'الخميس', 'Fri': 'الجمعة', 'Sat': 'السبت'
+};
 
 const ALL_FEATURES_DICT: Record<string, any> = {
   yard: { label: "يوجد حوش", icon: MapPin },
@@ -59,31 +67,21 @@ const safeArray = (data: any) => {
   if (Array.isArray(data)) return data;
   if (typeof data === "string") {
     try {
-      return JSON.parse(data);
-    } catch {
-      return [];
-    }
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
   }
-  if (typeof data === "object") return Object.values(data);
   return [];
 };
 
-const formatTime12H = (timeStr: string) => {
-  if (!timeStr) return "";
-  try {
-    if (timeStr.includes("T")) {
-      const date = new Date(timeStr);
-      return date.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", hour12: true });
-    }
-    const [hourStr, minute] = timeStr.split(":");
-    let hour = parseInt(hourStr, 10);
-    const period = hour >= 12 ? "مساءً" : "صباحاً";
-    if (hour > 12) hour -= 12;
-    if (hour === 0) hour = 12;
-    return `${hour.toString().padStart(2, "0")}:${minute} ${period}`;
-  } catch {
-    return timeStr;
-  }
+const formatTime12H = (time24: string) => {
+  if (!time24) return "";
+  const [hourStr, minute] = time24.split(":");
+  let hour = parseInt(hourStr, 10);
+  const period = hour >= 12 ? "مساءً" : "صباحاً";
+  if (hour > 12) hour -= 12;
+  if (hour === 0) hour = 12;
+  return `${hour.toString().padStart(2, "0")}:${minute} ${period}`;
 };
 
 const formatDate = (dateStr: string) => {
@@ -99,11 +97,12 @@ const formatDate = (dateStr: string) => {
 const isVideo = (url: string) => url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes("video");
 
 const formatRemaining = (ms: number) => {
-  if (ms <= 0) return "00:00";
+  if (ms <= 0) return "00:00:00";
   const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
 function CheckoutContent() {
@@ -133,8 +132,10 @@ function CheckoutContent() {
     commission_tourist: 10,
     commission_housing: 15,
     commission_food: 5,
+    general_discount_code: "",
     general_discount_percent: 0,
-    is_general_discount_active: false
+    is_general_discount_active: false,
+    general_discount_categories: []
   });
 
   const [totals, setTotals] = useState({
@@ -160,13 +161,36 @@ function CheckoutContent() {
           .from("bookings")
           .select("*")
           .eq("id", bookingId)
-          .eq("status", "approved_unpaid")
-          .gt("expires_at", nowIso)
           .single();
 
         if (bookingError || !bookingData) {
           setExpired(true);
-          toast.error("انتهت مهلة الدفع أو أن الحجز غير متاح.");
+          toast.error("الحجز غير موجود.");
+          router.replace("/client/dashboard");
+          return;
+        }
+
+        if (bookingData.status === 'approved_unpaid' && bookingData.expires_at) {
+          const diff = new Date(bookingData.expires_at).getTime() - Date.now();
+          if (diff <= 0) {
+            await supabase
+              .from("bookings")
+              .update({ status: 'cancelled', payment_status: 'expired' })
+              .eq("id", bookingId);
+
+            setExpired(true);
+            toast.error("انتهت مهلة الدفع لهذا الحجز وتم إلغاؤه.");
+            router.replace("/client/dashboard");
+            return;
+          }
+          setRemainingMs(diff);
+        } else if (bookingData.status === 'cancelled' || bookingData.payment_status === 'expired') {
+          setExpired(true);
+          toast.error("انتهت مهلة الدفع لهذا الحجز وتم إلغاؤه.");
+          router.replace("/client/dashboard");
+          return;
+        } else if (bookingData.status !== 'approved_unpaid') {
+          toast.error("الحجز غير متاح للدفع حالياً.");
           router.replace("/client/dashboard");
           return;
         }
@@ -184,17 +208,6 @@ function CheckoutContent() {
 
         if (settingsData) setSettings(settingsData);
 
-        if (bookingData.expires_at) {
-          const diff = new Date(bookingData.expires_at).getTime() - Date.now();
-          if (diff <= 0) {
-            setExpired(true);
-            toast.error("انتهت مهلة الدفع لهذا الحجز.");
-            router.replace("/client/dashboard");
-            return;
-          }
-          setRemainingMs(diff);
-        }
-
         setBooking({
           ...bookingData,
           services: serviceData || {}
@@ -211,16 +224,22 @@ function CheckoutContent() {
   }, [bookingId, router]);
 
   useEffect(() => {
-    if (!booking?.expires_at) return;
+    if (!booking?.expires_at || expired) return;
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       const diff = new Date(booking.expires_at).getTime() - Date.now();
 
       if (diff <= 0) {
         clearInterval(interval);
         setRemainingMs(0);
         setExpired(true);
-        toast.error("انتهت مهلة الدفع لهذا الحجز.");
+
+        await supabase
+          .from("bookings")
+          .update({ status: 'cancelled', payment_status: 'expired' })
+          .eq("id", bookingId);
+
+        toast.error("انتهت مهلة الدفع لهذا الحجز وتم إلغاؤه.");
         router.replace("/client/dashboard");
         return;
       }
@@ -229,17 +248,22 @@ function CheckoutContent() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [booking?.expires_at, router]);
+  }, [booking?.expires_at, router, expired, bookingId]);
 
   useEffect(() => {
     if (!booking || !booking.services) return;
 
-    const quantity = booking.quantity || 1;
-    const totalServicePrice = Number(booking.services.price || 0) * quantity;
+    const totalServicePrice = Number(booking.total_price || 0);
 
     let generalDisc = 0;
     if (settings.is_general_discount_active && settings.general_discount_percent > 0) {
-      generalDisc = (totalServicePrice * settings.general_discount_percent) / 100;
+      const srvCat = booking.services.service_category;
+      const subCat = booking.services.sub_category;
+      const activeCats = safeArray(settings.general_discount_categories);
+
+      if (activeCats.includes(srvCat) || activeCats.includes(subCat)) {
+        generalDisc = (totalServicePrice * settings.general_discount_percent) / 100;
+      }
     }
 
     let couponDisc = 0;
@@ -274,8 +298,18 @@ function CheckoutContent() {
       .single();
 
     if (error || !data) {
-      setCouponError("الكوبون غير صالح");
+      setCouponError("الكوبون غير صالح أو غير موجود");
       return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    if (data.start_date && data.start_date > today) {
+        setCouponError("تاريخ بداية الكوبون لم يحن بعد");
+        return;
+    }
+    if (data.end_date && data.end_date < today) {
+        setCouponError("عذراً، الكوبون منتهي الصلاحية");
+        return;
     }
 
     setAppliedCoupon(data);
@@ -295,12 +329,29 @@ function CheckoutContent() {
         .from("bookings")
         .select("id, status, expires_at")
         .eq("id", bookingId)
-        .eq("status", "approved_unpaid")
-        .gt("expires_at", new Date().toISOString())
         .single();
 
       if (currentBookingCheck.error || !currentBookingCheck.data) {
+        throw new Error("حدث خطأ في قراءة الحجز");
+      }
+
+      if (currentBookingCheck.data.status !== 'approved_unpaid') {
+        throw new Error("الحجز غير متاح للدفع");
+      }
+
+      if (new Date(currentBookingCheck.data.expires_at).getTime() - Date.now() <= 0) {
         throw new Error("انتهت مهلة الدفع لهذا الحجز");
+      }
+
+      if (appliedCoupon) {
+          await supabase.from('bookings').update({
+              coupon_code: appliedCoupon.code,
+              total_price: totals.total,
+          }).eq('id', bookingId);
+      } else {
+          await supabase.from('bookings').update({
+              total_price: totals.total,
+          }).eq('id', bookingId);
       }
 
       if (totals.total <= 0) {
@@ -402,15 +453,18 @@ function CheckoutContent() {
   if (expired || !booking || !booking.services) {
     return (
       <div className="min-h-screen bg-[#121212] flex items-center justify-center text-white px-6 text-center">
-        <div className="bg-[#1e1e1e] border border-red-500/20 rounded-2xl p-8 max-w-md w-full">
-          <AlertTriangle className="mx-auto mb-4 text-red-400" size={42} />
-          <h2 className="text-xl font-bold mb-2">انتهت مهلة الدفع</h2>
-          <p className="text-white/60 text-sm mb-5">هذا الحجز لم يعد متاحًا للدفع أو العرض.</p>
+        <div className="bg-[#1e1e1e] border border-red-500/20 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <AlertTriangle className="mx-auto mb-4 text-red-400" size={52} />
+          <h2 className="text-2xl font-bold mb-2 text-white">انتهت مهلة الدفع</h2>
+          <p className="text-white/60 text-sm mb-8 leading-relaxed">
+            عذراً، لقد استنفدت الوقت المخصص لدفع هذا الحجز وتم إلغاؤه تلقائياً.
+            لم يعد متاحاً للإكمال.
+          </p>
           <button
             onClick={() => router.replace("/client/dashboard")}
-            className="w-full bg-white text-black hover:bg-gray-200 rounded-xl py-3 font-bold transition"
+            className="w-full bg-white text-black hover:bg-gray-200 rounded-xl py-3.5 font-bold transition flex items-center justify-center gap-2"
           >
-            العودة إلى حجوزاتي
+            العودة إلى لوحة التحكم
           </button>
         </div>
       </div>
@@ -421,6 +475,15 @@ function CheckoutContent() {
   const galleryImages = service.details?.images || (service.image_url ? [service.image_url] : []);
   const adultCount = booking.quantity || 1;
   const childCount = booking.details?.child_count || 0;
+  
+  // ✅ تعريف المتغيرات اللي كانت ناقصة لتعمل واجهة العرض بدون مشاكل
+  const todayDate = new Date().toISOString().split("T")[0];
+  const isExperience = service?.service_category === "experience" && service?.sub_category !== "event";
+  const validExpDates = isExperience
+    ? safeArray(service?.details?.experience_info?.dates)
+        .filter((d: string) => d >= todayDate)
+        .sort()
+    : [];
 
   return (
     <div className={`min-h-screen bg-[#121212] text-white py-12 px-4 md:px-8 ${tajawal.className}`} dir="rtl">
@@ -428,7 +491,7 @@ function CheckoutContent() {
 
       <div className="max-w-7xl mx-auto mb-8">
         <button
-          onClick={() => window.history.back()}
+          onClick={() => router.back()}
           className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-[#C89B3C] border border-white/10 px-5 py-2.5 rounded-xl transition duration-300 w-fit font-bold text-sm mb-6"
         >
           <ArrowRight size={18} /> رجوع
@@ -649,6 +712,52 @@ function CheckoutContent() {
                   </div>
                 </div>
               )}
+
+              <div className="pt-4 border-t border-white/10">
+                  {safeArray(service.blocked_dates).filter((d: string) => d >= todayDate).length > 0 ? (
+                      <div className="bg-red-500/5 border border-red-500/20 p-4 rounded-xl space-y-2">
+                          <h4 className="text-red-400 font-bold text-sm flex items-center gap-2">
+                              <CalendarOff size={16} /> الأيام غير المتاحة (محجوزة مسبقاً)
+                          </h4>
+                          <div className="flex flex-wrap gap-2 mt-2 max-h-32 overflow-y-auto custom-scrollbar">
+                              {safeArray(service.blocked_dates)
+                                  .filter((d: string) => d >= todayDate)
+                                  .sort()
+                                  .map((d: string) => (
+                                  <span key={d} className="text-xs bg-red-500/10 text-red-300 px-2 py-1 rounded font-mono border border-red-500/20">
+                                      {d}
+                                  </span>
+                              ))}
+                          </div>
+                      </div>
+                  ) : (
+                       <div className="bg-emerald-500/5 border border-emerald-500/20 p-4 rounded-xl flex items-center gap-2">
+                          <CalendarDays size={16} className="text-emerald-400" />
+                          <span className="text-sm font-bold text-emerald-400">متاح للحجز طوال الأيام القادمة</span>
+                       </div>
+                  )}
+              </div>
+
+              {service.details.deposit_config?.required && (
+                <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl mt-4 flex items-start gap-3">
+                  <ShieldCheck size={24} className="text-orange-400 shrink-0 mt-1" />
+                  <div>
+                    <h4 className="text-orange-400 font-bold mb-1">تأمين مسترد على المحتويات</h4>
+                    <p className="text-white/80 text-sm">
+                      يشترط دفع مبلغ تأمين بقيمة{" "}
+                      <strong className="text-orange-400">
+                        {service.details.deposit_config.amount} ريال
+                      </strong>{" "}
+                      {service.details.deposit_config.paymentTime === "with_booking"
+                        ? "يتم سداده مع الحجز بالمنصة"
+                        : "يُدفع نقداً للمزود عند الوصول"}
+                      .
+                      {service.details.deposit_config.isRefundable &&
+                        " التأمين مسترد بالكامل في حال تسليم السكن بدون تلفيات."}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -695,6 +804,30 @@ function CheckoutContent() {
                 </div>
               </div>
 
+              {validExpDates.length > 0 && (
+                <div className="pt-4 border-t border-white/10">
+                  <h4 className="font-bold mb-3 flex items-center gap-2 text-sm">
+                    <CalendarDays size={16} className="text-[#C89B3C]" />
+                    المواعيد المتاحة للتجربة
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {service.details.experience_info.start_time && (
+                      <span className="text-xs bg-[#C89B3C] text-black px-3 py-1.5 rounded-lg font-bold">
+                        يبدأ الساعة: {formatTime12H(service.details.experience_info.start_time)}
+                      </span>
+                    )}
+                    {validExpDates.map((d: string, i: number) => (
+                      <span
+                        key={i}
+                        className="text-xs bg-white/10 px-3 py-1.5 rounded-lg dir-ltr border border-white/10"
+                      >
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(safeArray(service.details.experience_info.included_services).length > 0 ||
                 safeArray(service.details.experience_info.custom_services).length > 0) && (
                 <div className="pt-4 border-t border-white/10">
@@ -720,20 +853,57 @@ function CheckoutContent() {
               {service.details.experience_info.food_details && (
                 <div className="bg-[#C89B3C]/10 border border-[#C89B3C]/20 p-4 rounded-xl space-y-2">
                   <h4 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2">
-                    <Utensils size={16} /> تفاصيل الوجبة
+                    <Utensils size={16} /> تفاصيل وجبة الطعام المقدمة
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 text-sm">
                     <p>
                       <span className="text-white/50">نوع الوجبة:</span>{" "}
                       <span className="font-bold text-white">{service.details.experience_info.food_details.mealType}</span>
                     </p>
+                    {service.details.experience_info.food_details.calories && (
+                      <p>
+                        <span className="text-white/50">السعرات الحرارية:</span>{" "}
+                        <span className="font-bold text-white">{service.details.experience_info.food_details.calories}</span>
+                      </p>
+                    )}
                     <p className="md:col-span-2">
-                      <span className="text-white/50">المكونات:</span>{" "}
+                      <span className="text-white/50">المشروبات:</span>{" "}
+                      <span className="text-white">{service.details.experience_info.food_details.drinks}</span>
+                    </p>
+                    <p className="md:col-span-2">
+                      <span className="text-white/50 block mb-1">المكونات والمحتويات:</span>
                       <span className="text-white bg-black/20 p-2 rounded block mt-1">
                         {service.details.experience_info.food_details.contents}
                       </span>
                     </p>
                   </div>
+                </div>
+              )}
+
+              {(service.details.experience_info.what_to_bring ||
+                service.details.experience_info.cancellation_policy) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                  {service.details.experience_info.what_to_bring && (
+                    <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                      <h4 className="text-[#C89B3C] font-bold text-sm mb-2 flex items-center gap-2">
+                        <AlertCircle size={16} /> المطلوب إحضاره
+                      </h4>
+                      <p className="text-white/80 text-xs leading-relaxed whitespace-pre-line">
+                        {service.details.experience_info.what_to_bring}
+                      </p>
+                    </div>
+                  )}
+
+                  {service.details.experience_info.cancellation_policy && (
+                    <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                      <h4 className="text-red-400 font-bold text-sm mb-2 flex items-center gap-2">
+                        <XIcon size={16} /> سياسة الإلغاء والاسترجاع
+                      </h4>
+                      <p className="text-white/80 text-xs leading-relaxed whitespace-pre-line">
+                        {service.details.experience_info.cancellation_policy}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -790,88 +960,6 @@ function CheckoutContent() {
             </div>
           )}
 
-          {service.sub_category === "facility" && safeArray(service.details?.facility_services).length > 0 && (
-            <div className="bg-[#1e1e1e] p-6 rounded-3xl border border-white/5 shadow-xl">
-              <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <Activity size={20} className="text-[#C89B3C]" /> الخدمات المتوفرة بالداخل
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {safeArray(service.details.facility_services).map((srv: any, i: number) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-4 bg-white/5 p-3 rounded-xl border border-white/10"
-                  >
-                    {srv.image_url ? (
-                      <div
-                        className="relative w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-black cursor-pointer"
-                        onClick={() => setZoomedImage(srv.image_url)}
-                      >
-                        <Image src={srv.image_url} fill className="object-cover hover:scale-110 transition" alt={srv.name} />
-                      </div>
-                    ) : (
-                      <div className="w-16 h-16 shrink-0 bg-black/40 rounded-lg flex items-center justify-center">
-                        <ImageIcon className="text-white/20" />
-                      </div>
-                    )}
-                    <div>
-                      <h4 className="font-bold text-white text-sm">{srv.name}</h4>
-                      {srv.description && <p className="text-xs text-white/50 mt-1 line-clamp-2">{srv.description}</p>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="bg-red-500/5 p-6 rounded-3xl border border-red-500/20 shadow-xl space-y-5">
-            <h3 className="text-xl font-bold flex items-center gap-2 text-red-400 border-b border-red-500/20 pb-3">
-              <AlertTriangle size={20} /> السياسات وشروط الحجز
-            </h3>
-
-            {service.details?.policies && (
-              <div>
-                <h4 className="text-sm font-bold text-white mb-2">السياسات العامة:</h4>
-                <p className="text-white/70 text-sm leading-relaxed whitespace-pre-line bg-black/40 p-4 rounded-xl">
-                  {service.details.policies}
-                </p>
-              </div>
-            )}
-
-            {service.details?.experience_info?.what_to_bring && (
-              <div>
-                <h4 className="text-sm font-bold text-[#C89B3C] mb-2">المتطلبات (ماذا تحضر معك):</h4>
-                <p className="text-white/70 text-sm leading-relaxed whitespace-pre-line bg-black/40 p-4 rounded-xl">
-                  {service.details.experience_info.what_to_bring}
-                </p>
-              </div>
-            )}
-
-            {service.details?.experience_info?.cancellation_policy && (
-              <div>
-                <h4 className="text-sm font-bold text-white mb-2">سياسة الإلغاء:</h4>
-                <p className="text-white/70 text-sm leading-relaxed whitespace-pre-line bg-black/40 p-4 rounded-xl">
-                  {service.details.experience_info.cancellation_policy}
-                </p>
-              </div>
-            )}
-
-            {service.details?.deposit_config?.required && (
-              <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl flex items-start gap-3">
-                <ShieldCheck size={24} className="text-orange-400 shrink-0 mt-1" />
-                <div>
-                  <h4 className="text-orange-400 font-bold mb-1">تأمين مسترد على المحتويات</h4>
-                  <p className="text-white/80 text-sm">
-                    يشترط دفع مبلغ تأمين{" "}
-                    {service.details.deposit_config.paymentTime === "with_booking"
-                      ? "يتم سداده مع الحجز بالمنصة"
-                      : "يُدفع نقداً للمزود عند الوصول"}
-                    .{service.details.deposit_config.isRefundable && " (التأمين مسترد بالكامل في حال عدم وجود تلفيات)."}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
           {service.location_lat && service.location_lng && (
             <div className="bg-[#1e1e1e] p-2 rounded-3xl border border-white/5 shadow-xl overflow-hidden h-80 relative group">
               <Map
@@ -908,7 +996,9 @@ function CheckoutContent() {
                   <Clock size={16} />
                   الوقت المتبقي للدفع
                 </span>
-                <span className="font-mono text-lg text-white">{formatRemaining(remainingMs)}</span>
+                <span className="font-mono text-lg text-white" dir="ltr">
+                  {formatRemaining(remainingMs)}
+                </span>
               </div>
             </div>
 
@@ -1057,7 +1147,7 @@ function CheckoutContent() {
             >
               {processing ? (
                 <>
-                  <Loader2 className="animate-spin" size={20} /> جاري إنشاء رابط الدفع...
+                  <Loader2 className="animate-spin" size={20} /> جاري الدفع والتأكيد...
                 </>
               ) : expired ? (
                 <>
