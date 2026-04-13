@@ -17,67 +17,67 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 // ✅ قاموس لترجمة جميع المميزات بدقة
 const ALL_FEATURES_DICT: Record<string, any> = {
-    'yard': { label: 'يوجد حوش', icon: MapPin },
-    'view': { label: 'إطلالة مميزة', icon: Mountain },
-    'farm': { label: 'مزرعة', icon: MapPin },
-    'main_road': { label: 'على الطريق العام', icon: MapPin },
-    'services_nearby': { label: 'بالقرب من خدمات', icon: MapPin },
-    'wifi': { label: 'واي فاي مجاني', icon: Wifi },
-    'parking': { label: 'مواقف سيارات', icon: Car },
-    'bbq': { label: 'منطقة شواء', icon: Flame },
-    'pool': { label: 'مسبح خاص', icon: Waves },
-    'cleaning': { label: 'خدمة تنظيف', icon: Sparkles },
-    'ac': { label: 'تكييف', icon: Wind },
-    'tv': { label: 'تلفزيون', icon: Tv },
-    'kitchen': { label: 'مطبخ مجهز', icon: Utensils },
-    'volleyball': { label: 'ملعب طائرة', icon: Activity },
-    'football': { label: 'ملعب كرة قدم', icon: Activity },
-    'men_majlis': { label: 'مجلس رجال', icon: Users },
-    'women_majlis': { label: 'مجلس نساء', icon: Users },
-    'kids_area': { label: 'ألعاب أطفال', icon: Activity },
-    'green_area': { label: 'مسطحات خضراء', icon: MapPin },
-    'transport': { label: 'مركبة للنقل', icon: Car },
-    'tent': { label: 'خيمة للاستراحة', icon: Tent },
-    'floor_seating': { label: 'جلسات أرضية', icon: Users },
-    'chairs': { label: 'كراسي متنقلة', icon: Users },
-    'water': { label: 'مياه شرب', icon: Coffee },
-    'food': { label: 'وجبات طعام', icon: Utensils },
-    'kiosks': { label: 'أكشاك بيع', icon: Building },
-    'rides': { label: 'ملاهي وألعاب', icon: Activity },
-    'seating': { label: 'جلسات عامة', icon: Users },
-    'cable_car': { label: 'تلفريك', icon: MapPin },
-    'live_shows': { label: 'عروض حية', icon: Tv },
-    'security': { label: 'حراسة / أمان', icon: ShieldCheck },
-    'firstaid': { label: 'إسعافات أولية', icon: HeartPulse },
-    'breakfast': { label: 'إفطار مشمول', icon: Coffee }
+  'yard': { label: 'يوجد حوش', icon: MapPin },
+  'view': { label: 'إطلالة مميزة', icon: Mountain },
+  'farm': { label: 'مزرعة', icon: MapPin },
+  'main_road': { label: 'على الطريق العام', icon: MapPin },
+  'services_nearby': { label: 'بالقرب من خدمات', icon: MapPin },
+  'wifi': { label: 'واي فاي مجاني', icon: Wifi },
+  'parking': { label: 'مواقف سيارات', icon: Car },
+  'bbq': { label: 'منطقة شواء', icon: Flame },
+  'pool': { label: 'مسبح خاص', icon: Waves },
+  'cleaning': { label: 'خدمة تنظيف', icon: Sparkles },
+  'ac': { label: 'تكييف', icon: Wind },
+  'tv': { label: 'تلفزيون', icon: Tv },
+  'kitchen': { label: 'مطبخ مجهز', icon: Utensils },
+  'volleyball': { label: 'ملعب طائرة', icon: Activity },
+  'football': { label: 'ملعب كرة قدم', icon: Activity },
+  'men_majlis': { label: 'مجلس رجال', icon: Users },
+  'women_majlis': { label: 'مجلس نساء', icon: Users },
+  'kids_area': { label: 'ألعاب أطفال', icon: Activity },
+  'green_area': { label: 'مسطحات خضراء', icon: MapPin },
+  'transport': { label: 'مركبة للنقل', icon: Car },
+  'tent': { label: 'خيمة للاستراحة', icon: Tent },
+  'floor_seating': { label: 'جلسات أرضية', icon: Users },
+  'chairs': { label: 'كراسي متنقلة', icon: Users },
+  'water': { label: 'مياه شرب', icon: Coffee },
+  'food': { label: 'وجبات طعام', icon: Utensils },
+  'kiosks': { label: 'أكشاك بيع', icon: Building },
+  'rides': { label: 'ملاهي وألعاب', icon: Activity },
+  'seating': { label: 'جلسات عامة', icon: Users },
+  'cable_car': { label: 'تلفريك', icon: MapPin },
+  'live_shows': { label: 'عروض حية', icon: Tv },
+  'security': { label: 'حراسة / أمان', icon: ShieldCheck },
+  'firstaid': { label: 'إسعافات أولية', icon: HeartPulse },
+  'breakfast': { label: 'إفطار مشمول', icon: Coffee }
 };
 
 const safeArray = (data: any) => {
-    if (!data) return [];
-    if (Array.isArray(data)) return data;
-    if (typeof data === 'string') { try { return JSON.parse(data); } catch { return []; } }
-    if (typeof data === 'object') return Object.values(data);
-    return [];
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'string') { try { return JSON.parse(data); } catch { return []; } }
+  if (typeof data === 'object') return Object.values(data);
+  return [];
 };
 
 const isVideo = (url: string) => url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes('video');
 
 const formatTime12H = (timeStr: string) => {
-    if (!timeStr) return "";
-    try {
-        if (timeStr.includes('T')) return new Date(timeStr).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
-        const [hourStr, minute] = timeStr.split(':');
-        let hour = parseInt(hourStr, 10);
-        const period = hour >= 12 ? 'مساءً' : 'صباحاً';
-        if (hour > 12) hour -= 12;
-        if (hour === 0) hour = 12;
-        return `${hour.toString().padStart(2, '0')}:${minute} ${period}`;
-    } catch { return timeStr; }
+  if (!timeStr) return "";
+  try {
+    if (timeStr.includes('T')) return new Date(timeStr).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const [hourStr, minute] = timeStr.split(':');
+    let hour = parseInt(hourStr, 10);
+    const period = hour >= 12 ? 'مساءً' : 'صباحاً';
+    if (hour > 12) hour -= 12;
+    if (hour === 0) hour = 12;
+    return `${hour.toString().padStart(2, '0')}:${minute} ${period}`;
+  } catch { return timeStr; }
 };
 
 const formatDate = (dateStr: string) => {
-    if (!dateStr) return "";
-    return new Date(dateStr).toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  if (!dateStr) return "";
+  return new Date(dateStr).toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 };
 
 const CountdownTimer = ({ expiresAt }: { expiresAt: string }) => {
@@ -131,7 +131,32 @@ export default function TripsPage() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setTrips(data as any);
+
+      // تحديث حالة الحجوزات المنتهية محلياً (قبل العرض) وتحديثها في القاعدة
+      const nowMs = new Date().getTime();
+      const expiredIds: string[] = [];
+      
+      const processedData = data?.map((trip: any) => {
+          if (trip.status === 'approved_unpaid' && trip.expires_at) {
+              const expMs = new Date(trip.expires_at).getTime();
+              if (expMs < nowMs) {
+                  expiredIds.push(trip.id);
+                  trip.status = 'cancelled';
+                  trip.payment_status = 'expired';
+              }
+          }
+          return trip;
+      }) || [];
+
+      if (expiredIds.length > 0) {
+          // تحديث صامت في الخلفية لتسجيل الانتهاء
+          supabase.from("bookings")
+            .update({ status: 'cancelled', payment_status: 'expired' })
+            .in('id', expiredIds)
+            .then(() => console.log('Expired bookings updated'));
+      }
+
+      setTrips(processedData);
     } catch (error) {
       console.error("Error fetching trips:", error);
     } finally {
@@ -157,14 +182,18 @@ export default function TripsPage() {
       return <span key={id} className="text-xs bg-white/5 text-white/90 px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-1.5"><CheckSquare size={14} className="text-[#C89B3C]" /> {id}</span>;
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, paymentStatus?: string) => {
+    if (status === 'cancelled' && paymentStatus === 'expired') {
+        return <div className="flex items-center gap-1 text-red-400 bg-red-400/10 px-3 py-1 rounded-full text-xs font-bold border border-red-400/20"><XCircle size={14} /> انتهت المهلة (لم يتم الدفع)</div>;
+    }
+    
     switch (status) {
       case 'confirmed': return <div className="flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full text-xs font-bold border border-emerald-400/20"><CheckCircle2 size={14} /> مؤكد ومدفوع</div>;
       case 'approved_unpaid': return <div className="flex items-center gap-1 text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full text-xs font-bold border border-blue-500/20"><Hourglass size={14} /> بانتظار الدفع</div>;
-      case 'pending': return <div className="flex items-center gap-1 text-amber-400 bg-amber-400/10 px-3 py-1 rounded-full text-xs font-bold border border-amber-400/20"><Hourglass size={14} /> قيد مراجعة المزود</div>;
+      case 'pending': return <div className="flex items-center gap-1 text-amber-400 bg-amber-400/10 px-3 py-1 rounded-full text-xs font-bold border border-amber-400/20"><Hourglass size={14} /> بانتظار المزود</div>;
       case 'completed': return <div className="flex items-center gap-1 text-gray-400 bg-gray-400/10 px-3 py-1 rounded-full text-xs font-bold border border-gray-400/20"><CheckCircle2 size={14} /> مكتملة</div>;
-      case 'rejected': return <div className="flex items-center gap-1 text-red-400 bg-red-400/10 px-3 py-1 rounded-full text-xs font-bold border border-red-400/20"><XCircle size={14} /> مرفوض</div>;
-      case 'cancelled': return <div className="flex items-center gap-1 text-red-400 bg-red-400/10 px-3 py-1 rounded-full text-xs font-bold border border-red-400/20"><XCircle size={14} /> ملغية</div>;
+      case 'rejected': return <div className="flex items-center gap-1 text-red-400 bg-red-400/10 px-3 py-1 rounded-full text-xs font-bold border border-red-400/20"><XCircle size={14} /> مرفوض من المزود</div>;
+      case 'cancelled': return <div className="flex items-center gap-1 text-red-400 bg-red-400/10 px-3 py-1 rounded-full text-xs font-bold border border-red-400/20"><XCircle size={14} /> ملغي</div>;
       default: return null;
     }
   };
@@ -210,6 +239,9 @@ export default function TripsPage() {
             const childCount = trip.details?.child_count || 0;
             const galleryImages = srv?.details?.images || (srv?.image_url ? [srv.image_url] : []);
             const menuItems = safeArray(srv?.menu_items);
+            
+            // التحقق من انتهاء المهلة
+            const isExpired = trip.status === 'cancelled' && trip.payment_status === 'expired';
 
             return (
             <div key={trip.id} className={`group flex flex-col bg-[#252525] border ${isExpanded ? 'border-[#C89B3C]/50 shadow-lg shadow-[#C89B3C]/10' : 'border-white/5 shadow-lg hover:border-[#C89B3C]/30'} rounded-2xl overflow-hidden transition-all duration-300`}>
@@ -222,7 +254,7 @@ export default function TripsPage() {
                      ) : (
                          <Image src="/logo.png" alt="Service" width={80} height={40} className="opacity-30 group-hover:opacity-60 transition" />
                      )}
-                     <div className="absolute top-3 right-3 md:hidden">{getStatusBadge(trip.status)}</div>
+                     <div className="absolute top-3 right-3 md:hidden">{getStatusBadge(trip.status, trip.payment_status)}</div>
                   </div>
 
                   <div className="flex-1 p-6 flex flex-col justify-between">
@@ -234,7 +266,7 @@ export default function TripsPage() {
                           <span className="flex items-center gap-1.5"><Users size={16} className="text-[#C89B3C]"/> {adultCount + childCount} ضيوف/تذاكر</span>
                         </div>
                       </div>
-                      <div className="hidden md:block">{getStatusBadge(trip.status)}</div>
+                      <div className="hidden md:block">{getStatusBadge(trip.status, trip.payment_status)}</div>
                     </div>
 
                     <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5 mt-4 group-hover:border-white/10 transition">
@@ -260,7 +292,7 @@ export default function TripsPage() {
               </div>
 
               {/* التنبيهات والأزرار العلوية */}
-              {trip.status === 'rejected' && (
+              {trip.status === 'rejected' && !isExpired && (
                   <div className="p-5 bg-red-500/10 border-t border-red-500/20 flex items-start gap-3">
                       <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
                       <div>
@@ -269,8 +301,18 @@ export default function TripsPage() {
                       </div>
                   </div>
               )}
+              
+              {isExpired && (
+                  <div className="p-5 bg-red-500/10 border-t border-red-500/20 flex items-start gap-3">
+                      <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
+                      <div>
+                          <p className="text-red-400 font-bold text-sm mb-1">انتهت مهلة الدفع</p>
+                          <p className="text-white/70 text-sm leading-relaxed">عذراً، لقد استنفدت الوقت المخصص لدفع هذا الحجز. لم يعد متاحاً للإكمال وتم إلغاء الطلب.</p>
+                      </div>
+                  </div>
+              )}
 
-              {trip.status === 'approved_unpaid' && trip.expires_at && (
+              {trip.status === 'approved_unpaid' && trip.expires_at && !isExpired && (
                   <div className="p-5 bg-blue-500/10 border-t border-blue-500/20 flex flex-col md:flex-row items-center justify-between gap-4">
                       <div className="flex items-center gap-3 w-full md:w-auto">
                           <Timer className="text-blue-400 shrink-0" size={24} />
@@ -534,8 +576,8 @@ export default function TripsPage() {
                                   </div>
                               )}
 
-                              {/* زر استكمال الدفع إذا كان الحجز معلق دفع */}
-                              {trip.status === 'approved_unpaid' && (
+                              {/* زر استكمال الدفع إذا كان الحجز معلق دفع ولم تنتهي المهلة */}
+                              {trip.status === 'approved_unpaid' && !isExpired && (
                                   <Link href={`/checkout/${trip.id}`} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition shadow-lg shadow-blue-600/20 flex justify-center items-center gap-2">
                                       <CreditCard size={18} /> دفع وتأكيد الحجز الآن
                                   </Link>
