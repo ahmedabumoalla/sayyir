@@ -25,9 +25,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'merchant_order_id is missing' }, { status: 400 });
     }
 
-    const bookingId = merchantOrderId.startsWith('SAYYIR__')
+    // 👇 التعديل هنا لضمان استخراج الـ ID الصحيح بدون التوقيت الزمني 👇
+    let rawBookingId = merchantOrderId.startsWith('SAYYIR__')
       ? merchantOrderId.replace('SAYYIR__', '')
       : merchantOrderId;
+
+    if (rawBookingId.startsWith('SAYYIR-')) {
+      rawBookingId = rawBookingId.replace('SAYYIR-', '');
+    }
+
+    const bookingId = rawBookingId.split('_')[0];
+    // 👆 نهاية التعديل 👆
 
     const { data: currentBooking, error: fetchError } = await supabaseAdmin
       .from('bookings')

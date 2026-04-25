@@ -18,9 +18,17 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/client/dashboard?error=missing_order_id', request.url));
     }
 
-    const bookingId = merchantOrderId.startsWith('SAYYIR__')
+    // 👇 التعديل هنا لضمان استخراج الـ ID الصحيح بدون التوقيت الزمني 👇
+    let rawBookingId = merchantOrderId.startsWith('SAYYIR__')
       ? merchantOrderId.replace('SAYYIR__', '')
       : merchantOrderId;
+
+    if (rawBookingId.startsWith('SAYYIR-')) {
+      rawBookingId = rawBookingId.replace('SAYYIR-', '');
+    }
+
+    const bookingId = rawBookingId.split('_')[0];
+    // 👆 نهاية التعديل 👆
 
     const { data: booking, error: fetchError } = await supabaseAdmin
       .from('bookings')
