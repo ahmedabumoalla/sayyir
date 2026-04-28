@@ -142,21 +142,28 @@ export async function POST(req: Request) {
         ? 'http://localhost:3000'
         : (process.env.NEXT_PUBLIC_SITE_URL || 'https://sayyir.sa');
 
-    fetch(`${baseUrl}/api/emails/send`, {
+    const emailResponse = await fetch(`${baseUrl}/api/emails/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'provider_approved',
         email: requestData.email,
-        name: requestData.name,
-        password: tempPassword || 'كلمة مرورك السابقة (لديك حساب مسبقاً)',
-        clientPhone: requestData.phone,
+        phone: requestData.phone,
+        providerName: requestData.name,
+        password: tempPassword || 'لديك حساب مسبق',
       }),
-    }).catch(() => {});
+    });
+
+    const emailResult = await emailResponse.json();
+
+    if (!emailResponse.ok) {
+      console.error("EMAIL SEND ERROR:", emailResult);
+    }
 
     return NextResponse.json({
       success: true,
       message: "تمت الموافقة وإرسال الإشعارات بنجاح",
+      emailResult,
     });
   } catch (error: any) {
     console.error("APPROVE ERROR:", error);
