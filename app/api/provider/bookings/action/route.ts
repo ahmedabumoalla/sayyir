@@ -1,17 +1,30 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireProvider } from '@/lib/requireProvider';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
 export async function POST(request: Request) {
   try {
+    const { provider, error: providerAuthError } = await requireProvider(request);
+
+    if (providerAuthError || !provider) {
+      return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { bookingId, action, rejectReason } = body;
 
-    console.log('PROVIDER BOOKING ACTION INPUT:', { bookingId, action, rejectReason });
+    console.log('PROVIDER BOOKING ACTION INPUT:', {
+      bookingId,
+      action,
+      rejectReason,
+      providerId: provider.id,
+    });
 
     if (!bookingId || !action) {
       return NextResponse.json(
@@ -41,7 +54,19 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('BOOKING FOUND:', booking);
+    if (booking.provider_id !== provider.id) {
+      return NextResponse.json(
+        { error: 'لا تملك صلاحية اتخاذ إجراء على هذا الحجز' },
+        { status: 403 }
+      );
+    }
+
+    if (booking.status !== 'pending') {
+      return NextResponse.json(
+        { error: 'لا يمكن اتخاذ إجراء على حجز ليس في انتظار موافقة المزود' },
+        { status: 400 }
+      );
+    }
 
     const { data: client, error: clientError } = await supabaseAdmin
       .from('profiles')
@@ -63,7 +88,7 @@ export async function POST(request: Request) {
       console.error('SERVICE FETCH ERROR:', serviceError);
     }
 
-    const { data: provider, error: providerError } = await supabaseAdmin
+    const { data: providerProfile, error: providerError } = await supabaseAdmin
       .from('profiles')
       .select('id, full_name, email, phone')
       .eq('id', booking.provider_id)
@@ -73,17 +98,17 @@ export async function POST(request: Request) {
       console.error('PROVIDER FETCH ERROR:', providerError);
     }
 
-    console.log('CLIENT DATA FOR EMAIL:', client);
-    console.log('PROVIDER DATA FOR EMAIL:', provider);
-    console.log('SERVICE DATA FOR EMAIL:', service);
+    const currentOrigin = new URL(request.url).origin;
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || currentOrigin;
 
     if (action === 'approve') {
       const now = new Date();
       const executionDate = booking.execution_date ? new Date(booking.execution_date) : null;
-      let expiresAt = new Date();
+      const expiresAt = new Date();
 
       if (executionDate) {
         const diffInHours = (executionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
         if (diffInHours <= 3 && diffInHours > 0) {
           expiresAt.setHours(expiresAt.getHours() + 1);
         } else {
@@ -98,7 +123,7 @@ export async function POST(request: Request) {
         .update({
           status: 'approved_unpaid',
           expires_at: expiresAt.toISOString(),
-          rejection_reason: null
+          rejection_reason: null,
         })
         .eq('id', bookingId)
         .select('*')
@@ -112,9 +137,6 @@ export async function POST(request: Request) {
         );
       }
 
-      // ✅ التعديل هنا: جلب الرابط الأساسي وتوجيه العميل إلى صفحة "رحلاتي" في الداشبورد
-      const currentOrigin = new URL(request.url).origin;
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || currentOrigin;
       const clientDashboardUrl = `${baseUrl}/client/dashboard`;
 
       if (client?.email || client?.phone) {
@@ -126,17 +148,15 @@ export async function POST(request: Request) {
             bookingId: updatedBooking.id.split('-')[0].toUpperCase(),
             clientName: client?.full_name || 'عميل',
             serviceName: service?.title || service?.name || 'خدمة سيّر',
-            paymentLink: clientDashboardUrl // ✅ تمرير رابط الداشبورد بدلاً من التشيك آوت
-          }
+            paymentLink: clientDashboardUrl,
+          },
         };
-
-        console.log('APPROVE EMAIL REQUEST PAYLOAD:', approvePayload);
 
         try {
           const emailResponse = await fetch(`${baseUrl}/api/emails/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(approvePayload)
+            body: JSON.stringify(approvePayload),
           });
 
           const emailResult = await emailResponse.json();
@@ -149,14 +169,12 @@ export async function POST(request: Request) {
         } catch (err) {
           console.error('APPROVE EMAIL FETCH ERROR:', err);
         }
-      } else {
-        console.error('APPROVE EMAIL SKIPPED: client has no email or phone', client);
       }
 
       return NextResponse.json({
         success: true,
-        message: 'تمت الموافقة على الحجز وإرسال رابط الداشبورد للعميل',
-        booking: updatedBooking
+        message: 'تمت الموافقة على الحجز وإرسال رابط الدفع للعميل',
+        booking: updatedBooking,
       });
     }
 
@@ -166,7 +184,7 @@ export async function POST(request: Request) {
       .from('bookings')
       .update({
         status: 'rejected',
-        rejection_reason: finalRejectReason
+        rejection_reason: finalRejectReason,
       })
       .eq('id', bookingId)
       .select('*')
@@ -181,9 +199,6 @@ export async function POST(request: Request) {
     }
 
     if (client?.email || client?.phone) {
-      const currentOrigin = new URL(request.url).origin;
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || currentOrigin;
-
       const rejectPayload = {
         templateId: 'booking_rejected',
         email: client?.email,
@@ -192,17 +207,15 @@ export async function POST(request: Request) {
           bookingId: rejectedBooking.id.split('-')[0].toUpperCase(),
           clientName: client?.full_name || 'عميل',
           serviceName: service?.title || service?.name || 'خدمة سيّر',
-          reason: finalRejectReason
-        }
+          reason: finalRejectReason,
+        },
       };
-
-      console.log('REJECT EMAIL REQUEST PAYLOAD:', rejectPayload);
 
       try {
         const rejectEmailResponse = await fetch(`${baseUrl}/api/emails/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(rejectPayload)
+          body: JSON.stringify(rejectPayload),
         });
 
         const rejectEmailResult = await rejectEmailResponse.json();
@@ -215,14 +228,12 @@ export async function POST(request: Request) {
       } catch (err) {
         console.error('REJECT EMAIL FETCH ERROR:', err);
       }
-    } else {
-      console.error('REJECT EMAIL SKIPPED: client has no email or phone', client);
     }
 
     return NextResponse.json({
       success: true,
       message: 'تم رفض الحجز وإرسال السبب للعميل',
-      booking: rejectedBooking
+      booking: rejectedBooking,
     });
   } catch (error: any) {
     console.error('PROVIDER BOOKING ACTION ROUTE ERROR:', error);

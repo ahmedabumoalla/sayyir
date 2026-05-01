@@ -590,7 +590,7 @@ export default function ServiceDetailsPage() {
           serviceData.service_category === "experience" &&
           serviceData.sub_category !== "event";
 
-        if (isLimited && (serviceData.max_capacity === 0 || serviceData.max_capacity === null)) {
+        if (isLimited && serviceData.max_capacity === 0) {
           setGuestCount(0);
         }
       }
@@ -602,9 +602,13 @@ export default function ServiceDetailsPage() {
     }
   };
 
-  const isLimitedCapacity = isExperience;
+  const isLimitedCapacity =
+    isExperience &&
+    service?.max_capacity !== null &&
+    service?.max_capacity !== undefined;
+
   const isSoldOut = isLimitedCapacity
-    ? service?.max_capacity === null || service?.max_capacity <= 0
+    ? Number(service?.max_capacity || 0) <= 0
     : false;
 
   const quantityLabel = isLodging
@@ -615,10 +619,12 @@ export default function ServiceDetailsPage() {
 
   const incrementGuests = () => {
     if (isLimitedCapacity) {
-      if (service.max_capacity && guestCount < service.max_capacity) {
+      const availableSeats = Number(service.max_capacity || 0);
+
+      if (guestCount < availableSeats) {
         setGuestCount((prev) => prev + 1);
       } else {
-        toast.error(`عذراً، المقاعد المتبقية هي ${service.max_capacity} فقط.`);
+        toast.error(`عذراً، المقاعد المتبقية هي ${availableSeats} فقط.`);
       }
     } else {
       if (guestCount < 50) {
@@ -1769,7 +1775,7 @@ export default function ServiceDetailsPage() {
                       <div className="flex items-center gap-2 pl-3">
                         <Users size={18} className="text-[#C89B3C]" />
                         {isLimitedCapacity && (
-                          <span className="text-[10px] text-red-400">متبقي: {service.max_capacity}</span>
+                          <span className="text-[10px] text-[#C89B3C]">المقاعد المتاحة: {service.max_capacity}</span>
                         )}
                       </div>
                       <div className="flex items-center gap-4">

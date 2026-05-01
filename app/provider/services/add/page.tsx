@@ -693,6 +693,25 @@ export default function AddServicePage() {
                                 </div>
                             </div>
 
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                                <div className="space-y-2">
+                                    <label className="text-sm text-white/70 font-bold block mb-1">
+                                        عدد المقاعد المتاحة للتجربة <span className="text-white/40 text-xs">(اختياري)</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={capacity}
+                                        onChange={e => setCapacity(e.target.value)}
+                                        placeholder="مثال: 20"
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-[#C89B3C] dir-ltr text-right"
+                                    />
+                                    <p className="text-xs text-white/40 leading-relaxed">
+                                        إذا تركته فارغاً لن يتم تحديد عدد مقاعد للتجربة. وإذا تم تحديده سيظهر للعميل عدد المقاعد المتاحة.
+                                    </p>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="space-y-2">
                                     <label className="text-sm text-white/70 font-bold block mb-1">المدة (طول التجربة)</label>
