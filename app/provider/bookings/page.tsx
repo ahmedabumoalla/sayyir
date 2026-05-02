@@ -144,16 +144,16 @@ export default function ProviderBookingsPage() {
   const handleApprove = async () => {
     if (!selectedBooking) return;
     setActionLoading(true);
-  
+
     try {
       const {
         data: { session }
       } = await supabase.auth.getSession();
-  
+
       if (!session) {
         throw new Error("جلسة العمل منتهية، يرجى تسجيل الدخول مرة أخرى");
       }
-  
+
       const response = await fetch("/api/provider/bookings/action", {
         method: "POST",
         headers: {
@@ -165,13 +165,13 @@ export default function ProviderBookingsPage() {
           action: "approve"
         })
       });
-  
+
       const result = await response.json();
-  
+
       if (!response.ok) {
         throw new Error(result?.error || "فشل قبول الحجز");
       }
-  
+
       alert("✅ تم قبول الطلب وإرسال رابط الدفع للعميل.");
       setSelectedBooking(null);
       setShowRejectModal(false);
@@ -189,18 +189,18 @@ export default function ProviderBookingsPage() {
       alert("الرجاء كتابة سبب الرفض");
       return;
     }
-  
+
     setActionLoading(true);
-  
+
     try {
       const {
         data: { session }
       } = await supabase.auth.getSession();
-  
+
       if (!session) {
         throw new Error("جلسة العمل منتهية، يرجى تسجيل الدخول مرة أخرى");
       }
-  
+
       const response = await fetch("/api/provider/bookings/action", {
         method: "POST",
         headers: {
@@ -213,13 +213,13 @@ export default function ProviderBookingsPage() {
           rejectReason: rejectReason.trim()
         })
       });
-  
+
       const result = await response.json();
-  
+
       if (!response.ok) {
         throw new Error(result?.error || "فشل رفض الحجز");
       }
-  
+
       await supabase.from("admin_notifications").insert([
         {
           booking_id: selectedBooking.id,
@@ -232,18 +232,6 @@ export default function ProviderBookingsPage() {
           }
         }
       ]);
-  
-      alert("تم رفض الطلب وإرسال السبب للعميل.");
-      setShowRejectModal(false);
-      setSelectedBooking(null);
-      setRejectReason("");
-      await fetchBookings();
-    } catch (err: any) {
-      alert("خطأ: " + (err?.message || "حدث خطأ غير متوقع"));
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
       alert("تم رفض الطلب وإرسال السبب للعميل.");
       setShowRejectModal(false);
