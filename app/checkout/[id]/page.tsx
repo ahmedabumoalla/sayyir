@@ -574,8 +574,8 @@ function CheckoutContent() {
             <div className="space-y-3 mb-8">
               
 
-              <div onClick={() => !expired && setSelectedPaymentMethod("card")} className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${ selectedPaymentMethod === "card" ? "bg-[#C89B3C] text-black border-[#C89B3C] shadow-[0_0_15px_rgba(200,155,60,0.2)]" : "bg-black/40 border-white/5 hover:border-white/20 hover:bg-white/5" } ${expired ? "opacity-50 pointer-events-none" : ""}`}>
-                <div className="flex items-center gap-3">
+            <div className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${ selectedPaymentMethod === "card" ? "bg-[#C89B3C] text-black border-[#C89B3C] shadow-[0_0_15px_rgba(200,155,60,0.2)]" : "bg-black/40 border-white/5" } ${expired ? "opacity-50 pointer-events-none" : ""}`}>
+                            <div className="flex items-center gap-3">
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedPaymentMethod === "card" ? "border-black" : "border-white/30"}`}>{selectedPaymentMethod === "card" && <div className="w-2.5 h-2.5 bg-black rounded-full" />}</div>
                   <span className="font-bold text-sm">البطاقات البنكية</span>
                 </div>
