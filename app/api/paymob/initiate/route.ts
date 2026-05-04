@@ -19,7 +19,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "رقم الحجز مفقود" }, { status: 400 });
     }
 
-    const isApplePay = paymentMethod === "applepay";
 
     if (
       !process.env.PAYMOB_API_KEY ||
@@ -271,9 +270,7 @@ export async function POST(request: Request) {
         state: "Asir"
       },
       currency: "SAR",
-      integration_id: isApplePay
-        ? Number(process.env.PAYMOB_APPLEPAY_INTEGRATION_ID || process.env.PAYMOB_INTEGRATION_ID)
-        : Number(process.env.PAYMOB_INTEGRATION_ID)
+      integration_id: Number(process.env.PAYMOB_INTEGRATION_ID)
     };
 
     console.log("🔑 PAYMOB PAYMENT KEY PAYLOAD:", paymentKeyPayload);
@@ -299,14 +296,8 @@ export async function POST(request: Request) {
 
     const paymentToken = paymentKeyRes.token;
 
-    let redirectUrl = "";
-
-    if (isApplePay) {
-      redirectUrl = `https://ksa.paymob.com/standalone/?ref=${paymentToken}`;
-    } else {
-      const cardIframeId = process.env.PAYMOB_IFRAME_ID!;
-      redirectUrl = `https://ksa.paymob.com/api/acceptance/iframes/${cardIframeId}?payment_token=${paymentToken}`;
-    }
+    const cardIframeId = process.env.PAYMOB_IFRAME_ID!;
+    const redirectUrl = `https://ksa.paymob.com/api/acceptance/iframes/${cardIframeId}?payment_token=${paymentToken}`;
 
     console.log("✅ PAYMOB REDIRECT URL:", redirectUrl);
 

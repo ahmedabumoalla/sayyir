@@ -51,12 +51,13 @@ export async function GET(request: Request) {
     }
 
     await supabaseAdmin
-      .from('bookings')
-      .update({
-        payment_status: 'paid',
-        admin_notes: `تمت إعادة العميل من Paymob بنجاح. رقم العملية: ${transactionId || ''}`
-      })
-      .eq('id', booking.id);
+  .from('bookings')
+  .update({
+    payment_status: 'paid',
+    status: 'confirmed',
+    admin_notes: `تمت إعادة العميل من Paymob بنجاح. رقم العملية: ${transactionId || ''}`
+  })
+  .eq('id', booking.id);
 
     return NextResponse.redirect(new URL('/client/dashboard?payment=success', request.url));
   } catch (error: any) {

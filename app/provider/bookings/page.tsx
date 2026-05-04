@@ -108,37 +108,37 @@ export default function ProviderBookingsPage() {
 
   const fetchBookings = async () => {
     setLoading(true);
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      setLoading(false);
-      return;
-    }
-
-    let query = supabase
-      .from("bookings")
-      .select(`
-        *,
-        profiles:user_id (full_name, email, phone, avatar_url),
-        services:service_id (*)
-      `)
-      .eq("provider_id", session.user.id)
-      .order("created_at", { ascending: false });
-
-    if (filter === "pending") query = query.eq("status", "pending");
-    if (filter === "active") query = query.in("status", ["confirmed", "approved_unpaid"]);
-    if (filter === "history") query = query.in("status", ["rejected", "cancelled", "expired", "completed"]);
-
-    const { data, error } = await query;
-
-    if (error) {
+  
+    try {
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+  
+      if (!session) {
+        setLoading(false);
+        return;
+      }
+  
+      const response = await fetch(`/api/provider/bookings?filter=${filter}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        }
+      });
+  
+      const result = await response.json();
+  
+      if (!response.ok) {
+        throw new Error(result?.error || "فشل جلب الحجوزات");
+      }
+  
+      setBookings(result.bookings || []);
+    } catch (error) {
       console.error("Error fetching bookings:", error);
+    } finally {
+      setLoading(false);
     }
-
-    if (data) setBookings(data);
-    setLoading(false);
   };
 
   const handleApprove = async () => {
