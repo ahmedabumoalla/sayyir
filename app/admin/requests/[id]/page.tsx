@@ -65,7 +65,7 @@ export default function RequestDetailsPage() {
   }, [id]);
 
   const handleAction = async (action: 'approve' | 'reject') => {
-    if (!confirm("هل أنت متأكد؟")) return;
+    if (!confirm("⚠️ سيتم أرشفة الحساب وإيقافه بالكامل. هل أنت متأكد؟")) return;
     setProcessing(true);
     try {
       const response = await fetch(`/api/admin/${action}`, {

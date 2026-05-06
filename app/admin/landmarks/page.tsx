@@ -159,8 +159,15 @@ export default function AdminLandmarksPage() {
 
   const fetchPlaces = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('places').select('*').order('created_at', { ascending: false });
+  
+    const { data, error } = await supabase
+      .from('places')
+      .select('*')
+      .not('lat', 'is', null)
+      .not('lng', 'is', null);
+  
     if (!error && data) setPlaces(data);
+  
     setLoading(false);
   };
 

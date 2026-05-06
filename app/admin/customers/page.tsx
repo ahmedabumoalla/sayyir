@@ -396,7 +396,7 @@ export default function CustomersPage() {
                     <button onClick={() => handleDirectEmail(selectedUser.email, selectedUser.full_name || "العميل")} className="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg text-sm transition border border-indigo-500/20 flex items-center gap-1">
                         <Send size={14}/> مراسلة
                     </button>
-                    <button onClick={() => handleDeleteUser(selectedUser.id, selectedUser.full_name || "المستخدم")} className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg text-sm transition border border-red-500/20">حذف الحساب</button>
+                    <button onClick={() => handleDeleteUser(selectedUser.id, selectedUser.full_name || "المستخدم")} className="px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg text-sm transition border border-red-500/20">أرشفة الحساب</button>
                 </div>
             </div>
         </div>
