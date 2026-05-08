@@ -226,20 +226,20 @@ function CheckoutContent() {
     }
 
     const totalDisc = generalDisc + couponDisc;
-    const finalTotal = Math.max(0, totalServicePrice - totalDisc);
-    
-    // ✅ حساب الضريبة للتوضيح فقط (شاملة داخل السعر الأساسي)
-    const vat = (finalTotal * 15) / 115;
-    const baseAmount = finalTotal - vat;
+const finalTotal = Math.max(0, totalServicePrice - totalDisc);
 
-    setTotals({
-      baseAmount,
-      generalDiscountAmount: generalDisc,
-      couponDiscountAmount: couponDisc,
-      totalDiscount: totalDisc,
-      vat,
-      total: finalTotal
-    });
+
+const vat = (finalTotal * 15) / 115;
+const baseAmount = totalServicePrice;
+
+setTotals({
+  baseAmount,
+  generalDiscountAmount: generalDisc,
+  couponDiscountAmount: couponDisc,
+  totalDiscount: totalDisc,
+  vat,
+  total: finalTotal
+});
   }, [booking, appliedCoupon, appliedPlatformDiscount, settings]);
 
   const handleApplyCoupon = async () => {
