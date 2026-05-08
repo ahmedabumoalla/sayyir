@@ -180,23 +180,44 @@ function BookingDetailsContent() {
                             </div>
                         </div>
 
-                        {/* ✅ الباركود (يظهر إذا كانت الرحلة مؤكدة) */}
-                        {booking.status === 'confirmed' && booking.ticket_qr_code ? (
-                            <div className="bg-white/5 p-5 rounded-3xl border border-white/10 flex flex-col items-center justify-center shrink-0 w-full md:w-auto relative z-10 backdrop-blur-sm">
-                                <p className="text-emerald-400 font-bold mb-4 flex items-center gap-1.5 text-sm"><CheckCircle2 size={16}/> تذكرة الدخول صالحة</p>
-                                <div className="bg-white p-3 rounded-2xl shadow-lg ring-4 ring-white/10">
-                                    <QRCodeSVG value={booking.ticket_qr_code} size={130} level="H" />
-                                </div>
-                                <p className="font-mono text-sm text-white font-bold tracking-widest mt-4 bg-black/50 px-4 py-1.5 rounded-lg select-all">
-                                    {booking.ticket_qr_code.split('-')[0].toUpperCase()}
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="bg-white/5 p-6 rounded-3xl border border-white/10 flex flex-col items-center justify-center shrink-0 w-full md:w-48 h-48 relative z-10 text-center">
-                                <Info size={32} className="text-white/20 mb-2"/>
-                                <p className="text-xs text-white/40 leading-relaxed">الباركود يظهر فقط للحجوزات المؤكدة والمدفوعة</p>
-                            </div>
-                        )}
+{booking.status === 'confirmed' && booking.ticket_qr_code ? (
+    <div className="bg-white/5 p-5 rounded-3xl border border-white/10 flex flex-col items-center justify-center shrink-0 w-full md:w-auto relative z-10 backdrop-blur-sm">
+
+        {booking.is_ticket_used ? (
+            <div className="w-full mb-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl p-4 text-center font-bold text-sm">
+                تم استخدام هذه التذكرة مسبقاً
+            </div>
+        ) : (
+            <div className="w-full mb-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl p-4 text-center font-bold text-sm">
+                التذكرة صالحة وجاهزة للدخول
+            </div>
+        )}
+
+        <p className="text-emerald-400 font-bold mb-4 flex items-center gap-1.5 text-sm">
+            <CheckCircle2 size={16}/>
+            تذكرة الدخول صالحة
+        </p>
+
+        <div className="bg-white p-3 rounded-2xl shadow-lg ring-4 ring-white/10">
+            <QRCodeSVG
+                value={booking.ticket_qr_code}
+                size={130}
+                level="H"
+            />
+        </div>
+
+        <p className="font-mono text-sm text-white font-bold tracking-widest mt-4 bg-black/50 px-4 py-1.5 rounded-lg select-all">
+            {booking.ticket_qr_code.split('-')[0].toUpperCase()}
+        </p>
+    </div>
+) : (
+    <div className="bg-white/5 p-6 rounded-3xl border border-white/10 flex flex-col items-center justify-center shrink-0 w-full md:w-48 h-48 relative z-10 text-center">
+        <Info size={32} className="text-white/20 mb-2"/>
+        <p className="text-xs text-white/40 leading-relaxed">
+            الباركود يظهر فقط للحجوزات المؤكدة والمدفوعة
+        </p>
+    </div>
+)}
                     </div>
 
                     {/* معلومات إضافية من الخدمة الأساسية */}

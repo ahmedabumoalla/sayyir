@@ -207,7 +207,7 @@ export async function POST(request: Request) {
       delivery_needed: false,
       amount_cents: Math.round(finalAmountToPay * 100),
       currency: "SAR",
-      merchant_order_id: `${bookingId}_${Date.now()}`,
+      merchant_order_id: `SAYYIR-${bookingId}_${Date.now()}`,
       items: []
     };
 

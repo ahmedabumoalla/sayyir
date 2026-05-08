@@ -1,53 +1,95 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-export async function POST(request: Request) {
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function POST(req: Request) {
   try {
-    const { ticketCode, providerId } = await request.json();
+    const body = await req.json();
 
-    if (!ticketCode) return NextResponse.json({ error: "رمز التذكرة مفقود" }, { status: 400 });
+    const { ticketCode, providerId } = body;
 
-    // 1. البحث عن التذكرة في قاعدة البيانات
+    if (!ticketCode || !providerId) {
+      return NextResponse.json(
+        { success: false, message: "بيانات ناقصة" },
+        { status: 400 }
+      );
+    }
+
     const { data: booking, error } = await supabase
-        .from('bookings')
-        .select('id, is_ticket_used, status, services(title, provider_id)')
-        .eq('ticket_qr_code', ticketCode)
-        .single();
+      .from("bookings")
+      .select(`
+        *,
+        services (
+          title,
+          provider_id
+        )
+      `)
+      .eq("ticket_qr_code", ticketCode)
+      .single();
 
     if (error || !booking) {
-        return NextResponse.json({ success: false, message: "❌ تذكرة مزيفة أو غير موجودة في النظام!" });
+      return NextResponse.json({
+        success: false,
+        message: "التذكرة غير موجودة"
+      });
     }
 
-    // ✅ الحل لخطأ TypeScript: تحويل البيانات للنوع الصحيح (كائن واحد)
-    const serviceInfo: any = Array.isArray(booking.services) ? booking.services[0] : booking.services;
-
-    // 2. التأكد أن التذكرة تخص هذا المزود
-    if (serviceInfo?.provider_id !== providerId) {
-        return NextResponse.json({ success: false, message: "❌ هذه التذكرة لا تتبع لخدماتك!" });
+    // التحقق من ملكية المزود
+    if (booking.provider_id !== providerId) {
+      return NextResponse.json({
+        success: false,
+        message: "هذه التذكرة لا تتبع لخدماتك"
+      });
     }
 
-    // 3. التأكد أنها لم تستخدم مسبقاً
+    // لازم تكون مدفوعة
+    if (booking.payment_status !== "paid") {
+      return NextResponse.json({
+        success: false,
+        message: "الحجز غير مدفوع"
+      });
+    }
+
+    // لازم تكون مؤكدة
+    if (booking.status !== "confirmed") {
+      return NextResponse.json({
+        success: false,
+        message: "الحجز غير مؤكد"
+      });
+    }
+
+    // مستخدمة مسبقاً
     if (booking.is_ticket_used) {
-        return NextResponse.json({ success: false, message: "⚠️ عذراً، تم استخدام هذه التذكرة مسبقاً!" });
+      return NextResponse.json({
+        success: false,
+        message: "تم استخدام هذه التذكرة مسبقاً"
+      });
     }
 
-    // 4. ختم التذكرة (صرفها)
+    // اعتماد التذكرة
     await supabase
-        .from('bookings')
-        .update({ 
-            is_ticket_used: true,
-            ticket_used_at: new Date().toISOString(),
-            status: 'completed'
-        })
-        .eq('id', booking.id);
+      .from("bookings")
+      .update({
+        is_ticket_used: true,
+        ticket_used_at: new Date().toISOString()
+      })
+      .eq("id", booking.id);
 
-    return NextResponse.json({ 
-        success: true, 
-        message: "✅ تذكرة صحيحة، تم تسجيل دخول العميل بنجاح!",
-        service: serviceInfo?.title
+    return NextResponse.json({
+      success: true,
+      message: "تم اعتماد التذكرة بنجاح",
+      service: booking.services?.title,
+      booking
     });
 
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({
+      success: false,
+      message: "خطأ داخلي"
+    });
   }
 }

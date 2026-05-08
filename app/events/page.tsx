@@ -26,11 +26,11 @@ export default function EventsPage() {
     
     if (data) {
         // ✅ فلترة لإخفاء الفعاليات المنتهية
-        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
         const validEvents = data.filter((item: any) => {
             const endDate = item.details?.event_info?.dates?.endDate;
             if (endDate) {
-                return endDate >= today; // عرض فقط الفعاليات اللي تاريخ نهايتها لسا ما جاء
+              return new Date(endDate) >= now;
             }
             return true;
         });

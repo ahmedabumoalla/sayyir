@@ -27,16 +27,18 @@ export default function ExperiencesPage() {
       const adminQuery = supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);
       const [providerRes, adminRes] = await Promise.all([providerQuery, adminQuery]);
 
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
 
       // ✅ فلترة لإخفاء التجارب المنتهية
       const providerItems = (providerRes.data || [])
         .filter((item: any) => {
             const expDates = item.details?.experience_info?.dates;
             if (expDates && Array.isArray(expDates) && expDates.length > 0) {
-                // نتحقق إذا كان أحدث تاريخ في المصفوفة ما زال قائماً أو في المستقبل
-                const latestDate = expDates.sort()[expDates.length - 1];
-                return latestDate >= today;
+                const latestDate = new Date(
+  [...expDates].sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[expDates.length - 1]
+);
+
+return latestDate >= now;
             }
             return true; // إذا لم يحدد تواريخ، يتم عرضها دائمًا
         })

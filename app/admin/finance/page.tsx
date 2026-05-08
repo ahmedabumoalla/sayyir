@@ -195,27 +195,20 @@ export default function FinancePage() {
             `)
             .order('created_at', { ascending: false });
 
-        let currentBookings = bookingsData || [];
-        const nowMs = new Date().getTime();
-        const expiredIds: string[] = [];
-
-        currentBookings = currentBookings.map((b: any) => {
-            if (b.status === 'approved_unpaid' && b.expires_at) {
-                if (new Date(b.expires_at).getTime() < nowMs) {
-                    expiredIds.push(b.id);
-                    b.status = 'cancelled';
-                    b.payment_status = 'expired';
+            const currentBookings = (bookingsData || []).map((b: any) => {
+                if (
+                    b.status === 'approved_unpaid' &&
+                    b.expires_at &&
+                    new Date(b.expires_at).getTime() < Date.now()
+                ) {
+                    return {
+                        ...b,
+                        payment_status: 'expired_visual'
+                    };
                 }
-            }
-            return b;
-        });
-
-        if (expiredIds.length > 0) {
-            await supabase
-                .from('bookings')
-                .update({ status: 'cancelled', payment_status: 'expired' })
-                .in('id', expiredIds);
-        }
+            
+                return b;
+            });
 
         const formattedBookings: BookingReport[] = currentBookings.map((b: any) => {
             const subtotal = Number(b.subtotal || 0);
@@ -579,12 +572,12 @@ export default function FinancePage() {
                                   <td className="px-4 py-3 space-y-1">
                                       <span className={`px-2 py-1 rounded text-[10px] font-bold block w-fit ${
                                           booking.payment_status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : 
-                                          booking.payment_status === 'expired' ? 'bg-red-500/20 text-red-400' : 
+                                          booking.payment_status === 'expired_visual' ? 'bg-red-500/20 text-red-400' : 
                                           'bg-amber-500/20 text-amber-400'
                                       }`}>
                                           {booking.payment_status === 'paid' ? 'مدفوع' : 
-                                           booking.payment_status === 'expired' ? 'لم يتم الدفع (انتهت المهلة)' : 
-                                           'انتظار دفع العميل'}
+ booking.payment_status === 'expired_visual' ? 'لم يتم الدفع (انتهت المهلة)' : 
+ 'انتظار دفع العميل'}
                                       </span>
                                       <span className={`px-2 py-1 rounded text-[10px] font-bold block w-fit ${
                                           booking.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-400' :
@@ -597,8 +590,9 @@ export default function FinancePage() {
                                            booking.status === 'pending' ? 'انتظار موافقة المزود' : 
                                            booking.status === 'approved_unpaid' ? 'تم القبول (انتظار الدفع)' :
                                            booking.status === 'cancellation_requested' ? 'طلب إلغاء' :
-                                           booking.status === 'cancelled' && booking.payment_status === 'expired' ? 'لم يتم الدفع من قبل العميل وتم انتهاء المهلة' :
-                                           'مرفوض/ملغي'}
+                                           booking.status === 'approved_unpaid' && booking.payment_status === 'expired_visual'
+                                           ? 'انتهت مهلة الدفع'
+                                           :                                           'مرفوض/ملغي'}
                                       </span>
                                   </td>
                                   <td className="px-4 py-3 text-center print:hidden">
