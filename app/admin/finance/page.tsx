@@ -475,17 +475,32 @@ export default function FinancePage() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 print:bg-white print:text-black">
       
-      <header className="flex justify-between items-center mb-6 print:hidden">
-          <div>
-            <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
-               <DollarSign className="text-[#C89B3C]" /> المالية والأرباح
-            </h1>
-            <p className="text-white/60">التحكم في العمولات، الخصومات، والتقارير المالية.</p>
-          </div>
-          <button onClick={() => setIsPenaltyModalOpen(true)} className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 text-sm">
-              <Gavel size={16}/> إجراء جزائي لمزود
-          </button>
-      </header>
+      <header className="flex justify-between items-center mb-6 print:hidden flex-wrap gap-4">
+    <div>
+      <h1 className="text-3xl font-bold mb-2 flex items-center gap-2 text-white">
+         <DollarSign className="text-[#C89B3C]" /> المالية والأرباح
+      </h1>
+      <p className="text-white/60">التحكم في العمولات، الخصومات، والتقارير المالية.</p>
+    </div>
+
+    <div className="flex flex-wrap items-center gap-3">
+      <Link
+        href="/admin/finance/providers"
+        className="bg-[#C89B3C] hover:bg-[#b38a35] text-black px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 text-sm"
+      >
+        <Briefcase size={16} />
+        حسابات المزودين
+      </Link>
+
+      <button
+        onClick={() => setIsPenaltyModalOpen(true)}
+        className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-4 py-2 rounded-xl font-bold transition flex items-center gap-2 text-sm"
+      >
+        <Gavel size={16}/>
+        إجراء جزائي لمزود
+      </button>
+    </div>
+</header>
 
       <div className="hidden print:block mb-8 text-center border-b border-black pb-4">
           <h1 className="text-2xl font-bold">تقرير الحجوزات والمالية - منصة سيّر</h1>
