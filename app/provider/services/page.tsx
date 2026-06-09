@@ -544,7 +544,7 @@ export default function ProviderServicesPage() {
                               <div className="bg-orange-500/10 p-5 rounded-2xl border border-orange-500/20 space-y-2">
                                   <h3 className="text-orange-400 font-bold text-xs flex items-center gap-2"><ShieldAlert size={14}/> تأمين مسترد للمكان</h3>
                                   <p className="text-sm font-bold text-white">{viewService.details.deposit_config.amount} ﷼</p>
-                                  <p className="text-[10px] text-white/70">يُدفع: {viewService.details.deposit_config.paymentTime === 'with_booking' ? 'عند الحجز عبر المنصة' : 'نقداً عند الوصول للمكان'}</p>
+                                  <p className="text-[10px] text-white/70">يُدفع: نقداً عند الوصول للمكان</p>
                                   <p className="text-[10px] text-white/70">حالة الاسترداد: {viewService.details.deposit_config.isRefundable ? 'مسترد بالكامل عند تسليم المكان سليم' : 'غير مسترد'}</p>
                               </div>
                           )}

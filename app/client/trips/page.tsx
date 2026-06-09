@@ -502,7 +502,7 @@ export default function TripsPage() {
                                         {srv.details?.deposit_config?.required && (
                                             <div className="text-sm bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg text-orange-200">
                                                 <strong className="text-orange-400 block mb-1">تأمين مسترد على المحتويات:</strong>
-                                                يشترط دفع مبلغ تأمين {srv.details.deposit_config.paymentTime === 'with_booking' ? 'يتم سداده مع الحجز بالمنصة' : 'يُدفع نقداً للمزود عند الوصول'}.
+                                                يشترط دفع مبلغ تأمين يُدفع نقداً للمزود عند الوصول.
                                                 {srv.details.deposit_config.isRefundable && " (التأمين مسترد بالكامل في حال عدم وجود تلفيات)."}
                                             </div>
                                         )}

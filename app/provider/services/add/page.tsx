@@ -173,7 +173,7 @@ export default function AddServicePage() {
   const [targetAudience, setTargetAudience] = useState<'singles' | 'families' | 'both'>('both');
   const [capacity, setCapacity] = useState("");
   
-  const [depositConfig, setDepositConfig] = useState({ required: false, isRefundable: true, paymentTime: 'with_booking', amount: "" });
+  const [depositConfig, setDepositConfig] = useState({ required: false, isRefundable: true, paymentTime: 'on_arrival', amount: "" });
 
   // 4. المرفق (Facility)
   const [facilityServices, setFacilityServices] = useState<any[]>([]);
@@ -626,8 +626,7 @@ export default function AddServicePage() {
                                                 <div className="space-y-2">
                                                     <span className="text-xs text-white/50 block">متى يتم دفع التأمين؟</span>
                                                     <div className="flex gap-2">
-                                                        <button onClick={() => setDepositConfig({...depositConfig, paymentTime: 'with_booking'})} className={`px-4 py-2 rounded-lg border text-xs ${depositConfig.paymentTime === 'with_booking' ? 'bg-white/20 border-white/40 text-white' : 'bg-black/40 border-white/10 text-white/50'}`}>مع الحجز بالمنصة</button>
-                                                        <button onClick={() => setDepositConfig({...depositConfig, paymentTime: 'on_arrival'})} className={`px-4 py-2 rounded-lg border text-xs ${depositConfig.paymentTime === 'on_arrival' ? 'bg-white/20 border-white/40 text-white' : 'bg-black/40 border-white/10 text-white/50'}`}>نقداً عند الوصول</button>
+                                                        <button type="button" disabled className="px-4 py-2 rounded-lg border text-xs bg-white/20 border-white/40 text-white cursor-default">نقداً عند الوصول</button>
                                                     </div>
                                                 </div>
                                             </div>

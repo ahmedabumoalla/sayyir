@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { assertExperienceSeatsAvailable } from "@/lib/experienceSeats";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -92,6 +93,12 @@ export async function POST(request: Request) {
         message: "الحجز مدفوع مسبقاً",
       });
     }
+
+    await assertExperienceSeatsAvailable(
+      supabaseAdmin,
+      currentBooking.service_id,
+      Number(currentBooking.quantity || 1)
+    );
 
     // إنشاء QR ثابت
     const ticketCode =

@@ -355,6 +355,7 @@ export default function ServiceDetailsPage() {
   const [bookingTime, setBookingTime] = useState("");
   const [dateTimeError, setDateTimeError] = useState("");
   const [heroMediaFailed, setHeroMediaFailed] = useState(false);
+  const [confirmedBookedSeats, setConfirmedBookedSeats] = useState(0);
 
   const todayDate = new Date().toISOString().split("T")[0];
 
@@ -567,6 +568,29 @@ export default function ServiceDetailsPage() {
             : null;
         }
 
+        let serviceConfirmedSeats = 0;
+
+        const isLimited =
+          serviceData.service_category === "experience" &&
+          serviceData.sub_category !== "event" &&
+          serviceData.max_capacity !== null &&
+          serviceData.max_capacity !== undefined;
+
+        if (isLimited) {
+          try {
+            const availabilityResponse = await fetch(`/api/services/${serviceData.id}/availability`, {
+              cache: "no-store",
+            });
+            const availability = await availabilityResponse.json();
+
+            if (availabilityResponse.ok) {
+              serviceConfirmedSeats = Number(availability.confirmedSeats || 0);
+            }
+          } catch (availabilityError) {
+            console.error("Error loading service seat availability:", availabilityError);
+          }
+        }
+
         const normalizedService = {
           ...serviceData,
           image_url: normalizeMediaList(serviceData.image_url)[0] || "",
@@ -585,13 +609,11 @@ export default function ServiceDetailsPage() {
         };
 
         setService(normalizedService);
+        setConfirmedBookedSeats(serviceConfirmedSeats);
 
-        const isLimited =
-          serviceData.service_category === "experience" &&
-          serviceData.sub_category !== "event";
-
-        if (isLimited && serviceData.max_capacity === 0) {
-          setGuestCount(0);
+        if (isLimited) {
+          const remainingSeats = Math.max(0, Number(serviceData.max_capacity || 0) - serviceConfirmedSeats);
+          setGuestCount(remainingSeats === 0 ? 0 : 1);
         }
       }
     } catch (err: any) {
@@ -607,8 +629,12 @@ export default function ServiceDetailsPage() {
     service?.max_capacity !== null &&
     service?.max_capacity !== undefined;
 
+  const availableLimitedSeats = isLimitedCapacity
+    ? Math.max(0, Number(service?.max_capacity || 0) - confirmedBookedSeats)
+    : null;
+
   const isSoldOut = isLimitedCapacity
-    ? Number(service?.max_capacity || 0) <= 0
+    ? Number(availableLimitedSeats || 0) <= 0
     : false;
 
   const quantityLabel = isLodging
@@ -619,13 +645,15 @@ export default function ServiceDetailsPage() {
 
   const incrementGuests = () => {
     if (isLimitedCapacity) {
-      const availableSeats = Number(service.max_capacity || 0);
+      const availableSeats = Number(availableLimitedSeats || 0);
 
       if (guestCount < availableSeats) {
         setGuestCount((prev) => prev + 1);
       } else {
         toast.error(`عذراً، المقاعد المتبقية هي ${availableSeats} فقط.`);
       }
+    } else if (isExperience) {
+      setGuestCount((prev) => prev + 1);
     } else {
       if (guestCount < 50) {
         setGuestCount((prev) => prev + 1);
@@ -697,6 +725,20 @@ export default function ServiceDetailsPage() {
     if (isEvent && guestCount === 0 && childCount === 0) {
       toast.warning("الرجاء اختيار تذكرة واحدة على الأقل.");
       return;
+    }
+
+    if (isLimitedCapacity) {
+      const availableSeats = Number(availableLimitedSeats || 0);
+
+      if (availableSeats <= 0) {
+        toast.error("عذراً، نفدت المقاعد المتاحة لهذه التجربة.");
+        return;
+      }
+
+      if (guestCount < 1 || guestCount > availableSeats) {
+        toast.error(`عذراً، المقاعد المتبقية هي ${availableSeats} فقط.`);
+        return;
+      }
     }
 
     setBookingLoading(true);
@@ -1081,8 +1123,8 @@ export default function ServiceDetailsPage() {
 
                 {service.max_capacity > 0 && (
                   <div>
-                    <p className="text-xs text-white/50 mb-1">يتسع لـ</p>
-                    <p className="font-bold">{service.max_capacity} أشخاص</p>
+                    <p className="text-xs text-white/50 mb-1">{isExperience ? "المقاعد المتاحة" : "يتسع لـ"}</p>
+                    <p className="font-bold">{isExperience ? availableLimitedSeats : service.max_capacity} أشخاص</p>
                   </div>
                 )}
 
@@ -1196,9 +1238,7 @@ export default function ServiceDetailsPage() {
                       <strong className="text-orange-400">
                         {service.details.deposit_config.amount} ريال
                       </strong>{" "}
-                      {service.details.deposit_config.paymentTime === "with_booking"
-                        ? "يتم سداده مع الحجز"
-                        : "يُدفع نقداً عند الوصول"}
+                      يُدفع نقداً عند الوصول
                       .
                       {service.details.deposit_config.isRefundable &&
                         " التأمين مسترد بالكامل في حال تسليم السكن بدون تلفيات."}
@@ -1775,7 +1815,7 @@ export default function ServiceDetailsPage() {
                       <div className="flex items-center gap-2 pl-3">
                         <Users size={18} className="text-[#C89B3C]" />
                         {isLimitedCapacity && (
-                          <span className="text-[10px] text-[#C89B3C]">المقاعد المتاحة: {service.max_capacity}</span>
+                          <span className="text-[10px] text-[#C89B3C]">المقاعد المتاحة: {availableLimitedSeats}</span>
                         )}
                       </div>
                       <div className="flex items-center gap-4">

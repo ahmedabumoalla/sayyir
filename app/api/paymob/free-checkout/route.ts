@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertExperienceSeatsAvailable } from '@/lib/experienceSeats';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,6 +29,12 @@ export async function POST(req: Request) {
     if (fetchError || !booking) {
       throw new Error('الحجز غير موجود');
     }
+
+    await assertExperienceSeatsAvailable(
+      supabaseAdmin,
+      booking.service_id,
+      Number(booking.quantity || 1)
+    );
 
     const qrCodeString = `QR-${bookingId.substring(0, 8).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 

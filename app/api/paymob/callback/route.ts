@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertExperienceSeatsAvailable } from '@/lib/experienceSeats';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
 
     const { data: booking, error: fetchError } = await supabaseAdmin
       .from('bookings')
-      .select('id')
+      .select('id, service_id, quantity')
       .eq('id', bookingId)
       .single();
 
@@ -49,6 +50,12 @@ export async function GET(request: Request) {
 
       return NextResponse.redirect(new URL('/client/dashboard?payment=failed', request.url));
     }
+
+    await assertExperienceSeatsAvailable(
+      supabaseAdmin,
+      booking.service_id,
+      Number(booking.quantity || 1)
+    );
 
     await supabaseAdmin
   .from('bookings')

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertExperienceSeatsAvailable } from '@/lib/experienceSeats';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -99,6 +100,8 @@ export async function POST(request: Request) {
     }
 
     console.log('PROVIDER PROFILE FOUND:', providerProfile);
+
+    await assertExperienceSeatsAvailable(supabaseAdmin, service.id, bookingQuantity);
 
     const unitPrice = Number(service.price || 0);
     const totalPrice = unitPrice * bookingQuantity;
