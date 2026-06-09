@@ -237,6 +237,10 @@ export default function TripsPage() {
             
             const adultCount = trip.quantity || 1;
             const childCount = trip.details?.child_count || 0;
+            const isUnlimitedFixedPriceExperience =
+              srv?.service_category === "experience" &&
+              srv?.sub_category !== "event" &&
+              Number(srv?.max_capacity || 0) <= 0;
             const galleryImages = srv?.details?.images || (srv?.image_url ? [srv.image_url] : []);
             const menuItems = safeArray(srv?.menu_items);
             
@@ -263,7 +267,9 @@ export default function TripsPage() {
                         <h3 className="text-xl font-bold text-white mb-2 group-hover:text-[#C89B3C] transition">{srv?.title || "خدمة محذوفة"}</h3>
                         <div className="flex flex-wrap items-center gap-4 text-white/60 text-sm">
                           <span className="flex items-center gap-1.5"><MapPin size={16} className="text-[#C89B3C]" /> {srv?.location_lat ? 'اللوكيشن متاح' : 'عسير'}</span>
-                          <span className="flex items-center gap-1.5"><Users size={16} className="text-[#C89B3C]"/> {adultCount + childCount} ضيوف/تذاكر</span>
+                          {!isUnlimitedFixedPriceExperience && (
+                            <span className="flex items-center gap-1.5"><Users size={16} className="text-[#C89B3C]"/> {adultCount + childCount} ضيوف/تذاكر</span>
+                          )}
                         </div>
                       </div>
                       <div className="hidden md:block">{getStatusBadge(trip.status, trip.payment_status)}</div>

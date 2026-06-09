@@ -373,6 +373,10 @@ setTotals({
   const galleryImages = service.details?.images || (service.image_url ? [service.image_url] : []);
   const adultCount = booking.quantity || 1;
   const childCount = booking.details?.child_count || 0;
+  const isUnlimitedFixedPriceExperience =
+    service.service_category === "experience" &&
+    service.sub_category !== "event" &&
+    Number(service.max_capacity || 0) <= 0;
 
   return (
     <div className={`min-h-screen bg-[#121212] text-white py-12 px-4 md:px-8 ${tajawal.className}`} dir="rtl">
@@ -408,10 +412,12 @@ setTotals({
                   <p className="font-bold text-sm">{formatDate(booking.check_out)}</p>
                 </div>
               )}
-              <div className="bg-black/30 p-4 rounded-2xl border border-white/5">
-                <p className="text-xs text-white/50 mb-1 flex items-center gap-1"><Users size={14} /> {service.sub_category === "event" ? "تذاكر بالغين" : service.sub_category === "lodging" ? "ليالي" : "أشخاص"}</p>
-                <p className="font-bold text-lg">{adultCount}</p>
-              </div>
+              {!isUnlimitedFixedPriceExperience && (
+                <div className="bg-black/30 p-4 rounded-2xl border border-white/5">
+                  <p className="text-xs text-white/50 mb-1 flex items-center gap-1"><Users size={14} /> {service.sub_category === "event" ? "تذاكر بالغين" : service.sub_category === "lodging" ? "ليالي" : "أشخاص"}</p>
+                  <p className="font-bold text-lg">{adultCount}</p>
+                </div>
+              )}
               {childCount > 0 && (
                 <div className="bg-black/30 p-4 rounded-2xl border border-white/5">
                   <p className="text-xs text-white/50 mb-1 flex items-center gap-1"><Users size={14} /> تذاكر أطفال</p>

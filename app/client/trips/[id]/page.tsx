@@ -111,6 +111,10 @@ function BookingDetailsContent() {
 
     const adultCount = booking.quantity || 1;
     const childCount = booking.details?.child_count || 0;
+    const isUnlimitedFixedPriceExperience =
+        service.service_category === "experience" &&
+        service.sub_category !== "event" &&
+        Number(service.max_capacity || 0) <= 0;
 
     return (
         <div className={`min-h-screen bg-[#121212] text-white pb-20 pt-6 px-4 md:px-8 ${tajawal.className}`} dir="rtl">

@@ -362,6 +362,8 @@ export default function ServiceDetailsPage() {
   const isEvent = service?.sub_category === "event";
   const isLodging = service?.sub_category === "lodging";
   const isExperience = service?.service_category === "experience" && !isEvent;
+  const isUnlimitedFixedPriceExperience =
+    isExperience && Number(service?.max_capacity || 0) <= 0;
   const isFacility = service?.sub_category === "facility";
 
   const validExpDates = isExperience
@@ -466,10 +468,12 @@ export default function ServiceDetailsPage() {
       const childPrice = Number(service.details?.event_info?.child_price || 0);
       const childTotal = childCount * childPrice;
       setTotalPrice(adultTotal + childTotal);
+    } else if (isUnlimitedFixedPriceExperience) {
+      setTotalPrice(Number(service.price || 0));
     } else {
       setTotalPrice(Number(service.price || 0) * guestCount);
     }
-  }, [guestCount, childCount, checkIn, service, isLodging, isEvent]);
+  }, [guestCount, childCount, checkIn, service, isLodging, isEvent, isUnlimitedFixedPriceExperience]);
 
   useEffect(() => {
     if (!service || isLodging) return;
@@ -627,7 +631,8 @@ export default function ServiceDetailsPage() {
   const isLimitedCapacity =
     isExperience &&
     service?.max_capacity !== null &&
-    service?.max_capacity !== undefined;
+    service?.max_capacity !== undefined &&
+    Number(service?.max_capacity || 0) > 0;
 
   const availableLimitedSeats = isLimitedCapacity
     ? Math.max(0, Number(service?.max_capacity || 0) - confirmedBookedSeats)
@@ -762,8 +767,8 @@ export default function ServiceDetailsPage() {
         body: JSON.stringify({
           serviceId: service.id,
           userId: session.user.id,
-          quantity: guestCount,
-          guests: guestCount,
+          quantity: isUnlimitedFixedPriceExperience ? 1 : guestCount,
+          guests: isUnlimitedFixedPriceExperience ? 1 : guestCount,
           checkIn: finalCheckIn,
           checkOut: finalCheckOut,
           bookingDate: finalCheckIn
@@ -810,7 +815,9 @@ export default function ServiceDetailsPage() {
               clientName: clientProfile?.full_name || "عميل سيّر",
               date: formatDateAr(finalCheckIn),
               time: isLodging ? "طوال اليوم" : formatTime12H(finalCheckIn || ""),
-              guests: guestCount.toString(),
+              guests: isUnlimitedFixedPriceExperience
+                ? "تجربة بدون تحديد عدد الأشخاص"
+                : guestCount.toString(),
               bookingId: bookingData.id.split('-')[0].toUpperCase()
             }
           }),
@@ -1807,7 +1814,7 @@ export default function ServiceDetailsPage() {
                 </div>
               )}
 
-              {!isLodging && (
+              {!isLodging && !isUnlimitedFixedPriceExperience && (
                 <div className="space-y-3">
                   <div className="space-y-2">
                     <label className="text-xs text-gray-400 font-bold px-1">{quantityLabel}</label>

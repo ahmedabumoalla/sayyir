@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const bookingQuantity = Number(quantity || guests || 1);
+    const requestedQuantity = Number(quantity || guests || 1);
 
     const { data: service, error: serviceError } = await supabaseAdmin
       .from('services')
@@ -101,10 +101,17 @@ export async function POST(request: Request) {
 
     console.log('PROVIDER PROFILE FOUND:', providerProfile);
 
+    const isUnlimitedFixedPriceExperience =
+      service.service_category === 'experience' &&
+      service.sub_category !== 'event' &&
+      Number(service.max_capacity || 0) <= 0;
+
+    const bookingQuantity = isUnlimitedFixedPriceExperience ? 1 : requestedQuantity;
+
     await assertExperienceSeatsAvailable(supabaseAdmin, service.id, bookingQuantity);
 
     const unitPrice = Number(service.price || 0);
-    const totalPrice = unitPrice * bookingQuantity;
+    const totalPrice = isUnlimitedFixedPriceExperience ? unitPrice : unitPrice * bookingQuantity;
 
     const insertPayload: Record<string, unknown> = {
       service_id: service.id,

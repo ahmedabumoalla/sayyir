@@ -24,11 +24,14 @@ export async function getExperienceSeatAvailability(
     throw new Error("الخدمة غير موجودة");
   }
 
+  const maxCapacityValue = Number(service.max_capacity || 0);
+
   const hasLimitedCapacity =
     service.service_category === "experience" &&
     service.sub_category !== "event" &&
     service.max_capacity !== null &&
-    service.max_capacity !== undefined;
+    service.max_capacity !== undefined &&
+    maxCapacityValue > 0;
 
   if (!hasLimitedCapacity) {
     return {
@@ -39,7 +42,7 @@ export async function getExperienceSeatAvailability(
     };
   }
 
-  const maxCapacity = Math.max(0, Number(service.max_capacity || 0));
+  const maxCapacity = Math.max(0, maxCapacityValue);
 
   const { data: confirmedBookings, error: bookingsError } = await supabase
     .from("bookings")
