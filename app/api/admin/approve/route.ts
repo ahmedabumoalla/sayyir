@@ -150,6 +150,15 @@ function findFirstHttpArray(dynamicData: unknown): string[] {
   return result;
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function findFirstLocation(dynamicData: unknown): { lat: number | null; lng: number | null } {
   let location = { lat: null as number | null, lng: null as number | null };
 
@@ -159,11 +168,11 @@ function findFirstLocation(dynamicData: unknown): { lat: number | null; lng: num
     const item = value as JsonRecord;
     const rawLat = item.lat ?? item.latitude;
     const rawLng = item.lng ?? item.longitude;
-    const lat = typeof rawLat === 'string' ? Number(rawLat) : rawLat;
-    const lng = typeof rawLng === 'string' ? Number(rawLng) : rawLng;
+    const latNumber = toFiniteNumber(rawLat);
+    const lngNumber = toFiniteNumber(rawLng);
 
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      location = { lat, lng };
+    if (latNumber !== null && lngNumber !== null) {
+      location = { lat: latNumber, lng: lngNumber };
     }
   });
 
