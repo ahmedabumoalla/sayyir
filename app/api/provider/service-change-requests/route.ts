@@ -49,6 +49,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 
+    const { error: updateServiceError } = await supabaseServer
+      .from("services")
+      .update({
+        status: "update_requested",
+        pending_updates: requested_changes,
+      })
+      .eq("id", service_id)
+      .eq("provider_id", provider.id);
+
+    if (updateServiceError) {
+      return NextResponse.json({ error: updateServiceError.message }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true, request: data });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

@@ -22,7 +22,7 @@ export default function EventsPage() {
   }, []);
 
   const fetchEvents = async () => {
-    const { data } = await supabase.from('services').select('*').eq('status', 'approved').eq('sub_category', 'event').order('created_at', { ascending: false });
+    const { data } = await supabase.from('services').select('*').in('status', ['approved', 'update_requested']).eq('sub_category', 'event').order('created_at', { ascending: false });
     
     if (data) {
         // ✅ فلترة لإخفاء الفعاليات المنتهية

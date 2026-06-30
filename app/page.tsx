@@ -140,7 +140,7 @@ export default function HomePage() {
 
       try {
         const { data: places } = await supabase.from('places').select('id, name, type, media_urls, city').ilike('name', searchTerm).eq('is_active', true).limit(4);
-        const { data: services } = await supabase.from('services').select('id, title, service_category, image_url, city').ilike('title', searchTerm).eq('status', 'approved').limit(4);
+        const { data: services } = await supabase.from('services').select('id, title, service_category, image_url, city').ilike('title', searchTerm).in('status', ['approved', 'update_requested']).limit(4);
 
         const formattedPlaces = (places || []).map((p: any) => ({
             id: p.id, title: p.name, type: p.type === 'heritage' ? 'موقع تراثي' : (p.type === 'natural' ? 'معلم طبيعي' : 'معلم سياحي'),
@@ -209,7 +209,7 @@ export default function HomePage() {
       const { data: generalServices } = await supabase
         .from('services')
         .select('*')
-        .eq('status', 'approved')
+        .in('status', ['approved', 'update_requested'])
         .in('service_category', ['facility', 'lodging', 'general'])
         .limit(6);
         
@@ -232,7 +232,7 @@ export default function HomePage() {
       const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
       if (places) setLandmarksData(places);
 
-      const { data: providerExp } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'experience').eq('status', 'approved');
+      const { data: providerExp } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'experience').in('status', ['approved', 'update_requested']);
       const { data: adminExp } = await supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);
 
       const formattedProvider = (providerExp || []).map((item: any) => ({
@@ -250,7 +250,7 @@ export default function HomePage() {
       const allExperiences = [...formattedProvider, ...formattedAdmin];
       setExperiencesData(allExperiences.slice(0, 6));
 
-      const { data: providerEvents } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'event').eq('status', 'approved');
+      const { data: providerEvents } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'event').in('status', ['approved', 'update_requested']);
       const formattedEvents = (providerEvents || []).map((item: any) => ({
         id: item.id, title: item.title, description: item.description, price: item.price,
         image: item.images && item.images.length > 0 ? item.images[0] : (item.image_url ? resolveSupabaseMediaUrl(item.image_url) : "/placeholder.jpg"),
@@ -266,7 +266,7 @@ export default function HomePage() {
       if (info) setPlatformInfo(info);
 
       const { count: placesCount } = await supabase.from('places').select('*', { count: 'exact', head: true }).eq('is_active', true);
-      const { count: servicesCount } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('status', 'approved');
+      const { count: servicesCount } = await supabase.from('services').select('*', { count: 'exact', head: true }).in('status', ['approved', 'update_requested']);
       const { count: providersCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_provider', true);
 
       setStats({ places: placesCount || 0, services: servicesCount || 0, providers: providersCount || 0 });

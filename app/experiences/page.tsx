@@ -23,7 +23,7 @@ export default function ExperiencesPage() {
   const fetchAllExperiences = async () => {
     try {
       setLoading(true);
-      const providerQuery = supabase.from('services').select('*').eq('service_category', 'experience').eq('status', 'approved');
+      const providerQuery = supabase.from('services').select('*').eq('service_category', 'experience').in('status', ['approved', 'update_requested']);
       const adminQuery = supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);
       const [providerRes, adminRes] = await Promise.all([providerQuery, adminQuery]);
 

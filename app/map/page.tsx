@@ -102,7 +102,7 @@ export default function MapPage() {
   const fetchAllData = async () => {
     try {
       const { data: placesData } = await supabase.from('places').select('*').eq('is_active', true);
-      const { data: servicesData } = await supabase.from('services').select('*').eq('status', 'approved');
+      const { data: servicesData } = await supabase.from('services').select('*').in('status', ['approved', 'update_requested']);
 
       const allItems: MapItem[] = [];
 

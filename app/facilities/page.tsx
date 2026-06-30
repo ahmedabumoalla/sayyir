@@ -42,7 +42,7 @@ export default function FacilitiesPage() {
   const fetchProviderFacilities = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('services').select('*').neq('service_category', 'experience').eq('status', 'approved').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('services').select('*').neq('service_category', 'experience').in('status', ['approved', 'update_requested']).order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setFacilities(data);
     } catch (err) {

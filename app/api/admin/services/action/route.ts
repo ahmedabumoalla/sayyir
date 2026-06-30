@@ -60,7 +60,9 @@ export async function POST(request: Request) {
     } else if (action === "delete") {
       result = await supabase
         .from("services")
-        .delete()
+        .update({
+          status: "deleted",
+        })
         .eq("id", serviceId);
 
       logMessage = `حذف الخدمة رقم ${serviceId}`;

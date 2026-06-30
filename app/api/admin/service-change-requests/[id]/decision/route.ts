@@ -53,6 +53,19 @@ export async function POST(
     }
 
     if (action === "reject") {
+      const { error: serviceError } = await supabaseServer
+        .from("services")
+        .update({
+          status: "approved",
+          pending_updates: null,
+        })
+        .eq("id", changeRequest.service_id)
+        .eq("provider_id", changeRequest.provider_id);
+
+      if (serviceError) {
+        return NextResponse.json({ error: serviceError.message }, { status: 500 });
+      }
+
       const { error } = await supabaseServer
         .from("service_change_requests")
         .update({
@@ -78,7 +91,8 @@ export async function POST(
       .from("services")
       .update({
         ...changeRequest.requested_changes,
-        updated_at: new Date().toISOString(),
+        status: "approved",
+        pending_updates: null,
       })
       .eq("id", changeRequest.service_id)
       .eq("provider_id", changeRequest.provider_id);

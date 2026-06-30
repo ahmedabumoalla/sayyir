@@ -37,7 +37,7 @@ function ServicesContent() {
     const { data, error } = await supabase
       .from("services")
       .select(`*, profiles:provider_id(full_name, is_approved)`)
-      .eq("status", "approved")
+      .in("status", ["approved", "update_requested"])
       .order("created_at", { ascending: false });
 
     if (!error && data) setServices(data);
