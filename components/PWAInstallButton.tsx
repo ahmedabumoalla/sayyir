@@ -19,12 +19,15 @@ function isStandaloneMode() {
   );
 }
 
-function isIosSafari() {
+function isIosDevice() {
   const userAgent = window.navigator.userAgent.toLowerCase();
-  const isIos = /iphone|ipad|ipod/.test(userAgent);
-  const isSafari = /safari/.test(userAgent) && !/crios|fxios|edgios/.test(userAgent);
+  const platform = window.navigator.platform.toLowerCase();
+  const maxTouchPoints = window.navigator.maxTouchPoints || 0;
 
-  return isIos && isSafari;
+  return (
+    /iphone|ipad|ipod/.test(userAgent) ||
+    (platform === "macintel" && maxTouchPoints > 1)
+  );
 }
 
 type PWAInstallButtonProps = {
@@ -36,6 +39,7 @@ export default function PWAInstallButton({
 }: PWAInstallButtonProps) {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
+  const [isIos, setIsIos] = useState(false);
   const [showIosHint, setShowIosHint] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [fallbackMessage, setFallbackMessage] = useState(false);
@@ -48,11 +52,12 @@ export default function PWAInstallButton({
       return;
     }
 
-    setShowIosHint(isIosSafari());
+    setIsIos(isIosDevice());
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallPrompt(event as BeforeInstallPromptEvent);
+      setFallbackMessage(false);
       setShowIosHint(false);
     };
 
@@ -73,7 +78,10 @@ export default function PWAInstallButton({
 
   const installApp = async () => {
     if (!installPrompt) {
-      if (variant === "header") {
+      if (isIos) {
+        setFallbackMessage(false);
+        setShowIosHint(true);
+      } else {
         setFallbackMessage(true);
         window.setTimeout(() => setFallbackMessage(false), 3500);
       }
@@ -90,6 +98,34 @@ export default function PWAInstallButton({
       setInstallPrompt(null);
     }
   };
+
+  const iosInstallHint = (
+    <div
+      className="w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-[#C9A063]/50 bg-white px-4 py-3 text-right text-xs font-medium leading-6 text-[#5B2A14] shadow-lg shadow-black/10"
+      dir="rtl"
+      role="dialog"
+      aria-modal="false"
+      aria-label="طريقة تثبيت سير على الآيفون"
+    >
+      <p className="mb-2 font-bold">لتثبيت سير على الآيفون:</p>
+      <ol className="list-decimal space-y-1 pr-4">
+        <li>افتح الموقع من Safari</li>
+        <li>اضغط زر المشاركة</li>
+        <li>اختر إضافة إلى الشاشة الرئيسية</li>
+        <li>اضغط إضافة</li>
+      </ol>
+      <p className="mt-2 text-[11px] leading-5 text-[#7A5A2A]">
+        إذا كنت داخل واتساب أو إنستغرام، افتح الرابط في Safari أولًا
+      </p>
+      <button
+        type="button"
+        onClick={() => setShowIosHint(false)}
+        className="mt-2 text-[11px] font-bold text-[#8C3F1F] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[#C9A063]"
+      >
+        إغلاق
+      </button>
+    </div>
+  );
 
   if (isStandalone) {
     return null;
@@ -113,36 +149,38 @@ export default function PWAInstallButton({
             className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-56 max-w-[calc(100vw-2rem)] rounded-lg border border-[#C9A063]/50 bg-white px-3 py-2 text-xs font-medium leading-5 text-[#5B2A14] shadow-lg shadow-black/10"
             role="status"
           >
-            يمكنك تثبيت سير من قائمة المتصفح أو زر المشاركة
+            يمكنك تثبيت سير من قائمة المتصفح
+          </div>
+        )}
+
+        {showIosHint && (
+          <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50">
+            {iosInstallHint}
           </div>
         )}
       </div>
     );
   }
 
-  if (installPrompt) {
+  if (installPrompt || isIos) {
     return (
-      <button
-        type="button"
-        onClick={installApp}
-        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 rounded-full bg-[#8C3F1F] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-black/15 transition hover:bg-[#5B2A14] focus:outline-none focus:ring-2 focus:ring-[#C9A063] focus:ring-offset-2"
-        dir="rtl"
-        aria-label="تثبيت تطبيق سير"
-      >
-        تثبيت سير
-      </button>
-    );
-  }
+      <>
+        <button
+          type="button"
+          onClick={installApp}
+          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 rounded-full bg-[#8C3F1F] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-black/15 transition hover:bg-[#5B2A14] focus:outline-none focus:ring-2 focus:ring-[#C9A063] focus:ring-offset-2"
+          dir="rtl"
+          aria-label="تثبيت تطبيق سير"
+        >
+          تثبيت سير
+        </button>
 
-  if (showIosHint) {
-    return (
-      <div
-        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-[#C9A063]/50 bg-white px-3 py-2 text-xs font-medium leading-5 text-[#5B2A14] shadow-lg shadow-black/10"
-        dir="rtl"
-        role="status"
-      >
-        من زر المشاركة اختر إضافة إلى الشاشة الرئيسية
-      </div>
+        {showIosHint && (
+          <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] right-4 z-50">
+            {iosInstallHint}
+          </div>
+        )}
+      </>
     );
   }
 
