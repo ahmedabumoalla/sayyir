@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient"; 
 import DynamicShowcase from "@/components/DynamicShowcase"; 
+import PWAInstallButton from "@/components/PWAInstallButton";
 import { 
   Briefcase, Map as MapIcon, Sparkles, Tent, Coffee, Landmark, 
   User, LayoutDashboard, Eye, Target, Phone, Mail, 
@@ -321,11 +322,11 @@ export default function HomePage() {
       )}
 
       {/* HEADER SECTION */}
-      <header className={`fixed left-0 right-0 z-50 p-6 flex justify-between items-center bg-linear-to-b from-black/90 to-transparent transition-all duration-300 ${hasAnnouncements ? 'top-10' : 'top-0'}`}>
-        <div className="w-28 md:w-32 hover:scale-105 transition duration-300">
+      <header className={`fixed left-0 right-0 z-50 p-4 sm:p-6 flex justify-between items-center bg-linear-to-b from-black/90 to-transparent transition-all duration-300 ${hasAnnouncements ? 'top-10' : 'top-0'}`}>
+        <div className="w-20 sm:w-28 md:w-32 hover:scale-105 transition duration-300">
           <Link href="/"><Image src="/logo.png" alt="Sayyir" width={120} height={50} priority className="drop-shadow-lg" /></Link>
         </div>
-        <div className="flex items-center gap-3 md:gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
           {userSession ? (
             <div className="flex items-center gap-2 md:gap-3 bg-white/10 backdrop-blur-md px-3 md:px-5 py-2 rounded-full border border-white/10 shadow-lg">
               <div className="w-8 h-8 rounded-full bg-[#C89B3C] flex items-center justify-center text-[#2B1F17] font-bold shadow-md"><User size={16} /></div>
@@ -340,9 +341,12 @@ export default function HomePage() {
               </Link>
             </div>
           ) : (
-            <Link href="/login" className="bg-white text-black px-5 py-2.5 rounded-full text-sm font-bold hover:bg-[#C89B3C] transition flex items-center gap-2 shadow-lg">
-              <User size={16} /> <span>دخول</span>
-            </Link>
+            <>
+              <PWAInstallButton variant="header" />
+              <Link href="/login" className="bg-white text-black px-3 py-2 rounded-full text-xs font-bold hover:bg-[#C89B3C] transition flex items-center gap-1.5 shadow-lg sm:px-5 sm:py-2.5 sm:text-sm sm:gap-2">
+                <User size={16} /> <span>دخول</span>
+              </Link>
+            </>
           )}
           <Link href="/ai-guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-linear-to-tr from-[#C89B3C] to-[#dcb45e] flex items-center justify-center shadow-lg animate-pulse hover:animate-none hover:scale-110 transition border border-[#C89B3C]/50" title="المرشد الذكي">
               <Sparkles size={20} className="text-[#2B1F17]" />

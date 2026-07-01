@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import PWARegister from "@/components/PWARegister";
 import { GoogleAnalytics } from '@next/third-parties/google'; // 👈 1. تم الاستيراد
 import "./globals.css";
 
@@ -14,6 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "سير",
+    statusBarStyle: "default",
+  },
   title: {
     template: '%s | سير - استكشف تراث عسير',
     default: 'سير - استكشف تراث عسير',
@@ -40,6 +47,10 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#8C3F1F",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -55,6 +66,7 @@ export default function RootLayout({
         
         
 <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID || ""} />
+        <PWARegister />
         
       </body>
     </html>
