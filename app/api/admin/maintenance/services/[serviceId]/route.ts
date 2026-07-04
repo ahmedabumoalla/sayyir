@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireAdminByRequesterId, writeAdminLog } from "@/lib/adminApi";
+import { writeAdminLog } from "@/lib/adminApi";
+import { getValidAdminMaintenanceSession } from "@/lib/requireProvider";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 const allowedStatus = new Set([
@@ -18,6 +19,7 @@ const directFields = [
   "description",
   "service_category",
   "sub_category",
+  "service_type",
   "commercial_license",
   "image_url",
   "work_schedule",
@@ -32,10 +34,9 @@ export async function PATCH(
   context: { params: any }
 ) {
   const body = await req.json().catch(() => ({}));
-  const requesterId = String(body.requesterId || "").trim();
-  const admin = await requireAdminByRequesterId(requesterId);
-  if (!admin.ok) {
-    return NextResponse.json({ error: admin.error }, { status: admin.status });
+  const maintenanceSession = await getValidAdminMaintenanceSession(req);
+  if (!maintenanceSession) {
+    return NextResponse.json({ error: "جلسة الصيانة غير صالحة" }, { status: 401 });
   }
 
   const { serviceId } = await context.params;
@@ -44,6 +45,10 @@ export async function PATCH(
 
   if (!providerId || !updates) {
     return NextResponse.json({ error: "providerId و updates مطلوبة" }, { status: 400 });
+  }
+
+  if (maintenanceSession.providerId !== providerId) {
+    return NextResponse.json({ error: "جلسة الصيانة لا تطابق هذا المزود" }, { status: 403 });
   }
 
   const { data: service, error: serviceError } = await supabaseServer
@@ -112,8 +117,8 @@ export async function PATCH(
   }
 
   await writeAdminLog(
-    admin.adminId,
-    "maintenance_update_service",
+    maintenanceSession.adminId,
+    "maintenance_provider_direct_update",
     `Maintenance update for service ${serviceId} provider ${providerId}`
   );
 

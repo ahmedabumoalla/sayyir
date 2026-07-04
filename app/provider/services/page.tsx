@@ -571,6 +571,9 @@ export default function ProviderServicesPage() {
                       <Clock size={14}/> تمت إضافة هذه الخدمة في: {new Date(viewService.created_at).toLocaleDateString('ar-SA')}
                   </div>
                   <div className="flex flex-wrap gap-3">
+                      {isMaintenanceMode && (
+                         <button onClick={() => router.push(`/provider/services/${viewService.id}/edit`)} className="bg-amber-500/10 text-amber-300 hover:bg-amber-500 hover:text-black border border-amber-500/30 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2"><Edit size={16}/> تعديل مباشر</button>
+                      )}
                       {viewService.status === 'approved' && !isMaintenanceMode && (
                          <>
                             <button onClick={() => router.push(`/provider/services/${viewService.id}/edit`)} className="bg-[#C89B3C]/10 text-[#C89B3C] hover:bg-[#C89B3C] hover:text-black border border-[#C89B3C]/30 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2"><Edit size={16}/> طلب تعديل</button>

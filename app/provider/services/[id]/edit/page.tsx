@@ -7,8 +7,19 @@ import { Tajawal } from "next/font/google";
 import { 
     Loader2, ArrowRight, Edit, Send, Info, FileText, Clock, Compass, Home, Ticket, ShieldAlert, UploadCloud, CheckCircle, Eye, ImageIcon, X, Trash2, Plus
 } from "lucide-react";
+import { getProviderClientContext } from "@/lib/providerContextClient";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
+const serviceStatuses = [
+  "approved",
+  "update_requested",
+  "stopped",
+  "deleted",
+  "rejected",
+  "pending",
+  "stop_requested",
+  "delete_requested",
+];
 
 const CompareRow = ({ label, originalValue, originalDisplay, children }: { label: string, originalValue?: any, originalDisplay?: React.ReactNode, children: React.ReactNode }) => (
     <div className="flex flex-col md:flex-row gap-4 p-4 bg-white/5 border border-white/5 rounded-2xl hover:border-white/10 transition">
@@ -48,6 +59,8 @@ export default function EditServicePage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [providerInfo, setProviderInfo] = useState<any>(null);
+  const [providerContext, setProviderContext] = useState<any>(null);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   
   const [originalService, setOriginalService] = useState<any>(null);
 
@@ -62,7 +75,14 @@ export default function EditServicePage() {
       title: '',
       description: '',
       price: '',
+      service_category: '',
+      sub_category: '',
+      service_type: '',
       commercial_license: '',
+      location_lat: '',
+      location_lng: '',
+      max_capacity: '',
+      status: '',
       work_schedule: [],
       details: {}
   });
@@ -75,20 +95,23 @@ export default function EditServicePage() {
 
   const fetchServiceData = async () => {
       try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) {
+          const context = await getProviderClientContext();
+          setProviderContext(context);
+          setIsMaintenanceMode(context.isMaintenanceMode);
+
+          if (!context.providerId) {
               router.replace('/login');
               return;
           }
 
-          const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
+          const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', context.providerId).single();
           setProviderInfo(profile);
 
           const { data: service, error } = await supabase
               .from('services')
               .select('*')
               .eq('id', serviceId)
-              .eq('provider_id', session.user.id)
+              .eq('provider_id', context.providerId)
               .single();
 
           if (error || !service) {
@@ -99,7 +122,7 @@ export default function EditServicePage() {
 
           setOriginalService(service);
           
-          const initialData = service.pending_updates || service;
+          const initialData = context.isMaintenanceMode ? service : service.pending_updates || service;
           
           // استخراج الصور الحالية
           const currentImages = safeArray(initialData.details?.images || initialData.image_url);
@@ -109,7 +132,14 @@ export default function EditServicePage() {
               title: initialData.title || '',
               description: initialData.description || '',
               price: initialData.price !== undefined ? initialData.price.toString() : '0',
+              service_category: initialData.service_category || '',
+              sub_category: initialData.sub_category || '',
+              service_type: initialData.service_type || '',
               commercial_license: initialData.commercial_license || '',
+              location_lat: initialData.location_lat ?? '',
+              location_lng: initialData.location_lng ?? '',
+              max_capacity: initialData.max_capacity ?? '',
+              status: initialData.status || service.status || '',
               work_schedule: initialData.work_schedule || [],
               details: JSON.parse(JSON.stringify(initialData.details || {}))
           });
@@ -206,27 +236,65 @@ export default function EditServicePage() {
           const finalMediaList = [...existingMedia, ...uploadedMediaUrls];
 
           // تحديث الميديا في डिटेल्स
-          const updatedDetails = { ...editForm.details, images: finalMediaList };
+          const updatedDetails = { ...(originalService.details || {}), ...(editForm.details || {}), images: finalMediaList };
 
           const pendingUpdates = { 
               title: editForm.title, 
               description: editForm.description, 
               price: Number(editForm.price),
+              service_category: editForm.service_category,
+              sub_category: editForm.sub_category,
+              service_type: editForm.service_type,
               commercial_license: finalLicenseUrl, 
               image_url: finalMediaList[0] || '', // نعتمد أول صورة أو فيديو كغلاف
+              location_lat: editForm.location_lat === '' ? null : Number(editForm.location_lat),
+              location_lng: editForm.location_lng === '' ? null : Number(editForm.location_lng),
+              max_capacity: editForm.max_capacity === '' ? null : Number(editForm.max_capacity),
               work_schedule: editForm.work_schedule,
               details: updatedDetails
           };
 
-          const { error } = await supabase
-              .from('services')
-              .update({ 
-                  status: 'update_requested', 
-                  pending_updates: pendingUpdates 
-              })
-              .eq('id', serviceId);
+          if (isMaintenanceMode) {
+              const maintenanceUpdates: Record<string, any> = { ...pendingUpdates };
+              if (editForm.status && editForm.status !== originalService.status) {
+                  maintenanceUpdates.status = editForm.status;
+              }
 
-          if (error) throw error;
+              const response = await fetch(`/api/admin/maintenance/services/${serviceId}`, {
+                  method: 'PATCH',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      providerId: providerContext?.providerId,
+                      updates: maintenanceUpdates,
+                  }),
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result?.error || 'تعذر حفظ التعديلات المباشرة');
+
+              alert("تم حفظ تعديلات الخدمة مباشرة بصلاحية الأدمن في وضع الصيانة.");
+              router.push('/provider/services');
+              return;
+          }
+
+          if (!providerContext?.accessToken) {
+              throw new Error("جلسة المزود غير صالحة");
+          }
+
+          const response = await fetch('/api/provider/service-change-requests', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${providerContext.accessToken}`,
+              },
+              body: JSON.stringify({
+                  service_id: serviceId,
+                  requested_changes: pendingUpdates,
+                  reason: 'تعديل بيانات الخدمة',
+              }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result?.error || 'تعذر إرسال طلب التعديل');
 
           await fetch('/api/emails/send', { 
               method: 'POST', 
@@ -278,7 +346,16 @@ export default function EditServicePage() {
 
         <div className="max-w-6xl mx-auto bg-[#1E1E1E] rounded-3xl border border-blue-500/20 shadow-2xl overflow-hidden">
             
-            <div className="bg-blue-500/10 p-5 md:p-6 border-b border-white/5 flex items-start gap-3">
+            {isMaintenanceMode && (
+                <div className="bg-amber-500/10 p-5 md:p-6 border-b border-amber-500/20 flex items-start gap-3">
+                    <ShieldAlert className="text-amber-300 shrink-0 mt-0.5" size={20} />
+                    <p className="text-sm md:text-base text-amber-100/90 leading-relaxed">
+                        أنت تعدل هذه الخدمة مباشرة بصلاحية الأدمن في وضع الصيانة
+                    </p>
+                </div>
+            )}
+
+            <div className={`bg-blue-500/10 p-5 md:p-6 border-b border-white/5 flex items-start gap-3 ${isMaintenanceMode ? "hidden" : ""}`}>
                 <Info className="text-blue-400 shrink-0 mt-0.5" size={20} />
                 <p className="text-sm md:text-base text-blue-100/80 leading-relaxed">
                     قم بتعديل أي حقل ترغب بتحديثه في الحقول الملونة أدناه. يمكنك تعديل العناوين، الوصف، والصور والمقاطع. سيتم إرسال كافة التعديلات كطلب واحد للإدارة للمراجعة. <strong className="text-white">ولن تتأثر الخدمة الحالية المعروضة للعملاء حتى يتم الاعتماد.</strong>
@@ -358,6 +435,44 @@ export default function EditServicePage() {
 
                     <CompareRow label="وصف الخدمة" originalValue={originalService.description}>
                         <textarea rows={4} value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition resize-none leading-relaxed" />
+                    </CompareRow>
+
+                    <CompareRow label="التصنيف الرئيسي" originalValue={originalService.service_category}>
+                        <input value={editForm.service_category} onChange={e => setEditForm({...editForm, service_category: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                    </CompareRow>
+
+                    <CompareRow label="التصنيف الفرعي" originalValue={originalService.sub_category}>
+                        <input value={editForm.sub_category} onChange={e => setEditForm({...editForm, sub_category: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                    </CompareRow>
+
+                    <CompareRow label="نوع الخدمة" originalValue={originalService.service_type}>
+                        <input value={editForm.service_type} onChange={e => setEditForm({...editForm, service_type: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                    </CompareRow>
+
+                    {isMaintenanceMode && (
+                        <CompareRow label="حالة الخدمة" originalValue={originalService.status}>
+                            <select value={editForm.status} onChange={e => setEditForm({...editForm, status: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition">
+                                {serviceStatuses.map((status) => (
+                                    <option key={status} value={status} className="bg-[#1a1a1a]">{status}</option>
+                                ))}
+                            </select>
+                        </CompareRow>
+                    )}
+
+                    <CompareRow label="خط العرض" originalValue={originalService.location_lat}>
+                        <input type="number" step="any" value={editForm.location_lat} onChange={e => setEditForm({...editForm, location_lat: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                    </CompareRow>
+
+                    <CompareRow label="خط الطول" originalValue={originalService.location_lng}>
+                        <input type="number" step="any" value={editForm.location_lng} onChange={e => setEditForm({...editForm, location_lng: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                    </CompareRow>
+
+                    <CompareRow label="السعة الاستيعابية" originalValue={originalService.max_capacity}>
+                        <input type="number" min="0" value={editForm.max_capacity} onChange={e => setEditForm({...editForm, max_capacity: e.target.value})} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
+                    </CompareRow>
+
+                    <CompareRow label="العنوان" originalValue={originalService.details?.address}>
+                        <input value={editForm.details?.address || ''} onChange={e => handleDetailChange('address', e.target.value)} className="w-full bg-black/40 border border-white/10 focus:border-[#C89B3C] outline-none rounded-xl p-3 text-white transition" />
                     </CompareRow>
 
                     <CompareRow 
@@ -537,7 +652,7 @@ export default function EditServicePage() {
                     disabled={actionLoading} 
                     className="bg-[#C89B3C] hover:bg-[#b38a35] text-black font-bold px-10 py-3.5 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-[#C89B3C]/20 disabled:opacity-70"
                 >
-                    {actionLoading ? <Loader2 className="animate-spin text-black"/> : <><Send size={18}/> إرسال الطلب الشامل للإدارة</>}
+                    {actionLoading ? <Loader2 className="animate-spin text-black"/> : <><Send size={18}/> {isMaintenanceMode ? "حفظ التعديل مباشرة" : "إرسال الطلب الشامل للإدارة"}</>}
                 </button>
             </div>
 
