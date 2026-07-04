@@ -121,8 +121,13 @@ export default function CustomersPage() {
     }
 
     try {
+      const requesterId = await getSessionUserId();
+      const searchParams = new URLSearchParams({
+        providerIds: providerIds.join(","),
+        requesterId,
+      });
       const response = await fetch(
-        `/api/admin/maintenance/code?providerIds=${encodeURIComponent(providerIds.join(","))}`
+        `/api/admin/maintenance/code?${searchParams.toString()}`
       );
       const result = await response.json().catch(() => ({}));
 
@@ -143,10 +148,11 @@ export default function CustomersPage() {
     setActionLoading(providerId);
 
     try {
+      const requesterId = await getSessionUserId();
       const response = await fetch("/api/admin/maintenance/code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId }),
+        body: JSON.stringify({ providerId, requesterId }),
       });
       const result = await response.json().catch(() => ({}));
 

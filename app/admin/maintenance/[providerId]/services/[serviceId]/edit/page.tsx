@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight, Loader2, Save, ShieldAlert } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 
 const statuses = [
   "approved",
@@ -40,13 +41,29 @@ export default function MaintenanceServiceEditPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const getSessionUserId = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user?.id) {
+      throw new Error("جلسة العمل مفقودة");
+    }
+
+    return session.user.id;
+  };
+
   useEffect(() => {
     const loadService = async () => {
       setLoading(true);
       setError("");
 
       try {
-        const response = await fetch(`/api/admin/maintenance/provider/${providerId}`);
+        const requesterId = await getSessionUserId();
+        const searchParams = new URLSearchParams({ requesterId });
+        const response = await fetch(
+          `/api/admin/maintenance/provider/${providerId}?${searchParams.toString()}`
+        );
         const result = await response.json().catch(() => ({}));
 
         if (!response.ok) {
@@ -95,6 +112,7 @@ export default function MaintenanceServiceEditPage() {
     setError("");
 
     try {
+      const requesterId = await getSessionUserId();
       const updates: Record<string, any> = {
         title: form.title,
         description: form.description,
@@ -121,7 +139,7 @@ export default function MaintenanceServiceEditPage() {
       const response = await fetch(`/api/admin/maintenance/services/${serviceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId, updates }),
+        body: JSON.stringify({ providerId, requesterId, updates }),
       });
       const result = await response.json().catch(() => ({}));
 

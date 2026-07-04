@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminFromCookies, writeAdminLog } from "@/lib/adminApi";
+import { requireAdminByRequesterId, writeAdminLog } from "@/lib/adminApi";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 function makeMaintenanceCode() {
@@ -25,7 +25,8 @@ async function generateUniqueCode() {
 }
 
 export async function GET(req: NextRequest) {
-  const admin = await requireAdminFromCookies();
+  const requesterId = req.nextUrl.searchParams.get("requesterId") || "";
+  const admin = await requireAdminByRequesterId(requesterId);
   if (!admin.ok) {
     return NextResponse.json({ error: admin.error }, { status: admin.status });
   }
@@ -53,12 +54,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: Request) {
-  const admin = await requireAdminFromCookies();
+  const body = await req.json().catch(() => ({}));
+  const requesterId = String(body.requesterId || "").trim();
+  const admin = await requireAdminByRequesterId(requesterId);
   if (!admin.ok) {
     return NextResponse.json({ error: admin.error }, { status: admin.status });
   }
 
-  const body = await req.json().catch(() => ({}));
   const providerId = String(body.providerId || "").trim();
 
   if (!providerId) {

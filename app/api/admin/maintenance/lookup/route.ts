@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import { requireAdminFromCookies, writeAdminLog } from "@/lib/adminApi";
+import { requireAdminByRequesterId, writeAdminLog } from "@/lib/adminApi";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export async function POST(req: Request) {
-  const admin = await requireAdminFromCookies();
+  const body = await req.json().catch(() => ({}));
+  const requesterId = String(body.requesterId || "").trim();
+  const admin = await requireAdminByRequesterId(requesterId);
   if (!admin.ok) {
     return NextResponse.json({ error: admin.error }, { status: admin.status });
   }
 
-  const body = await req.json().catch(() => ({}));
   const maintenanceCode = String(body.maintenanceCode || "").replace(/\D/g, "");
 
   if (!maintenanceCode) {

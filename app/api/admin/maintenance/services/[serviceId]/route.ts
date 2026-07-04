@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminFromCookies, writeAdminLog } from "@/lib/adminApi";
+import { requireAdminByRequesterId, writeAdminLog } from "@/lib/adminApi";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 const allowedStatus = new Set([
@@ -31,13 +31,14 @@ export async function PATCH(
   req: Request,
   context: { params: any }
 ) {
-  const admin = await requireAdminFromCookies();
+  const body = await req.json().catch(() => ({}));
+  const requesterId = String(body.requesterId || "").trim();
+  const admin = await requireAdminByRequesterId(requesterId);
   if (!admin.ok) {
     return NextResponse.json({ error: admin.error }, { status: admin.status });
   }
 
   const { serviceId } = await context.params;
-  const body = await req.json().catch(() => ({}));
   const providerId = String(body.providerId || "").trim();
   const updates = body.updates && typeof body.updates === "object" ? body.updates : null;
 

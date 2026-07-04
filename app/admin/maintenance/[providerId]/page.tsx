@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowRight, Briefcase, Edit, Loader2, Mail, Phone, User } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 
 const statuses: Record<string, string> = {
   approved: "معتمدة",
@@ -24,13 +25,29 @@ export default function ProviderMaintenancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const getSessionUserId = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user?.id) {
+      throw new Error("جلسة العمل مفقودة");
+    }
+
+    return session.user.id;
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       setError("");
 
       try {
-        const response = await fetch(`/api/admin/maintenance/provider/${providerId}`);
+        const requesterId = await getSessionUserId();
+        const searchParams = new URLSearchParams({ requesterId });
+        const response = await fetch(
+          `/api/admin/maintenance/provider/${providerId}?${searchParams.toString()}`
+        );
         const result = await response.json().catch(() => ({}));
 
         if (!response.ok) {

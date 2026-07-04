@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function AdminMaintenancePage() {
   const router = useRouter();
@@ -10,16 +11,29 @@ export default function AdminMaintenancePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const getSessionUserId = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user?.id) {
+      throw new Error("جلسة العمل مفقودة");
+    }
+
+    return session.user.id;
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
     setLoading(true);
 
     try {
+      const requesterId = await getSessionUserId();
       const response = await fetch("/api/admin/maintenance/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maintenanceCode }),
+        body: JSON.stringify({ maintenanceCode, requesterId }),
       });
       const result = await response.json().catch(() => ({}));
 

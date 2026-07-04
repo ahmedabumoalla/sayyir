@@ -12,9 +12,25 @@ export type AdminApiResult =
         email: string | null;
         is_admin: boolean | null;
         is_super_admin: boolean | null;
+        role?: string | null;
       };
     }
   | { ok: false; status: number; error: string };
+
+function isAdminProfile(profile: {
+  is_admin?: boolean | null;
+  is_super_admin?: boolean | null;
+  role?: string | null;
+}) {
+  const role = String(profile.role || "").trim().toLowerCase();
+
+  return (
+    profile.is_super_admin === true ||
+    profile.is_admin === true ||
+    role === "admin" ||
+    role === "super_admin"
+  );
+}
 
 export async function requireAdminFromCookies(): Promise<AdminApiResult> {
   const cookieStore = await cookies();
@@ -50,6 +66,28 @@ export async function requireAdminFromCookies(): Promise<AdminApiResult> {
   }
 
   return { ok: true, adminId: user.id, profile };
+}
+
+export async function requireAdminByRequesterId(
+  requesterId: string
+): Promise<AdminApiResult> {
+  const id = String(requesterId || "").trim();
+
+  if (!id) {
+    return { ok: false, status: 401, error: "غير مصرح" };
+  }
+
+  const { data: profile, error: profileError } = await supabaseServer
+    .from("profiles")
+    .select("id, full_name, email, is_admin, is_super_admin, role")
+    .eq("id", id)
+    .single();
+
+  if (profileError || !profile || !isAdminProfile(profile)) {
+    return { ok: false, status: 403, error: "غير مصرح لك" };
+  }
+
+  return { ok: true, adminId: id, profile };
 }
 
 export async function writeAdminLog(

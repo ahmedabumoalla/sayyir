@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { requireAdminFromCookies } from "@/lib/adminApi";
+import { requireAdminByRequesterId } from "@/lib/adminApi";
 import { supabaseServer } from "@/lib/supabaseServer";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: any }
 ) {
-  const admin = await requireAdminFromCookies();
+  const requesterId = new URL(req.url).searchParams.get("requesterId") || "";
+  const admin = await requireAdminByRequesterId(requesterId);
   if (!admin.ok) {
     return NextResponse.json({ error: admin.error }, { status: admin.status });
   }
