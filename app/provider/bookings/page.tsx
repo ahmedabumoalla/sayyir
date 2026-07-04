@@ -14,6 +14,7 @@ import Image from "next/image";
 import { Tajawal } from "next/font/google";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { getProviderClientContext } from "@/lib/providerContextClient";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -101,6 +102,7 @@ export default function ProviderBookingsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
 
   useEffect(() => {
     fetchBookings();
@@ -110,21 +112,25 @@ export default function ProviderBookingsPage() {
     setLoading(true);
   
     try {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
+      const providerContext = await getProviderClientContext();
+      setIsMaintenanceMode(providerContext.isMaintenanceMode);
   
-      if (!session) {
+      if (!providerContext.providerId) {
         setLoading(false);
         return;
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (providerContext.accessToken) {
+        headers.Authorization = `Bearer ${providerContext.accessToken}`;
       }
   
       const response = await fetch(`/api/provider/bookings?filter=${filter}`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`
-        }
+        headers
       });
   
       const result = await response.json();
@@ -143,6 +149,7 @@ export default function ProviderBookingsPage() {
 
   const handleApprove = async () => {
     if (!selectedBooking) return;
+    if (isMaintenanceMode) return alert("وضع الصيانة للقراءة والتنقل فقط.");
     setActionLoading(true);
 
     try {
@@ -185,6 +192,7 @@ export default function ProviderBookingsPage() {
   };
 
   const handleReject = async () => {
+    if (isMaintenanceMode) return alert("وضع الصيانة للقراءة والتنقل فقط.");
     if (!selectedBooking || !rejectReason.trim()) {
       alert("الرجاء كتابة سبب الرفض");
       return;
@@ -647,7 +655,7 @@ export default function ProviderBookingsPage() {
             </div>
 
             <div className="p-6 border-t border-white/10 bg-[#151515] rounded-b-3xl mt-auto">
-              {selectedBooking.status === "pending" &&
+              {selectedBooking.status === "pending" && !isMaintenanceMode &&
                 (!showRejectModal ? (
                   <div className="flex flex-col sm:flex-row gap-4">
                     <button

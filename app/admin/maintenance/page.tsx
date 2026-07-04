@@ -30,7 +30,7 @@ export default function AdminMaintenancePage() {
 
     try {
       const requesterId = await getSessionUserId();
-      const response = await fetch("/api/admin/maintenance/lookup", {
+      const response = await fetch("/api/admin/maintenance/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maintenanceCode, requesterId }),
@@ -45,7 +45,7 @@ export default function AdminMaintenancePage() {
         throw new Error(result?.error || "تعذر الدخول إلى وضع الصيانة");
       }
 
-      router.push(`/admin/maintenance/${result.providerId}`);
+      router.push(result.redirectTo || "/provider/dashboard");
     } catch (err: any) {
       setError(err.message || "حدث خطأ غير متوقع");
     } finally {

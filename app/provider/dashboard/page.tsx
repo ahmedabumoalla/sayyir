@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { getProviderClientContext } from "@/lib/providerContextClient";
 import Link from "next/link";
 import {
   Wallet,
@@ -36,11 +37,9 @@ export default function ProviderDashboard() {
 
   const fetchStats = async () => {
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const providerContext = await getProviderClientContext();
 
-      if (!session) {
+      if (!providerContext.providerId) {
         setLoading(false);
         return;
       }
@@ -48,7 +47,7 @@ export default function ProviderDashboard() {
       const { data: profile } = await supabase
         .from("profiles")
         .select("full_name")
-        .eq("id", session.user.id)
+        .eq("id", providerContext.providerId)
         .single();
 
       if (profile) setProviderName(profile.full_name || "مزود خدمة");
@@ -56,7 +55,7 @@ export default function ProviderDashboard() {
       const { data: myServices, count: servicesCount } = await supabase
         .from("services")
         .select("id", { count: "exact" })
-        .eq("provider_id", session.user.id);
+        .eq("provider_id", providerContext.providerId);
 
       const serviceIds = myServices?.map((s) => s.id) || [];
 

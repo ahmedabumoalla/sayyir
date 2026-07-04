@@ -6,6 +6,7 @@ import {
   Wallet, Building2, CreditCard, Send, Loader2, AlertCircle, CheckCircle, Clock, XCircle, History
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
+import { getProviderClientContext } from "@/lib/providerContextClient";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
@@ -14,6 +15,7 @@ export default function ProviderFinancePage() {
   const [submitLoading, setSubmitLoading] = useState(false);
   const [balance, setBalance] = useState(0); 
   const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   
   // بيانات النموذج
   const [amount, setAmount] = useState("");
@@ -28,12 +30,13 @@ export default function ProviderFinancePage() {
   const fetchFinancialData = async () => {
       setLoading(true);
       try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) return;
+          const providerContext = await getProviderClientContext();
+          setIsMaintenanceMode(providerContext.isMaintenanceMode);
+          if (!providerContext.providerId) return;
 
           // 1. جلب الرصيد من الدالة (RPC) التي برمجناها في SQL
           const { data: currentBalance, error: balanceError } = await supabase
-              .rpc('get_provider_balance', { p_provider_id: session.user.id });
+              .rpc('get_provider_balance', { p_provider_id: providerContext.providerId });
 
           if (!balanceError) {
               setBalance(currentBalance || 0);
@@ -43,7 +46,7 @@ export default function ProviderFinancePage() {
           const { data: history } = await supabase
               .from('payout_requests')
               .select('*')
-              .eq('provider_id', session.user.id)
+              .eq('provider_id', providerContext.providerId)
               .order('created_at', { ascending: false });
 
           if (history) setPayoutHistory(history);
@@ -57,6 +60,11 @@ export default function ProviderFinancePage() {
 
   const submitPayout = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isMaintenanceMode) {
+        alert("وضع الصيانة للقراءة والتنقل فقط.");
+        return;
+    }
     
     if (!amount || !bankName || !iban) {
         alert("الرجاء تعبئة جميع البيانات");
@@ -78,7 +86,10 @@ export default function ProviderFinancePage() {
     setSubmitLoading(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const providerContext = await getProviderClientContext();
+      const session = providerContext.providerId
+        ? { user: { id: providerContext.providerId } }
+        : null;
       if (!session) throw new Error("يجب تسجيل الدخول أولاً");
 
       // إدخال الطلب مباشرة في قاعدة البيانات
@@ -198,7 +209,7 @@ export default function ProviderFinancePage() {
 
                     <button 
                         type="submit" 
-                        disabled={submitLoading || balance <= 0}
+                        disabled={isMaintenanceMode || submitLoading || balance <= 0}
                         className="w-full bg-[#C89B3C] hover:bg-[#b38a35] text-[#2B1F17] font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {submitLoading ? <Loader2 className="animate-spin"/> : <><Send size={20}/> تأكيد طلب السحب</>}

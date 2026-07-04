@@ -15,6 +15,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import Link from "next/link";
 import Image from "next/image";
 import { Tajawal } from "next/font/google";
+import { getProviderClientContext } from "@/lib/providerContextClient";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -83,6 +84,7 @@ export default function ProviderServicesPage() {
 
   const [actionModal, setActionModal] = useState<'stop' | 'delete' | null>(null); 
   const [actionLoading, setActionLoading] = useState(false);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
 
   const [stopForm, setStopForm] = useState({ reason: '', startDate: '', endDate: '' });
   const [deleteReason, setDeleteReason] = useState('');
@@ -92,13 +94,17 @@ export default function ProviderServicesPage() {
   }, []);
 
   const fetchInitialData = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    const providerContext = await getProviderClientContext();
+    setIsMaintenanceMode(providerContext.isMaintenanceMode);
+    if (!providerContext.providerId) {
+        setLoading(false);
+        return;
+    }
     
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', providerContext.providerId).single();
     setProviderInfo(profile);
     
-    const { data: srvs, error } = await supabase.from('services').select('*').eq('provider_id', session.user.id).order('created_at', { ascending: false });
+    const { data: srvs, error } = await supabase.from('services').select('*').eq('provider_id', providerContext.providerId).order('created_at', { ascending: false });
     if (error) console.error("Error fetching services:", error);
     
     if (srvs) {
@@ -113,6 +119,7 @@ export default function ProviderServicesPage() {
   };
 
   const handleOpenAction = (type: 'stop' | 'delete', service: any) => {
+      if (isMaintenanceMode) return;
       setActionModal(type);
       if (type === 'stop') {
           setStopForm({ reason: '', startDate: '', endDate: '' });
@@ -122,6 +129,7 @@ export default function ProviderServicesPage() {
   };
 
   const submitStopRequest = async () => {
+      if (isMaintenanceMode) return alert("وضع الصيانة للقراءة والتنقل فقط.");
       if (!stopForm.reason.trim()) return alert("يرجى كتابة سبب الإيقاف.");
       setActionLoading(true);
       try {
@@ -137,6 +145,7 @@ export default function ProviderServicesPage() {
   };
 
   const submitDeleteRequest = async () => {
+      if (isMaintenanceMode) return alert("وضع الصيانة للقراءة والتنقل فقط.");
       if (!deleteReason.trim()) return alert("يرجى كتابة سبب الحذف.");
       setActionLoading(true);
       try {
@@ -194,9 +203,11 @@ export default function ProviderServicesPage() {
              <h1 className="text-2xl font-bold text-white">إدارة خدماتي</h1>
              <p className="text-white/50 text-sm mt-1">أضف خدماتك وتجاربك أو اطلب تعديلها وإيقافها.</p>
           </div>
+          {!isMaintenanceMode && (
           <Link href="/provider/services/add" className="bg-[#C89B3C] text-black px-5 py-2.5 rounded-xl font-bold hover:bg-[#b38a35] transition flex items-center gap-2 shadow-lg">
               <Plus size={18}/> <span className="hidden sm:inline">خدمة جديدة</span>
           </Link>
+          )}
        </div>
 
        <div className="flex gap-3 mb-6 overflow-x-auto pb-2 custom-scrollbar">
@@ -560,7 +571,7 @@ export default function ProviderServicesPage() {
                       <Clock size={14}/> تمت إضافة هذه الخدمة في: {new Date(viewService.created_at).toLocaleDateString('ar-SA')}
                   </div>
                   <div className="flex flex-wrap gap-3">
-                      {viewService.status === 'approved' && (
+                      {viewService.status === 'approved' && !isMaintenanceMode && (
                          <>
                             <button onClick={() => router.push(`/provider/services/${viewService.id}/edit`)} className="bg-[#C89B3C]/10 text-[#C89B3C] hover:bg-[#C89B3C] hover:text-black border border-[#C89B3C]/30 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2"><Edit size={16}/> طلب تعديل</button>
                             <button onClick={() => handleOpenAction('stop', viewService)} className="bg-orange-500/10 text-orange-400 hover:bg-orange-500 hover:text-black border border-orange-500/30 px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2"><PauseCircle size={16}/> إيقاف مؤقت</button>

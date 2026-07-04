@@ -28,10 +28,26 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+  const [endingMaintenance, setEndingMaintenance] = useState(false);
   const [userName, setUserName] = useState("مزود خدمة");
 
   useEffect(() => {
     const fetchUser = async () => {
+        const contextResponse = await fetch("/api/provider/context", {
+            cache: "no-store",
+        }).catch(() => null);
+        const context = contextResponse
+            ? await contextResponse.json().catch(() => null)
+            : null;
+
+        if (context?.isMaintenanceMode) {
+            setIsMaintenanceMode(true);
+            setUserName("وضع الصيانة");
+            return;
+        }
+
+        setIsMaintenanceMode(false);
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
             const { data } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
@@ -48,6 +64,21 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.replace("/login");
+  };
+
+  const handleEndMaintenance = async () => {
+    setEndingMaintenance(true);
+
+    try {
+      const response = await fetch("/api/admin/maintenance/end", {
+        method: "POST",
+      });
+      const result = await response.json().catch(() => ({}));
+
+      router.replace(result.redirectTo || "/admin/maintenance");
+    } finally {
+      setEndingMaintenance(false);
+    }
   };
 
   const currentPageLabel = providerMenu.find(item => item.href === pathname)?.label || "بوابة الشركاء";
@@ -159,6 +190,21 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
       {/* ================= Main Content Area ================= */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden pt-20 md:pt-0">
+        {isMaintenanceMode && (
+          <div className="shrink-0 bg-[#C89B3C] text-black px-4 md:px-8 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-black/10">
+            <p className="font-bold text-sm md:text-base">
+              أنت الآن في وضع صيانة لحساب مزود الخدمة
+            </p>
+            <button
+              type="button"
+              onClick={handleEndMaintenance}
+              disabled={endingMaintenance}
+              className="bg-black text-white hover:bg-black/85 disabled:opacity-60 disabled:cursor-not-allowed rounded-lg px-4 py-2 text-sm font-bold transition"
+            >
+              {endingMaintenance ? "جارٍ الإنهاء..." : "إنهاء وضع الصيانة"}
+            </button>
+          </div>
+        )}
         
         <header className="hidden md:flex h-20 border-b border-white/5 bg-[#1E1E1E]/50 backdrop-blur-md items-center justify-between px-8">
            <h2 className="font-bold text-lg text-white/80">{currentPageLabel}</h2>

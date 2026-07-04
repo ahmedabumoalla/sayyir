@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { User, Lock, Save, Mail, Phone, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
+import { getProviderClientContext } from "@/lib/providerContextClient";
 
 export default function ProviderProfilePage() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [passwordUpdating, setPasswordUpdating] = useState(false);
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   
   // بيانات المستخدم
   const [profile, setProfile] = useState({
@@ -28,20 +30,24 @@ export default function ProviderProfilePage() {
   }, []);
 
   const fetchProfile = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    const providerContext = await getProviderClientContext();
+    setIsMaintenanceMode(providerContext.isMaintenanceMode);
+    if (!providerContext.providerId) {
+      setLoading(false);
+      return;
+    }
 
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
-      .eq("id", session.user.id)
+      .eq("id", providerContext.providerId)
       .single();
 
     if (data) {
       setProfile({
-        id: session.user.id,
+        id: providerContext.providerId,
         full_name: data.full_name || "",
-        email: session.user.email || "",
+        email: data.email || providerContext.session?.user?.email || "",
         phone: data.phone || "",
       });
     }
@@ -49,6 +55,7 @@ export default function ProviderProfilePage() {
   };
 
   const handleUpdateProfile = async () => {
+    if (isMaintenanceMode) return alert("وضع الصيانة للقراءة والتنقل فقط.");
     if (!profile.full_name.trim()) return alert("الاسم مطلوب");
     setUpdating(true);
 
@@ -69,6 +76,7 @@ export default function ProviderProfilePage() {
   };
 
   const handleUpdatePassword = async () => {
+    if (isMaintenanceMode) return alert("وضع الصيانة للقراءة والتنقل فقط.");
     if (!passwords.newPassword) return alert("الرجاء إدخال كلمة المرور الجديدة");
     if (passwords.newPassword.length < 6) return alert("كلمة المرور يجب أن تكون 6 أحرف على الأقل");
     if (passwords.newPassword !== passwords.confirmPassword) return alert("كلمات المرور غير متطابقة");
@@ -135,7 +143,7 @@ export default function ProviderProfilePage() {
 
             <button 
               onClick={handleUpdateProfile}
-              disabled={updating}
+              disabled={isMaintenanceMode || updating}
               className="w-full mt-4 bg-[#C89B3C] text-[#2B1F17] py-3 rounded-xl font-bold hover:bg-[#b38a35] transition flex items-center justify-center gap-2"
             >
               {updating ? <Loader2 className="animate-spin" /> : <Save size={18} />}
@@ -176,7 +184,7 @@ export default function ProviderProfilePage() {
 
             <button 
               onClick={handleUpdatePassword}
-              disabled={passwordUpdating}
+              disabled={isMaintenanceMode || passwordUpdating}
               className="w-full mt-4 bg-white/5 text-white py-3 rounded-xl font-bold hover:bg-red-500/10 hover:text-red-400 transition flex items-center justify-center gap-2"
             >
               {passwordUpdating ? <Loader2 className="animate-spin" /> : <ShieldCheck size={18} />}
