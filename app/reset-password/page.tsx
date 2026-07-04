@@ -18,11 +18,22 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     const prepareRecoverySession = async () => {
       try {
-        const code = new URLSearchParams(window.location.search).get("code");
+        const queryParams = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const code = queryParams.get("code") || hashParams.get("code");
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
 
         if (code) {
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeError) throw exchangeError;
+          window.history.replaceState({}, document.title, "/reset-password");
+        } else if (accessToken && refreshToken) {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (sessionError) throw sessionError;
           window.history.replaceState({}, document.title, "/reset-password");
         }
 
