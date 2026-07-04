@@ -18,11 +18,7 @@ export async function GET(
     .from("profiles")
     .select("id, full_name, email, phone, city, is_provider, created_at")
     .eq("id", providerId)
-    .single();
-
-  if (providerError || !provider?.is_provider) {
-    return NextResponse.json({ error: "مزود الخدمة غير موجود" }, { status: 404 });
-  }
+    .maybeSingle();
 
   const { data: services, error: servicesError } = await supabaseServer
     .from("services")
@@ -34,5 +30,26 @@ export async function GET(
     return NextResponse.json({ error: servicesError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ provider, services: services || [] });
+  const providerServices = services || [];
+
+  if ((providerError || !provider) && providerServices.length === 0) {
+    return NextResponse.json(
+      { error: "provider_not_found_or_not_linked" },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json({
+    provider:
+      provider || {
+        id: providerId,
+        full_name: "مزود خدمة",
+        email: null,
+        phone: null,
+        city: null,
+        is_provider: true,
+        created_at: null,
+      },
+    services: providerServices,
+  });
 }

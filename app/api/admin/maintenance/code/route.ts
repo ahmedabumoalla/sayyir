@@ -24,6 +24,33 @@ async function generateUniqueCode() {
   throw new Error("تعذر إنشاء رقم صيانة فريد");
 }
 
+async function getProviderLinkState(providerId: string) {
+  const { data: profile, error: profileError } = await supabaseServer
+    .from("profiles")
+    .select("id, full_name, email, is_provider")
+    .eq("id", providerId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw profileError;
+  }
+
+  const { count: servicesCount, error: servicesError } = await supabaseServer
+    .from("services")
+    .select("id", { count: "exact", head: true })
+    .eq("provider_id", providerId);
+
+  if (servicesError) {
+    throw servicesError;
+  }
+
+  return {
+    profile,
+    servicesCount: servicesCount || 0,
+    isLinked: Boolean(profile?.id || (servicesCount || 0) > 0),
+  };
+}
+
 export async function GET(req: NextRequest) {
   const requesterId = req.nextUrl.searchParams.get("requesterId") || "";
   const admin = await requireAdminByRequesterId(requesterId);
@@ -67,14 +94,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "providerId مطلوب" }, { status: 400 });
   }
 
-  const { data: provider, error: providerError } = await supabaseServer
-    .from("profiles")
-    .select("id, full_name, email, is_provider")
-    .eq("id", providerId)
-    .single();
+  const providerState = await getProviderLinkState(providerId);
 
-  if (providerError || !provider?.is_provider) {
-    return NextResponse.json({ error: "مزود الخدمة غير موجود" }, { status: 404 });
+  if (!providerState.isLinked) {
+    return NextResponse.json(
+      { error: "provider_not_found_or_not_linked" },
+      { status: 404 }
+    );
   }
 
   const { data: existing, error: existingError } = await supabaseServer

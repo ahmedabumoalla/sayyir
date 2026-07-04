@@ -157,6 +157,10 @@ export default function CustomersPage() {
       const result = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        if (result?.error === "provider_not_found_or_not_linked") {
+          throw new Error("لا يمكن إنشاء رقم صيانة لهذا المزود لأن حساب المزود غير مربوط بعد");
+        }
+
         throw new Error(result?.error || "تعذر إنشاء رقم الصيانة");
       }
 

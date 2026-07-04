@@ -2,6 +2,33 @@ import { NextResponse } from "next/server";
 import { requireAdminByRequesterId, writeAdminLog } from "@/lib/adminApi";
 import { supabaseServer } from "@/lib/supabaseServer";
 
+async function getProviderLinkState(providerId: string) {
+  const { data: profile, error: profileError } = await supabaseServer
+    .from("profiles")
+    .select("id, full_name, email, phone, is_provider")
+    .eq("id", providerId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw profileError;
+  }
+
+  const { count: servicesCount, error: servicesError } = await supabaseServer
+    .from("services")
+    .select("id", { count: "exact", head: true })
+    .eq("provider_id", providerId);
+
+  if (servicesError) {
+    throw servicesError;
+  }
+
+  return {
+    profile,
+    servicesCount: servicesCount || 0,
+    isLinked: Boolean(profile?.id || (servicesCount || 0) > 0),
+  };
+}
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const requesterId = String(body.requesterId || "").trim();
@@ -26,21 +53,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "رقم الصيانة غير صحيح" }, { status: 404 });
   }
 
-  const { data: provider, error: providerError } = await supabaseServer
-    .from("profiles")
-    .select("id, full_name, email, phone, is_provider")
-    .eq("id", codeRow.provider_id)
-    .single();
+  const providerId = String(codeRow.provider_id || "").trim();
+  const providerState = await getProviderLinkState(providerId);
 
-  if (providerError || !provider?.is_provider) {
-    return NextResponse.json({ error: "مزود الخدمة غير موجود" }, { status: 404 });
+  if (!providerState.isLinked) {
+    return NextResponse.json(
+      { error: "provider_not_found_or_not_linked" },
+      { status: 404 }
+    );
   }
 
   await writeAdminLog(
     admin.adminId,
     "enter_maintenance_mode",
-    `Entered maintenance mode for provider ${provider.id}`
+    `Entered maintenance mode for provider ${providerId}`
   );
 
-  return NextResponse.json({ providerId: provider.id, provider });
+  return NextResponse.json({ providerId });
 }

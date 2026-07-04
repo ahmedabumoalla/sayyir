@@ -38,6 +38,10 @@ export default function AdminMaintenancePage() {
       const result = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        if (result?.error === "provider_not_found_or_not_linked") {
+          throw new Error("مزود الخدمة غير موجود أو غير مربوط بحساب وخدمات صالحة");
+        }
+
         throw new Error(result?.error || "تعذر الدخول إلى وضع الصيانة");
       }
 
