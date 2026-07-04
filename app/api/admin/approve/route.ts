@@ -466,6 +466,14 @@ async function ensureProviderProfile(requestData: ProviderRequest, customCommiss
     updated_at: new Date().toISOString(),
   };
 
+  const { error: unbanAuthError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    ban_duration: 'none',
+  });
+
+  if (unbanAuthError) {
+    throw new Error(unbanAuthError.message);
+  }
+
   const { data: profileById, error: profileByIdError } = await supabaseAdmin
     .from('profiles')
     .select('id')

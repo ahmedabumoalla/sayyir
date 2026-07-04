@@ -65,6 +65,7 @@ interface Profile {
   role: string;
   is_admin: boolean;
   is_super_admin: boolean;
+  is_banned?: boolean;
   is_blocked: boolean;
   is_deleted: boolean;
   permissions?: any; 
@@ -83,6 +84,8 @@ export default function UsersManagement() {
   const [selectedAdmin, setSelectedAdmin] = useState<Profile | null>(null);
   const [tempPermissions, setTempPermissions] = useState<Record<string, boolean>>({});
   const [savingPermissions, setSavingPermissions] = useState(false);
+
+  const isAdminBanned = (admin: Profile) => Boolean(admin.is_banned || admin.is_blocked);
 
   useEffect(() => {
     fetchAdmins();
@@ -163,17 +166,25 @@ export default function UsersManagement() {
   };
 
   const handleToggleBlock = async (admin: Profile) => {
-    const action = admin.is_blocked ? "فك الحظر" : "حظر";
+    const isBanned = isAdminBanned(admin);
+    const action = isBanned ? "فك الحظر" : "حظر";
     if (!confirm(`هل تريد ${action} عن ${admin.full_name}؟`)) return;
     
     setProcessingId(admin.id);
     try {
-        const { error } = await supabase
-            .from('profiles')
-            .update({ is_blocked: !admin.is_blocked })
-            .eq('id', admin.id);
+        const response = await fetch('/api/admin/users/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'toggle_ban',
+                userId: admin.id,
+                requesterId: currentUserId,
+                newStatus: !isBanned,
+            }),
+        });
 
-        if (error) throw error;
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result?.error || "فشل تغيير حالة الحظر");
         
         alert(`✅ تم ${action} بنجاح`);
         fetchAdmins();
@@ -275,7 +286,7 @@ export default function UsersManagement() {
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm">
                     {admins.map((user) => (
-                    <tr key={user.id} className={`hover:bg-white/5 transition ${user.is_blocked ? 'bg-red-500/5' : ''}`}>
+                    <tr key={user.id} className={`hover:bg-white/5 transition ${isAdminBanned(user) ? 'bg-red-500/5' : ''}`}>
                         <td className="px-6 py-4 font-bold flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-[#C89B3C] font-bold border border-white/10 shrink-0">
                             {user.full_name?.charAt(0) || "A"}
@@ -283,7 +294,7 @@ export default function UsersManagement() {
                         <div>
                             <div className="text-white flex items-center gap-2">
                                 {user.full_name}
-                                {user.is_blocked && <span className="text-[10px] bg-red-500 text-white px-1.5 rounded">محظور</span>}
+                                {isAdminBanned(user) && <span className="text-[10px] bg-red-500 text-white px-1.5 rounded">محظور</span>}
                             </div>
                             {user.id === currentUserId && <span className="text-[10px] text-[#C89B3C]">(حسابك)</span>}
                         </div>
@@ -311,10 +322,10 @@ export default function UsersManagement() {
                                 <button 
                                 disabled={user.is_super_admin || processingId === user.id}
                                 onClick={() => handleToggleBlock(user)}
-                                className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent cursor-not-allowed" : user.is_blocked ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500 hover:text-white" : "bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white"}`}
-                                title={user.is_blocked ? "فك الحظر" : "حظر المستخدم"}
+                                className={`p-2 rounded-lg border transition ${user.is_super_admin ? "opacity-30 border-transparent cursor-not-allowed" : isAdminBanned(user) ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500 hover:text-white" : "bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white"}`}
+                                title={isAdminBanned(user) ? "فك الحظر" : "حظر المستخدم"}
                                 >
-                                    {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : user.is_blocked ? <Unlock size={16}/> : <Ban size={16} />}
+                                    {processingId === user.id ? <Loader2 size={16} className="animate-spin"/> : isAdminBanned(user) ? <Unlock size={16}/> : <Ban size={16} />}
                                 </button>
 
                                 <button 

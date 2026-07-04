@@ -97,8 +97,6 @@ export async function POST(req: Request) {
         .from("profiles")
         .update({
           is_deleted: true,
-          is_blocked: true,
-          is_banned: true,
           deleted_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -108,7 +106,6 @@ export async function POST(req: Request) {
 
       const { error: authError } =
         await supabaseAdmin.auth.admin.updateUserById(userId, {
-          ban_duration: "876000h",
           user_metadata: {
             is_archived: true,
           },
@@ -144,8 +141,6 @@ export async function POST(req: Request) {
         .from("profiles")
         .update({
           is_deleted: false,
-          is_blocked: false,
-          is_banned: false,
           deleted_at: null,
           updated_at: new Date().toISOString(),
         })
@@ -155,7 +150,6 @@ export async function POST(req: Request) {
 
       const { error: authError } =
         await supabaseAdmin.auth.admin.updateUserById(userId, {
-          ban_duration: "none",
           user_metadata: {
             is_archived: false,
           },

@@ -325,8 +325,6 @@ export default function CustomersPage() {
             ? {
                 ...u,
                 is_deleted: true,
-                is_banned: true,
-                is_blocked: true,
                 deleted_at: new Date().toISOString(),
               }
             : u
@@ -339,8 +337,6 @@ export default function CustomersPage() {
             ? {
                 ...prev,
                 is_deleted: true,
-                is_banned: true,
-                is_blocked: true,
                 deleted_at: new Date().toISOString(),
               }
             : prev
@@ -378,8 +374,6 @@ export default function CustomersPage() {
             ? {
                 ...u,
                 is_deleted: false,
-                is_banned: false,
-                is_blocked: false,
                 deleted_at: undefined,
               }
             : u
@@ -392,8 +386,6 @@ export default function CustomersPage() {
             ? {
                 ...prev,
                 is_deleted: false,
-                is_banned: false,
-                is_blocked: false,
                 deleted_at: undefined,
               }
             : prev
@@ -447,11 +439,7 @@ export default function CustomersPage() {
       return;
     }
 
-    const origin =
-      typeof window !== "undefined"
-        ? window.location.origin
-        : process.env.NEXT_PUBLIC_SITE_URL || "https://www.sayyir.sa";
-    const redirectTo = `${origin}/reset-password`;
+    const redirectTo = "https://www.sayyir.sa/reset-password";
 
     if (process.env.NODE_ENV === "development") {
       console.info("Password recovery redirectTo:", redirectTo);
