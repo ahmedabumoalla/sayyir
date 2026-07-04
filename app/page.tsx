@@ -130,6 +130,27 @@ export default function HomePage() {
   const [displayedText, setDisplayedText] = useState("");
   const [index, setIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    const search = window.location.search || "";
+    const hash = window.location.hash || "";
+    const authPayload = `${search}${hash}`;
+    const isRecoveryError =
+      authPayload.includes("error=") &&
+      (authPayload.includes("recovery") ||
+        authPayload.includes("otp") ||
+        authPayload.includes("expired"));
+    const isPasswordRecovery =
+      authPayload.includes("type=recovery") ||
+      authPayload.includes("code=") ||
+      authPayload.includes("access_token=") ||
+      authPayload.includes("refresh_token=") ||
+      isRecoveryError;
+
+    if (isPasswordRecovery) {
+      router.replace(`/reset-password${search}${hash}`);
+    }
+  }, [router]);
   
   useEffect(() => {
     const fetchSearchResults = async () => {
