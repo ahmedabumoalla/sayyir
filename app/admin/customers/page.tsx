@@ -24,6 +24,7 @@ import {
   Archive,
   RotateCcw,
   ShieldAlert,
+  Wrench,
 } from "lucide-react";
 
 interface Profile {
@@ -50,6 +51,7 @@ export default function CustomersPage() {
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [maintenanceCodes, setMaintenanceCodes] = useState<Record<string, string>>({});
   const [searchTerm, setSearchTerm] = useState("");
 
   const [statusFilter, setStatusFilter] = useState<
@@ -104,9 +106,63 @@ export default function CustomersPage() {
         activeClients,
         activeProviders,
       });
+
+      const providerIds = users.filter((u) => u.is_provider).map((u) => u.id);
+      await fetchMaintenanceCodes(providerIds);
     }
 
     setLoading(false);
+  };
+
+  const fetchMaintenanceCodes = async (providerIds: string[]) => {
+    if (providerIds.length === 0) {
+      setMaintenanceCodes({});
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/admin/maintenance/code?providerIds=${encodeURIComponent(providerIds.join(","))}`
+      );
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) return;
+
+      const codes = (result.codes || []).reduce((acc: Record<string, string>, row: any) => {
+        acc[row.provider_id] = row.maintenance_code;
+        return acc;
+      }, {});
+
+      setMaintenanceCodes(codes);
+    } catch (error) {
+      console.warn("Maintenance codes were not loaded:", error);
+    }
+  };
+
+  const handleCreateMaintenanceCode = async (providerId: string) => {
+    setActionLoading(providerId);
+
+    try {
+      const response = await fetch("/api/admin/maintenance/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerId }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(result?.error || "تعذر إنشاء رقم الصيانة");
+      }
+
+      setMaintenanceCodes((prev) => ({
+        ...prev,
+        [providerId]: result.code,
+      }));
+    } catch (error: any) {
+      alert(error.message || "حدث خطأ أثناء إنشاء رقم الصيانة");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const filterData = () => {
@@ -749,6 +805,34 @@ export default function CustomersPage() {
                           <div className="text-xs text-white/40 font-mono">
                             ID: {user.id.slice(0, 6)}...
                           </div>
+
+                          {user.is_provider && (
+                            <div className="mt-2 text-xs">
+                              {maintenanceCodes[user.id] ? (
+                                <div className="inline-flex items-center gap-2 bg-black/25 border border-white/10 rounded-lg px-2 py-1 text-white/70">
+                                  <Wrench size={12} className="text-[#C89B3C]" />
+                                  <span>رقم الصيانة:</span>
+                                  <span className="font-mono text-[#C89B3C] tracking-wider">
+                                    {maintenanceCodes[user.id]}
+                                  </span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCreateMaintenanceCode(user.id)}
+                                  disabled={actionLoading === user.id}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-[#C89B3C]/10 border border-[#C89B3C]/30 text-[#C89B3C] px-2 py-1 hover:bg-[#C89B3C] hover:text-black transition disabled:opacity-50"
+                                >
+                                  {actionLoading === user.id ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : (
+                                    <Wrench size={12} />
+                                  )}
+                                  إنشاء رقم صيانة
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>

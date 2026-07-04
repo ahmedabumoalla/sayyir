@@ -21,7 +21,8 @@ import {
   Bell,
   Globe,
   Handshake,
-  CheckCircle 
+  CheckCircle,
+  Wrench
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { TranslationProvider, useTranslation } from "./TranslationContext";
@@ -113,6 +114,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     { icon: Map, label: language === "ar" ? "إدارة المعالم" : "Landmarks", href: "/admin/landmarks", show: true, badge: 0 },
     { icon: Handshake, label: language === "ar" ? "شركاء النجاح" : "Partners", href: "/admin/partners", show: true, badge: 0 }, 
     { icon: Users, label: language === "ar" ? "المستخدمين" : "Users", href: "/admin/customers", show: true, badge: 0 },
+    { icon: Wrench, label: language === "ar" ? "الصيانة" : "Maintenance", href: "/admin/maintenance", show: true, badge: 0 },
     { icon: Megaphone, label: language === "ar" ? "إعلانات المنصة" : "Announcements", href: "/admin/announcements", show: true, badge: 0 },
     { icon: DollarSign, label: language === "ar" ? "المالية والأرباح" : "Finance", href: "/admin/finance", show: true, badge: 0 },
     { icon: ShieldAlert, label: language === "ar" ? "فريق الإدارة" : "Admins", href: "/admin/users", show: isSuperAdmin, badge: 0 },
