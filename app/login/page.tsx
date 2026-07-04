@@ -24,11 +24,7 @@ export default function LoginPage() {
     }
 
     try {
-      const origin =
-        typeof window !== "undefined"
-          ? window.location.origin
-          : process.env.NEXT_PUBLIC_SITE_URL || "https://www.sayyir.sa";
-      const redirectTo = `${origin}/reset-password`;
+      const redirectTo = "https://www.sayyir.sa/reset-password";
 
       if (process.env.NODE_ENV === "development") {
         console.info("Password recovery redirectTo:", redirectTo);
