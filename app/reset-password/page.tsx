@@ -5,47 +5,124 @@ import { useRouter } from "next/navigation";
 import { CheckCircle, Eye, EyeOff, KeyRound, Loader2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
+const cleanRecoveryUrl = () => {
+  window.history.replaceState({}, document.title, "/reset-password");
+};
+
+const getRecoveryParams = () => {
+  const searchParams = new URLSearchParams(window.location.search);
+  const rawHash = window.location.hash.replace(/^#/, "");
+  const hashQuery = rawHash.includes("?") ? rawHash.slice(rawHash.indexOf("?") + 1) : rawHash;
+  const hashParams = new URLSearchParams(hashQuery);
+
+  const getParam = (key: string) => searchParams.get(key) || hashParams.get(key) || "";
+
+  return {
+    code: getParam("code"),
+    accessToken: getParam("access_token"),
+    refreshToken: getParam("refresh_token"),
+    tokenHash: getParam("token_hash"),
+    type: getParam("type"),
+    error: getParam("error"),
+    errorDescription: getParam("error_description"),
+  };
+};
+
+const formatAuthAttemptError = (message: string) => {
+  if (!message) {
+    return "رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.";
+  }
+
+  const normalized = message.toLowerCase();
+  if (normalized.includes("expired") || normalized.includes("invalid")) {
+    return "رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.";
+  }
+
+  return `تعذر تأكيد رابط استعادة كلمة المرور. رسالة Supabase: ${message}`;
+};
+
+const formatSupabaseUrlError = (error: string, errorDescription: string) => {
+  const details = errorDescription || error;
+  if (!details) return "";
+
+  return formatAuthAttemptError(details);
+};
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [recoveryReady, setRecoveryReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
     const prepareRecoverySession = async () => {
-      try {
-        const queryParams = new URLSearchParams(window.location.search);
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-        const code = queryParams.get("code") || hashParams.get("code");
-        const accessToken = hashParams.get("access_token");
-        const refreshToken = hashParams.get("refresh_token");
+      const params = getRecoveryParams();
+      const attemptErrors: string[] = [];
+      let recoverySucceeded = false;
 
-        if (code) {
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-          if (exchangeError) throw exchangeError;
-          window.history.replaceState({}, document.title, "/reset-password");
-        } else if (accessToken && refreshToken) {
+      try {
+        if (params.code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code);
+          if (exchangeError) {
+            attemptErrors.push(exchangeError.message);
+          } else {
+            recoverySucceeded = true;
+          }
+        }
+
+        if (!recoverySucceeded && params.accessToken && params.refreshToken) {
           const { error: sessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
+            access_token: params.accessToken,
+            refresh_token: params.refreshToken,
           });
-          if (sessionError) throw sessionError;
-          window.history.replaceState({}, document.title, "/reset-password");
+          if (sessionError) {
+            attemptErrors.push(sessionError.message);
+          } else {
+            recoverySucceeded = true;
+          }
+        }
+
+        if (!recoverySucceeded && params.tokenHash && params.type === "recovery") {
+          const { error: verifyError } = await supabase.auth.verifyOtp({
+            type: "recovery",
+            token_hash: params.tokenHash,
+          });
+          if (verifyError) {
+            attemptErrors.push(verifyError.message);
+          } else {
+            recoverySucceeded = true;
+          }
         }
 
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (!session) {
-          setError("رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.");
+        if (recoverySucceeded && session) {
+          cleanRecoveryUrl();
+          setRecoveryReady(true);
+          return;
         }
-      } catch (err: any) {
-        setError(err?.message || "تعذر تجهيز جلسة استعادة كلمة المرور.");
+
+        if (params.error || params.errorDescription) {
+          setError(formatSupabaseUrlError(params.error, params.errorDescription));
+          return;
+        }
+
+        if (attemptErrors.length > 0) {
+          setError(formatAuthAttemptError(attemptErrors[attemptErrors.length - 1]));
+          return;
+        }
+
+        setError("رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "";
+        setError(formatAuthAttemptError(message));
       } finally {
         setCheckingSession(false);
       }
@@ -82,8 +159,9 @@ export default function ResetPasswordPage() {
       setSuccess("تم تحديث كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة.");
       setPassword("");
       setConfirmPassword("");
-    } catch (err: any) {
-      setError(err?.message || "تعذر تحديث كلمة المرور. حاول مرة أخرى.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "";
+      setError(message ? `تعذر تحديث كلمة المرور. رسالة Supabase: ${message}` : "تعذر تحديث كلمة المرور. حاول مرة أخرى.");
     } finally {
       setSaving(false);
     }
@@ -120,6 +198,22 @@ export default function ResetPasswordPage() {
               الذهاب إلى تسجيل الدخول
             </button>
           </div>
+        ) : !recoveryReady ? (
+          <div className="space-y-5">
+            {error && (
+              <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-200">
+                <XCircle className="mt-0.5 shrink-0" size={20} />
+                <p className="text-sm leading-relaxed">{error}</p>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => router.replace("/login")}
+              className="w-full rounded-xl bg-[#C89B3C] py-3 font-bold text-black transition hover:bg-[#b88d35]"
+            >
+              العودة إلى تسجيل الدخول
+            </button>
+          </div>
         ) : (
           <div className="space-y-4">
             {error && (
@@ -143,6 +237,7 @@ export default function ResetPasswordPage() {
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 transition hover:text-white"
+                  aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -163,7 +258,7 @@ export default function ResetPasswordPage() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={saving || Boolean(error && !password && !confirmPassword)}
+              disabled={saving}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#C89B3C] py-3 font-bold text-black transition hover:bg-[#b88d35] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? <Loader2 className="animate-spin" size={20} /> : <KeyRound size={18} />}
