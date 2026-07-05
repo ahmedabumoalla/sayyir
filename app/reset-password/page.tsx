@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { CheckCircle, Eye, EyeOff, KeyRound, Loader2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
+const INVALID_RECOVERY_LINK_MESSAGE =
+  "رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.";
+
+const PASSWORD_UPDATE_RETRY_MESSAGE =
+  "تعذر تحديث كلمة المرور. جرّب كلمة مرور جديدة مختلفة.";
+
 const cleanRecoveryUrl = () => {
   window.history.replaceState({}, document.title, "/reset-password");
 };
@@ -29,13 +35,11 @@ const getRecoveryParams = () => {
 };
 
 const formatAuthAttemptError = (message: string) => {
-  if (!message) {
-    return "رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.";
-  }
+  if (!message) return INVALID_RECOVERY_LINK_MESSAGE;
 
   const normalized = message.toLowerCase();
   if (normalized.includes("expired") || normalized.includes("invalid")) {
-    return "رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.";
+    return INVALID_RECOVERY_LINK_MESSAGE;
   }
 
   return `تعذر تأكيد رابط استعادة كلمة المرور. رسالة Supabase: ${message}`;
@@ -48,9 +52,21 @@ const formatSupabaseUrlError = (error: string, errorDescription: string) => {
   return formatAuthAttemptError(details);
 };
 
+const isSamePasswordError = (message: string) => {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("same password") ||
+    normalized.includes("same as") ||
+    normalized.includes("different from the old password") ||
+    normalized.includes("different password") ||
+    normalized.includes("new password should be different")
+  );
+};
+
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -119,7 +135,7 @@ export default function ResetPasswordPage() {
           return;
         }
 
-        setError("رابط استعادة كلمة المرور غير صالح أو انتهت صلاحيته. اطلب رابطًا جديدًا من صفحة تسجيل الدخول.");
+        setError(INVALID_RECOVERY_LINK_MESSAGE);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "";
         setError(formatAuthAttemptError(message));
@@ -135,33 +151,32 @@ export default function ResetPasswordPage() {
     setError("");
     setSuccess("");
 
-    if (!password || !confirmPassword) {
-      setError("أدخل كلمة المرور الجديدة وتأكيدها.");
+    if (newPassword.length < 8) {
+      setError("كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف");
       return;
     }
 
-    if (password.length < 8) {
-      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل.");
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError("كلمة المرور وتأكيدها غير متطابقين.");
+    if (newPassword !== confirmPassword) {
+      setError("كلمة المرور وتأكيدها غير متطابقين");
       return;
     }
 
     setSaving(true);
     try {
-      const { error: updateError } = await supabase.auth.updateUser({ password });
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
       if (updateError) throw updateError;
 
       await supabase.auth.signOut();
       setSuccess("تم تحديث كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة.");
-      setPassword("");
+      setNewPassword("");
       setConfirmPassword("");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
-      setError(message ? `تعذر تحديث كلمة المرور. رسالة Supabase: ${message}` : "تعذر تحديث كلمة المرور. حاول مرة أخرى.");
+      setError(
+        !message || isSamePasswordError(message)
+          ? PASSWORD_UPDATE_RETRY_MESSAGE
+          : `تعذر تحديث كلمة المرور. رسالة Supabase: ${message}`
+      );
     } finally {
       setSaving(false);
     }
@@ -228,8 +243,8 @@ export default function ResetPasswordPage() {
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
                   className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 pl-12 text-left text-white outline-none transition focus:border-[#C89B3C]"
                   dir="ltr"
                 />
