@@ -165,31 +165,14 @@ export async function PATCH(req: Request, context: { params: any }) {
     return NextResponse.json({ error: "no_valid_update_fields" }, { status: 400 });
   }
 
-  const { error: contextError } = await supabaseServer.rpc(
-    "set_maintenance_update_context"
+  const { data: updatedService, error: updateError } = await supabaseServer.rpc(
+    "maintenance_update_service",
+    {
+      p_service_id: serviceId,
+      p_provider_id: providerId,
+      p_updates: updatePayload,
+    }
   );
-
-  if (contextError) {
-    const supabaseError = contextError as any;
-
-    return NextResponse.json(
-      {
-        error: "maintenance_context_failed",
-        supabaseCode: supabaseError.code || null,
-        supabaseMessage: supabaseError.message || null,
-        supabaseDetails: supabaseError.details || null,
-      },
-      { status: 400 }
-    );
-  }
-
-  const { data: updatedService, error: updateError } = await supabaseServer
-    .from("services")
-    .update(updatePayload)
-    .eq("id", serviceId)
-    .eq("provider_id", providerId)
-    .select("*")
-    .single();
 
   if (updateError) {
     const supabaseError = updateError as any;
