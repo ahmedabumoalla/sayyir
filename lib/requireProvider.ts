@@ -41,7 +41,7 @@ export async function revokeAdminMaintenanceSession(sessionId: string) {
     .is("revoked_at", null);
 }
 
-async function getAuthenticatedUserId(req: Request) {
+export async function getAuthenticatedUserId(req: Request) {
   const authHeader = req.headers.get("Authorization");
 
   if (!authHeader) {
@@ -78,10 +78,7 @@ async function getAuthenticatedUserId(req: Request) {
   return user.id;
 }
 
-export async function getValidAdminMaintenanceSession(
-  req: Request,
-  authenticatedUserId?: string | null
-) {
+export async function getValidAdminMaintenanceSession(req: Request) {
   const sessionId = getRequestCookie(req, ADMIN_MAINTENANCE_SESSION_COOKIE);
 
   if (!sessionId) return null;
@@ -95,18 +92,11 @@ export async function getValidAdminMaintenanceSession(
   if (sessionError || !sessionRow) return null;
 
   const session = sessionRow as any;
-  const effectiveRequesterId =
-    String(authenticatedUserId || "").trim() || (await getAuthenticatedUserId(req));
 
   if (session.revoked_at || new Date(session.expires_at).getTime() <= Date.now()) {
     if (!session.revoked_at) {
       await revokeAdminMaintenanceSession(String(session.id));
     }
-    return null;
-  }
-
-  if (!effectiveRequesterId || effectiveRequesterId !== String(session.admin_id)) {
-    await revokeAdminMaintenanceSession(String(session.id));
     return null;
   }
 
@@ -140,10 +130,7 @@ export async function requireProvider(req: Request) {
     let authenticatedUserId = await getAuthenticatedUserId(req);
     let authErrorMessage = "Missing auth token";
 
-    const maintenanceSession = await getValidAdminMaintenanceSession(
-      req,
-      authenticatedUserId
-    );
+    const maintenanceSession = await getValidAdminMaintenanceSession(req);
 
     if (maintenanceSession) {
       const { data: maintenanceProvider, error: maintenanceProviderError } =

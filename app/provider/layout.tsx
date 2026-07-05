@@ -35,12 +35,24 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
   useEffect(() => {
     const fetchUser = async () => {
         const { data: { session } } = await supabase.auth.getSession();
+        const headers: Record<string, string> = {};
+
+        if (session?.access_token) {
+            headers.Authorization = `Bearer ${session.access_token}`;
+        }
+
         const contextResponse = await fetch("/api/provider/context", {
             cache: "no-store",
+            credentials: "same-origin",
+            headers,
         }).catch(() => null);
         const context = contextResponse
             ? await contextResponse.json().catch(() => null)
             : null;
+
+        if ((!contextResponse || !context) && process.env.NODE_ENV === "development") {
+            console.warn("Provider maintenance context unavailable");
+        }
 
         if (context?.isMaintenanceMode) {
             setIsMaintenanceMode(true);

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAdminByRequesterId, writeAdminLog } from "@/lib/adminApi";
 import { supabaseServer } from "@/lib/supabaseServer";
-import { ADMIN_MAINTENANCE_SESSION_COOKIE } from "@/lib/requireProvider";
+import {
+  ADMIN_MAINTENANCE_SESSION_COOKIE,
+  getAuthenticatedUserId,
+} from "@/lib/requireProvider";
 
 async function getProviderLinkState(providerId: string) {
   const { data: profile, error: profileError } = await supabaseServer
@@ -29,7 +32,10 @@ async function getProviderLinkState(providerId: string) {
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const requesterId = String(body.requesterId || "").trim();
-  const admin = await requireAdminByRequesterId(requesterId);
+  const authenticatedUserId = await getAuthenticatedUserId(req);
+  const admin = await requireAdminByRequesterId(
+    authenticatedUserId || requesterId
+  );
 
   if (!admin.ok) {
     return NextResponse.json({ error: admin.error }, { status: admin.status });
