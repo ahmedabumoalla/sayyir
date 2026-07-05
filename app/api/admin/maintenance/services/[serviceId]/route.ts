@@ -29,26 +29,41 @@ const directFields = [
   "platform_commission",
 ] as const;
 
-export async function PATCH(
-  req: Request,
-  context: { params: any }
-) {
+function isPlainObject(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeDetails(
+  currentDetails: Record<string, any>,
+  updates: Record<string, any>
+): Record<string, any> {
+  const merged = { ...currentDetails };
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (isPlainObject(value) && isPlainObject(merged[key])) {
+      merged[key] = mergeDetails(merged[key], value);
+    } else {
+      merged[key] = value;
+    }
+  }
+
+  return merged;
+}
+
+export async function PATCH(req: Request, context: { params: any }) {
   const body = await req.json().catch(() => ({}));
   const maintenanceSession = await getValidAdminMaintenanceSession(req);
+
   if (!maintenanceSession) {
     return NextResponse.json({ error: "جلسة الصيانة غير صالحة" }, { status: 401 });
   }
 
   const { serviceId } = await context.params;
-  const providerId = String(body.providerId || "").trim();
-  const updates = body.updates && typeof body.updates === "object" ? body.updates : null;
+  const providerId = maintenanceSession.providerId;
+  const updates = isPlainObject(body.updates) ? body.updates : null;
 
-  if (!providerId || !updates) {
-    return NextResponse.json({ error: "providerId و updates مطلوبة" }, { status: 400 });
-  }
-
-  if (maintenanceSession.providerId !== providerId) {
-    return NextResponse.json({ error: "جلسة الصيانة لا تطابق هذا المزود" }, { status: 403 });
+  if (!updates) {
+    return NextResponse.json({ error: "updates مطلوبة" }, { status: 400 });
   }
 
   const { data: service, error: serviceError } = await supabaseServer
@@ -61,8 +76,11 @@ export async function PATCH(
     return NextResponse.json({ error: "الخدمة غير موجودة" }, { status: 404 });
   }
 
-  if (service.provider_id !== providerId) {
-    return NextResponse.json({ error: "لا يمكن تعديل خدمة تابعة لمزود آخر" }, { status: 403 });
+  if (String(service.provider_id) !== providerId) {
+    return NextResponse.json(
+      { error: "لا يمكن تعديل خدمة تابعة لمزود آخر" },
+      { status: 403 }
+    );
   }
 
   const payload: Record<string, any> = {};
@@ -81,19 +99,13 @@ export async function PATCH(
     if (!allowedStatus.has(String(updates.status))) {
       return NextResponse.json({ error: "حالة الخدمة غير صالحة" }, { status: 400 });
     }
+
     payload.status = updates.status;
   }
 
-  if (updates.details && typeof updates.details === "object" && !Array.isArray(updates.details)) {
-    const currentDetails =
-      service.details && typeof service.details === "object" && !Array.isArray(service.details)
-        ? service.details
-        : {};
-
-    payload.details = {
-      ...currentDetails,
-      ...updates.details,
-    };
+  if (isPlainObject(updates.details)) {
+    const currentDetails = isPlainObject(service.details) ? service.details : {};
+    payload.details = mergeDetails(currentDetails, updates.details);
   }
 
   delete payload.provider_id;

@@ -238,7 +238,7 @@ export default function EditServicePage() {
           // تحديث الميديا في डिटेल्स
           const updatedDetails = { ...(originalService.details || {}), ...(editForm.details || {}), images: finalMediaList };
 
-          const pendingUpdates = { 
+          const serviceUpdates = { 
               title: editForm.title, 
               description: editForm.description, 
               price: Number(editForm.price),
@@ -254,8 +254,13 @@ export default function EditServicePage() {
               details: updatedDetails
           };
 
-          if (isMaintenanceMode) {
-              const maintenanceUpdates: Record<string, any> = { ...pendingUpdates };
+          const currentContext = await getProviderClientContext();
+          const maintenanceActive = Boolean(currentContext.isMaintenanceMode && currentContext.providerId);
+          setProviderContext(currentContext);
+          setIsMaintenanceMode(maintenanceActive);
+
+          if (maintenanceActive) {
+              const maintenanceUpdates: Record<string, any> = { ...serviceUpdates };
               if (editForm.status && editForm.status !== originalService.status) {
                   maintenanceUpdates.status = editForm.status;
               }
@@ -265,7 +270,6 @@ export default function EditServicePage() {
                   credentials: 'same-origin',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                      providerId: providerContext?.providerId,
                       updates: maintenanceUpdates,
                   }),
               });
@@ -277,7 +281,7 @@ export default function EditServicePage() {
               return;
           }
 
-          if (!providerContext?.accessToken) {
+          if (!currentContext.accessToken) {
               throw new Error("جلسة المزود غير صالحة");
           }
 
@@ -285,11 +289,11 @@ export default function EditServicePage() {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
-                  Authorization: `Bearer ${providerContext.accessToken}`,
+                  Authorization: `Bearer ${currentContext.accessToken}`,
               },
               body: JSON.stringify({
                   service_id: serviceId,
-                  requested_changes: pendingUpdates,
+                  requested_changes: serviceUpdates,
                   reason: 'تعديل بيانات الخدمة',
               }),
           });

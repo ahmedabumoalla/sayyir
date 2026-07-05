@@ -2,7 +2,10 @@ import { supabase } from "@/lib/supabaseClient";
 
 export async function getProviderClientContext() {
   const [contextResponse, sessionResult] = await Promise.all([
-    fetch("/api/provider/context", { cache: "no-store" }).catch(() => null),
+    fetch("/api/provider/context", {
+      cache: "no-store",
+      credentials: "same-origin",
+    }).catch(() => null),
     supabase.auth.getSession(),
   ]);
 
