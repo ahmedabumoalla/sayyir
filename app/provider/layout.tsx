@@ -34,6 +34,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
   useEffect(() => {
     const fetchUser = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
         const contextResponse = await fetch("/api/provider/context", {
             cache: "no-store",
         }).catch(() => null);
@@ -48,7 +49,6 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
         }
 
         setIsMaintenanceMode(false);
-        const { data: { session } } = await supabase.auth.getSession();
         if (session) {
             const { data } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
             if (data) {
@@ -75,7 +75,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
       });
       const result = await response.json().catch(() => ({}));
 
-      router.replace(result.redirectTo || "/admin/maintenance");
+      router.replace(result.redirectTo || "/provider/dashboard");
     } finally {
       setEndingMaintenance(false);
     }

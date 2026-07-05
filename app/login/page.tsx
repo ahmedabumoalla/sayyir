@@ -86,6 +86,10 @@ export default function LoginPage() {
       if (profile.is_super_admin || profile.is_admin) {
         router.replace("/admin/dashboard");
       } else if (profile.is_provider) {
+        await fetch("/api/admin/maintenance/end", {
+          method: "POST",
+          credentials: "same-origin",
+        }).catch(() => null);
         router.replace("/provider/dashboard");
       } else {
         router.replace("/"); 

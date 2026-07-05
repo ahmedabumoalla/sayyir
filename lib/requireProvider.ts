@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 
 export const ADMIN_MAINTENANCE_SESSION_COOKIE =
   "sayyir_admin_maintenance_session";
@@ -30,7 +31,57 @@ function isAdminProfile(profile: any) {
   );
 }
 
-export async function getValidAdminMaintenanceSession(req: Request) {
+export async function revokeAdminMaintenanceSession(sessionId: string) {
+  if (!sessionId) return;
+
+  await supabaseAdmin
+    .from("admin_provider_maintenance_sessions")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .is("revoked_at", null);
+}
+
+async function getAuthenticatedUserId(req: Request) {
+  const authHeader = req.headers.get("Authorization");
+
+  if (!authHeader) {
+    const supabaseAuth = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return getRequestCookie(req, name) || undefined;
+          },
+        },
+      }
+    );
+
+    const {
+      data: { user },
+      error,
+    } = await supabaseAuth.auth.getUser();
+
+    if (error || !user?.id) return null;
+
+    return user.id;
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  const {
+    data: { user },
+    error,
+  } = await supabaseAdmin.auth.getUser(token);
+
+  if (error || !user?.id) return null;
+
+  return user.id;
+}
+
+export async function getValidAdminMaintenanceSession(
+  req: Request,
+  authenticatedUserId?: string | null
+) {
   const sessionId = getRequestCookie(req, ADMIN_MAINTENANCE_SESSION_COOKIE);
 
   if (!sessionId) return null;
@@ -44,8 +95,18 @@ export async function getValidAdminMaintenanceSession(req: Request) {
   if (sessionError || !sessionRow) return null;
 
   const session = sessionRow as any;
+  const effectiveRequesterId =
+    String(authenticatedUserId || "").trim() || (await getAuthenticatedUserId(req));
 
   if (session.revoked_at || new Date(session.expires_at).getTime() <= Date.now()) {
+    if (!session.revoked_at) {
+      await revokeAdminMaintenanceSession(String(session.id));
+    }
+    return null;
+  }
+
+  if (!effectiveRequesterId || effectiveRequesterId !== String(session.admin_id)) {
+    await revokeAdminMaintenanceSession(String(session.id));
     return null;
   }
 
@@ -56,12 +117,14 @@ export async function getValidAdminMaintenanceSession(req: Request) {
     .maybeSingle();
 
   if (adminError || !adminProfile || !isAdminProfile(adminProfile)) {
+    await revokeAdminMaintenanceSession(String(session.id));
     return null;
   }
 
   const admin = adminProfile as any;
 
   if (admin.is_deleted === true || admin.is_blocked === true || admin.is_banned === true) {
+    await revokeAdminMaintenanceSession(String(session.id));
     return null;
   }
 
@@ -75,23 +138,19 @@ export async function getValidAdminMaintenanceSession(req: Request) {
 export async function requireProvider(req: Request) {
   try {
     let providerId = req.headers.get("x-provider-id");
-    let authErrorMessage = "مفقود توكن الدخول";
+    let authenticatedUserId: string | null = null;
+    let authErrorMessage = "Missing auth token";
 
     if (!providerId) {
       const authHeader = req.headers.get("Authorization");
 
       if (authHeader) {
-        const token = authHeader.replace("Bearer ", "");
+        authenticatedUserId = await getAuthenticatedUserId(req);
 
-        const {
-          data: { user },
-          error: authError,
-        } = await supabaseAdmin.auth.getUser(token);
-
-        if (authError || !user) {
-          authErrorMessage = "جلسة غير صالحة";
+        if (authenticatedUserId) {
+          providerId = authenticatedUserId;
         } else {
-          providerId = user.id;
+          authErrorMessage = "Invalid session";
         }
       }
     }
@@ -116,10 +175,16 @@ export async function requireProvider(req: Request) {
         };
       }
 
-      authErrorMessage = "المزود غير موجود أو غير مفعل";
+      authErrorMessage = "Provider not found or inactive";
     }
 
-    const maintenanceSession = await getValidAdminMaintenanceSession(req);
+    if (!authenticatedUserId) {
+      authenticatedUserId = await getAuthenticatedUserId(req);
+    }
+
+    const maintenanceSession = authenticatedUserId
+      ? await getValidAdminMaintenanceSession(req, authenticatedUserId)
+      : null;
 
     if (maintenanceSession) {
       const { data: maintenanceProvider, error: maintenanceProviderError } =

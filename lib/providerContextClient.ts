@@ -1,18 +1,15 @@
 import { supabase } from "@/lib/supabaseClient";
 
 export async function getProviderClientContext() {
-  const [contextResponse, sessionResult] = await Promise.all([
-    fetch("/api/provider/context", {
-      cache: "no-store",
-      credentials: "same-origin",
-    }).catch(() => null),
-    supabase.auth.getSession(),
-  ]);
-
+  const sessionResult = await supabase.auth.getSession();
+  const session = sessionResult.data.session;
+  const contextResponse = await fetch("/api/provider/context", {
+    cache: "no-store",
+    credentials: "same-origin",
+  }).catch(() => null);
   const context = contextResponse
     ? await contextResponse.json().catch(() => null)
     : null;
-  const session = sessionResult.data.session;
 
   if (context?.isMaintenanceMode && context.providerId) {
     return {
