@@ -3,9 +3,16 @@ import { supabase } from "@/lib/supabaseClient";
 export async function getProviderClientContext() {
   const sessionResult = await supabase.auth.getSession();
   const session = sessionResult.data.session;
+  const headers: Record<string, string> = {};
+
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
+
   const contextResponse = await fetch("/api/provider/context", {
     cache: "no-store",
     credentials: "same-origin",
+    headers,
   }).catch(() => null);
   const context = contextResponse
     ? await contextResponse.json().catch(() => null)

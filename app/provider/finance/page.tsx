@@ -87,16 +87,15 @@ export default function ProviderFinancePage() {
 
     try {
       const providerContext = await getProviderClientContext();
-      const session = providerContext.providerId
-        ? { user: { id: providerContext.providerId } }
-        : null;
-      if (!session) throw new Error("يجب تسجيل الدخول أولاً");
+      if (!providerContext.providerId) {
+        throw new Error("يجب تسجيل الدخول أولاً");
+      }
 
       // إدخال الطلب مباشرة في قاعدة البيانات
       const { error } = await supabase
         .from('payout_requests')
         .insert([{
-            provider_id: session.user.id,
+            provider_id: providerContext.providerId,
             amount: requestedAmount,
             bank_name: bankName,
             iban: iban,

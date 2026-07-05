@@ -47,7 +47,11 @@ export default function ProviderProfilePage() {
       setProfile({
         id: providerContext.providerId,
         full_name: data.full_name || "",
-        email: data.email || providerContext.session?.user?.email || "",
+        email:
+          data.email ||
+          (providerContext.isMaintenanceMode
+            ? ""
+            : providerContext.session?.user?.email || ""),
         phone: data.phone || "",
       });
     }

@@ -137,16 +137,49 @@ export async function getValidAdminMaintenanceSession(
 
 export async function requireProvider(req: Request) {
   try {
-    let providerId = req.headers.get("x-provider-id");
-    let authenticatedUserId: string | null = null;
+    let authenticatedUserId = await getAuthenticatedUserId(req);
     let authErrorMessage = "Missing auth token";
+
+    const maintenanceSession = await getValidAdminMaintenanceSession(
+      req,
+      authenticatedUserId
+    );
+
+    if (maintenanceSession) {
+      const { data: maintenanceProvider, error: maintenanceProviderError } =
+        await supabaseAdmin
+          .from("profiles")
+          .select("*")
+          .eq("id", maintenanceSession.providerId)
+          .eq("is_provider", true)
+          .eq("is_deleted", false)
+          .eq("is_banned", false)
+          .eq("is_blocked", false)
+          .maybeSingle();
+
+      if (!maintenanceProviderError && maintenanceProvider) {
+        return {
+          provider: maintenanceProvider,
+          error: null,
+          isMaintenanceMode: true,
+          maintenanceAdminId: maintenanceSession.adminId,
+        };
+      }
+
+      return {
+        provider: null,
+        error: "Provider not found or inactive",
+        isMaintenanceMode: true,
+        maintenanceAdminId: maintenanceSession.adminId,
+      };
+    }
+
+    let providerId = req.headers.get("x-provider-id");
 
     if (!providerId) {
       const authHeader = req.headers.get("Authorization");
 
-      if (authHeader) {
-        authenticatedUserId = await getAuthenticatedUserId(req);
-
+      if (authHeader || authenticatedUserId) {
         if (authenticatedUserId) {
           providerId = authenticatedUserId;
         } else {
@@ -176,36 +209,6 @@ export async function requireProvider(req: Request) {
       }
 
       authErrorMessage = "Provider not found or inactive";
-    }
-
-    if (!authenticatedUserId) {
-      authenticatedUserId = await getAuthenticatedUserId(req);
-    }
-
-    const maintenanceSession = authenticatedUserId
-      ? await getValidAdminMaintenanceSession(req, authenticatedUserId)
-      : null;
-
-    if (maintenanceSession) {
-      const { data: maintenanceProvider, error: maintenanceProviderError } =
-        await supabaseAdmin
-          .from("profiles")
-          .select("*")
-          .eq("id", maintenanceSession.providerId)
-          .eq("is_provider", true)
-          .eq("is_deleted", false)
-          .eq("is_banned", false)
-          .eq("is_blocked", false)
-          .maybeSingle();
-
-      if (!maintenanceProviderError && maintenanceProvider) {
-        return {
-          provider: maintenanceProvider,
-          error: null,
-          isMaintenanceMode: true,
-          maintenanceAdminId: maintenanceSession.adminId,
-        };
-      }
     }
 
     return {
