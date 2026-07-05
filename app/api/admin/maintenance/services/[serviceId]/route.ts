@@ -14,7 +14,7 @@ const allowedStatus = new Set([
   "delete_requested",
 ]);
 
-const directFields = [
+const textOrJsonFields = [
   "title",
   "description",
   "service_category",
@@ -23,11 +23,10 @@ const directFields = [
   "commercial_license",
   "image_url",
   "work_schedule",
-  "location_lat",
-  "location_lng",
-  "max_capacity",
   "platform_commission",
 ] as const;
+
+const numericFields = ["price", "location_lat", "location_lng", "max_capacity"] as const;
 
 function isPlainObject(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -42,7 +41,7 @@ function mergeDetails(
   for (const [key, value] of Object.entries(updates)) {
     if (isPlainObject(value) && isPlainObject(merged[key])) {
       merged[key] = mergeDetails(merged[key], value);
-    } else {
+    } else if (value !== undefined) {
       merged[key] = value;
     }
   }
@@ -50,82 +49,143 @@ function mergeDetails(
   return merged;
 }
 
+function toNumberOrNull(value: unknown) {
+  if (value === "" || value === null) return { value: null };
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? { value } : { error: "not_finite" };
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? { value: parsed } : { error: "not_numeric" };
+  }
+
+  return { error: "invalid_type" };
+}
+
 export async function PATCH(req: Request, context: { params: any }) {
   const body = await req.json().catch(() => ({}));
   const maintenanceSession = await getValidAdminMaintenanceSession(req);
 
   if (!maintenanceSession) {
-    return NextResponse.json({ error: "جلسة الصيانة غير صالحة" }, { status: 401 });
+    return NextResponse.json({ error: "invalid_maintenance_session" }, { status: 401 });
   }
 
   const { serviceId } = await context.params;
   const providerId = maintenanceSession.providerId;
-  const updates = isPlainObject(body.updates) ? body.updates : null;
+  const incoming = isPlainObject(body.updates) ? body.updates : null;
 
-  if (!updates) {
-    return NextResponse.json({ error: "updates مطلوبة" }, { status: 400 });
+  if (!incoming) {
+    return NextResponse.json({ error: "updates_required" }, { status: 400 });
   }
 
-  const { data: service, error: serviceError } = await supabaseServer
+  const { data: existingService, error: serviceError } = await supabaseServer
     .from("services")
     .select("id, provider_id, details, status")
     .eq("id", serviceId)
     .single();
 
-  if (serviceError || !service) {
-    return NextResponse.json({ error: "الخدمة غير موجودة" }, { status: 404 });
+  if (serviceError || !existingService) {
+    return NextResponse.json({ error: "service_not_found" }, { status: 404 });
   }
 
-  if (String(service.provider_id) !== providerId) {
-    return NextResponse.json(
-      { error: "لا يمكن تعديل خدمة تابعة لمزود آخر" },
-      { status: 403 }
-    );
+  if (String(existingService.provider_id) !== providerId) {
+    return NextResponse.json({ error: "service_provider_mismatch" }, { status: 403 });
   }
 
-  const payload: Record<string, any> = {};
+  const updatePayload: Record<string, any> = {};
 
-  for (const field of directFields) {
-    if (Object.prototype.hasOwnProperty.call(updates, field)) {
-      payload[field] = updates[field];
+  for (const field of textOrJsonFields) {
+    if (
+      Object.prototype.hasOwnProperty.call(incoming, field) &&
+      incoming[field] !== undefined
+    ) {
+      updatePayload[field] = incoming[field];
     }
   }
 
-  if (Object.prototype.hasOwnProperty.call(updates, "price")) {
-    payload.price = updates.price === "" || updates.price === null ? null : Number(updates.price);
+  for (const field of numericFields) {
+    if (
+      Object.prototype.hasOwnProperty.call(incoming, field) &&
+      incoming[field] !== undefined
+    ) {
+      const numericValue = toNumberOrNull(incoming[field]);
+
+      if ("error" in numericValue) {
+        return NextResponse.json(
+          {
+            error: "maintenance_update_invalid_number",
+            field,
+            sentValue: incoming[field],
+          },
+          { status: 400 }
+        );
+      }
+
+      updatePayload[field] = numericValue.value;
+    }
   }
 
-  if (Object.prototype.hasOwnProperty.call(updates, "status")) {
-    if (!allowedStatus.has(String(updates.status))) {
-      return NextResponse.json({ error: "حالة الخدمة غير صالحة" }, { status: 400 });
+  if (
+    Object.prototype.hasOwnProperty.call(incoming, "status") &&
+    incoming.status !== undefined
+  ) {
+    if (!allowedStatus.has(String(incoming.status))) {
+      return NextResponse.json({ error: "invalid_service_status" }, { status: 400 });
     }
 
-    payload.status = updates.status;
+    updatePayload.status = incoming.status;
   }
 
-  if (isPlainObject(updates.details)) {
-    const currentDetails = isPlainObject(service.details) ? service.details : {};
-    payload.details = mergeDetails(currentDetails, updates.details);
+  if (isPlainObject(incoming.details)) {
+    const currentDetails = isPlainObject(existingService.details)
+      ? existingService.details
+      : {};
+    updatePayload.details = mergeDetails(currentDetails, incoming.details);
   }
 
-  delete payload.provider_id;
-  delete payload.pending_updates;
-  delete payload.updated_at;
+  delete updatePayload.id;
+  delete updatePayload.provider_id;
+  delete updatePayload.created_at;
+  delete updatePayload.updated_at;
+  delete updatePayload.serviceId;
+  delete updatePayload.providerId;
+  delete updatePayload.isMaintenanceMode;
+  delete updatePayload.maintenanceAdminId;
+  delete updatePayload.pending_updates;
 
-  if (Object.keys(payload).length === 0) {
-    return NextResponse.json({ error: "لا توجد حقول قابلة للتحديث" }, { status: 400 });
+  for (const key of Object.keys(updatePayload)) {
+    if (updatePayload[key] === undefined) {
+      delete updatePayload[key];
+    }
+  }
+
+  if (Object.keys(updatePayload).length === 0) {
+    return NextResponse.json({ error: "no_valid_update_fields" }, { status: 400 });
   }
 
   const { data: updatedService, error: updateError } = await supabaseServer
     .from("services")
-    .update(payload)
+    .update(updatePayload)
     .eq("id", serviceId)
     .eq("provider_id", providerId)
     .select("*")
     .single();
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    const supabaseError = updateError as any;
+
+    return NextResponse.json(
+      {
+        error: "maintenance_update_failed",
+        supabaseCode: supabaseError.code || null,
+        supabaseMessage: supabaseError.message || null,
+        supabaseDetails: supabaseError.details || null,
+        sentKeys: Object.keys(updatePayload),
+      },
+      { status: 400 }
+    );
   }
 
   await writeAdminLog(
