@@ -71,6 +71,7 @@ export async function GET(req: Request) {
           .from("services")
           .select("*")
           .in("id", serviceIds)
+          .eq("provider_id", provider.id)
       : { data: [], error: null };
 
     if (servicesError) {
@@ -80,11 +81,13 @@ export async function GET(req: Request) {
     const clientsMap = new Map((clients || []).map((client) => [client.id, client]));
     const servicesMap = new Map((services || []).map((service) => [service.id, service]));
 
-    const formattedBookings = bookingRows.map((booking) => ({
-      ...booking,
-      profiles: clientsMap.get(booking.user_id) || null,
-      services: servicesMap.get(booking.service_id) || null,
-    }));
+    const formattedBookings = bookingRows
+      .filter((booking) => booking.service_id && servicesMap.has(booking.service_id))
+      .map((booking) => ({
+        ...booking,
+        profiles: clientsMap.get(booking.user_id) || null,
+        services: servicesMap.get(booking.service_id) || null,
+      }));
 
     return NextResponse.json({
       success: true,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   ADMIN_MAINTENANCE_SESSION_COOKIE,
-  getValidAdminMaintenanceSession,
+  requireProvider,
 } from "@/lib/requireProvider";
 
 function hasMaintenanceCookie(req: Request) {
@@ -23,9 +23,9 @@ function clearMaintenanceCookie(response: NextResponse) {
 }
 
 export async function GET(req: Request) {
-  const maintenanceSession = await getValidAdminMaintenanceSession(req);
+  const providerContext = await requireProvider(req);
 
-  if (!maintenanceSession) {
+  if (!providerContext.isMaintenanceMode || !providerContext.provider) {
     const response = NextResponse.json({
       isMaintenanceMode: false,
     });
@@ -39,7 +39,15 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     isMaintenanceMode: true,
-    providerId: maintenanceSession.providerId,
-    adminId: maintenanceSession.adminId,
+    providerId: providerContext.provider.id,
+    adminId: providerContext.maintenanceAdminId,
+    providerProfile: {
+      id: providerContext.provider.id,
+      full_name: providerContext.provider.full_name,
+      email: providerContext.provider.email,
+      phone: providerContext.provider.phone,
+      role: providerContext.provider.role,
+      is_provider: providerContext.provider.is_provider,
+    },
   });
 }
