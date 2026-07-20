@@ -50,6 +50,7 @@ import {
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { toast, Toaster } from "sonner";
+import { requestedDatesAreUnavailable } from "@/lib/serviceAvailability";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -356,6 +357,7 @@ export default function ServiceDetailsPage() {
   const [dateTimeError, setDateTimeError] = useState("");
   const [heroMediaFailed, setHeroMediaFailed] = useState(false);
   const [confirmedBookedSeats, setConfirmedBookedSeats] = useState(0);
+  const [unavailableDates, setUnavailableDates] = useState<string[]>([]);
 
   const todayDate = new Date().toISOString().split("T")[0];
 
@@ -369,6 +371,7 @@ export default function ServiceDetailsPage() {
   const validExpDates = isExperience
     ? safeArray(service?.details?.experience_info?.dates)
         .filter((d: string) => d >= todayDate)
+        .filter((d: string) => !unavailableDates.includes(d))
         .sort()
     : [];
 
@@ -476,7 +479,22 @@ export default function ServiceDetailsPage() {
   }, [guestCount, childCount, checkIn, service, isLodging, isEvent, isUnlimitedFixedPriceExperience]);
 
   useEffect(() => {
-    if (!service || isLodging) return;
+    if (!service) return;
+
+    if (isLodging) {
+      if (!checkIn) {
+        setDateTimeError("");
+        return;
+      }
+
+      const checkOut = addDaysToDate(checkIn, Math.max(1, guestCount));
+      if (requestedDatesAreUnavailable(unavailableDates, checkIn, checkOut)) {
+        setDateTimeError("الفترة المختارة تتضمن تاريخاً محجوزاً وغير متاح.");
+      } else {
+        setDateTimeError("");
+      }
+      return;
+    }
 
     if (!bookingDate) {
       setDateTimeError("");
@@ -486,6 +504,11 @@ export default function ServiceDetailsPage() {
     const blockedDates = safeArray(service.blocked_dates);
     const expDates = safeArray(service.details?.experience_info?.dates);
     const eventInfo = service.details?.event_info;
+
+    if (requestedDatesAreUnavailable(unavailableDates, bookingDate)) {
+      setDateTimeError("هذا التاريخ محجوز وغير متاح.");
+      return;
+    }
 
     if (blockedDates.includes(bookingDate)) {
       setDateTimeError("هذا التاريخ مغلق ولا يمكن الحجز فيه.");
@@ -540,7 +563,17 @@ export default function ServiceDetailsPage() {
     }
 
     setDateTimeError("");
-  }, [bookingDate, bookingTime, service, isLodging, isEvent, isExperience]);
+  }, [
+    bookingDate,
+    bookingTime,
+    checkIn,
+    guestCount,
+    service,
+    isLodging,
+    isEvent,
+    isExperience,
+    unavailableDates,
+  ]);
 
   const fetchServiceDetails = async () => {
     try {
@@ -573,14 +606,18 @@ export default function ServiceDetailsPage() {
         }
 
         let serviceConfirmedSeats = 0;
+        let serviceUnavailableDates: string[] = [];
 
         const isLimited =
           serviceData.service_category === "experience" &&
           serviceData.sub_category !== "event" &&
           serviceData.max_capacity !== null &&
           serviceData.max_capacity !== undefined;
+        const isDateExclusive = ["lodging", "facility"].includes(
+          serviceData.sub_category
+        );
 
-        if (isLimited) {
+        if (isLimited || isDateExclusive) {
           try {
             const availabilityResponse = await fetch(`/api/services/${serviceData.id}/availability`, {
               cache: "no-store",
@@ -589,6 +626,9 @@ export default function ServiceDetailsPage() {
 
             if (availabilityResponse.ok) {
               serviceConfirmedSeats = Number(availability.confirmedSeats || 0);
+              serviceUnavailableDates = Array.isArray(availability.unavailableDates)
+                ? availability.unavailableDates
+                : [];
             }
           } catch (availabilityError) {
             console.error("Error loading service seat availability:", availabilityError);
@@ -614,6 +654,7 @@ export default function ServiceDetailsPage() {
 
         setService(normalizedService);
         setConfirmedBookedSeats(serviceConfirmedSeats);
+        setUnavailableDates(serviceUnavailableDates);
 
         if (isLimited) {
           const remainingSeats = Math.max(0, Number(serviceData.max_capacity || 0) - serviceConfirmedSeats);
@@ -732,6 +773,22 @@ export default function ServiceDetailsPage() {
       return;
     }
 
+    if (
+      isLodging &&
+      requestedDatesAreUnavailable(unavailableDates, finalCheckIn, finalCheckOut)
+    ) {
+      toast.error("الفترة المختارة تتضمن تاريخاً محجوزاً وغير متاح.");
+      return;
+    }
+
+    if (
+      isFacility &&
+      requestedDatesAreUnavailable(unavailableDates, bookingDate)
+    ) {
+      toast.error("هذا التاريخ محجوز وغير متاح.");
+      return;
+    }
+
     if (isLimitedCapacity) {
       const availableSeats = Number(availableLimitedSeats || 0);
 
@@ -786,6 +843,9 @@ export default function ServiceDetailsPage() {
       const result = await response.json();
 
       if (!response.ok) {
+        if (result?.error === "date_unavailable") {
+          throw new Error("التاريخ المختار محجوز وغير متاح.");
+        }
         throw new Error(result?.error || "فشل إنشاء الحجز");
       }
 
@@ -1656,7 +1716,16 @@ export default function ServiceDetailsPage() {
                         min={todayDate}
                         value={checkIn}
                         onClick={(e) => e.currentTarget.showPicker()}
-                        onChange={(e) => setCheckIn(e.target.value)}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const end = addDaysToDate(value, Math.max(1, guestCount));
+                          if (requestedDatesAreUnavailable(unavailableDates, value, end)) {
+                            setCheckIn("");
+                            toast.error("الفترة المختارة تتضمن تاريخاً محجوزاً وغير متاح.");
+                            return;
+                          }
+                          setCheckIn(value);
+                        }}
                         style={{ colorScheme: "dark" }}
                         className="w-full bg-transparent p-3 outline-none text-white text-xs cursor-pointer text-center"
                       />
@@ -1699,6 +1768,18 @@ export default function ServiceDetailsPage() {
                       </span>
                     </div>
                   )}
+
+                  {dateTimeError && (
+                    <p className="text-xs text-red-400 flex items-center gap-1 bg-red-500/10 p-2 rounded-lg border border-red-500/20">
+                      <AlertCircle size={14} /> {dateTimeError}
+                    </p>
+                  )}
+
+                  {unavailableDates.filter((date) => date >= todayDate).length > 0 && (
+                    <p className="text-[11px] text-white/50 leading-5">
+                      التواريخ المحجوزة: {unavailableDates.filter((date) => date >= todayDate).slice(0, 8).join("، ")}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1717,7 +1798,15 @@ export default function ServiceDetailsPage() {
                            validExpDates.length > 0 ? (
                              <select
                                value={bookingDate}
-                               onChange={(e) => setBookingDate(e.target.value)}
+                               onChange={(e) => {
+                                 const value = e.target.value;
+                                 if (requestedDatesAreUnavailable(unavailableDates, value)) {
+                                   setBookingDate("");
+                                   toast.error("هذا التاريخ محجوز وغير متاح.");
+                                   return;
+                                 }
+                                 setBookingDate(value);
+                               }}
                                className="w-full bg-transparent p-3 outline-none text-white text-sm cursor-pointer text-center appearance-none"
                                style={{ colorScheme: "dark" }}
                              >
@@ -1749,7 +1838,15 @@ export default function ServiceDetailsPage() {
                               }
                               value={bookingDate}
                               onClick={(e) => e.currentTarget.showPicker()}
-                              onChange={(e) => setBookingDate(e.target.value)}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (requestedDatesAreUnavailable(unavailableDates, value)) {
+                                  setBookingDate("");
+                                  toast.error("هذا التاريخ محجوز وغير متاح.");
+                                  return;
+                                }
+                                setBookingDate(value);
+                              }}
                               style={{ colorScheme: "dark" }}
                               className="w-full bg-transparent p-3 outline-none text-white text-xs cursor-pointer text-center"
                             />
@@ -1809,6 +1906,12 @@ export default function ServiceDetailsPage() {
                   {dateTimeError && (
                     <p className="text-xs text-red-400 flex items-center gap-1 bg-red-500/10 p-2 rounded-lg border border-red-500/20">
                       <AlertCircle size={14} /> {dateTimeError}
+                    </p>
+                  )}
+
+                  {isFacility && unavailableDates.filter((date) => date >= todayDate).length > 0 && (
+                    <p className="text-[11px] text-white/50 leading-5 col-span-2">
+                      التواريخ المحجوزة وغير المتاحة: {unavailableDates.filter((date) => date >= todayDate).slice(0, 8).join("، ")}
                     </p>
                   )}
                 </div>

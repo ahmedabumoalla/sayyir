@@ -23,6 +23,7 @@ export async function getProviderClientContext() {
       providerId: String(context.providerId),
       isMaintenanceMode: true,
       maintenanceAdminId: context.adminId ? String(context.adminId) : null,
+      providerProfile: context.providerProfile || null,
       session,
       accessToken: session?.access_token || null,
     };
@@ -32,6 +33,7 @@ export async function getProviderClientContext() {
     providerId: session?.user?.id || null,
     isMaintenanceMode: false,
     maintenanceAdminId: null,
+    providerProfile: null,
     session,
     accessToken: session?.access_token || null,
   };

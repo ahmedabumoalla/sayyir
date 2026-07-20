@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { assertExperienceSeatsAvailable } from '@/lib/experienceSeats';
+import {
+  getDateAvailability,
+  requestedDatesAreUnavailable,
+} from '@/lib/serviceAvailability';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -109,6 +113,39 @@ export async function POST(request: Request) {
     const bookingQuantity = isUnlimitedFixedPriceExperience ? 1 : requestedQuantity;
 
     await assertExperienceSeatsAvailable(supabaseAdmin, service.id, bookingQuantity);
+
+    const dateAvailability = await getDateAvailability(supabaseAdmin, service);
+    const requestedStart = checkIn || bookingDate;
+    const requestedEndExclusive =
+      service.sub_category === 'lodging' ? checkOut : undefined;
+
+    if (dateAvailability.isDateExclusive && !requestedStart) {
+      return NextResponse.json(
+        { error: 'booking_date_required' },
+        { status: 400 }
+      );
+    }
+
+    if (service.sub_category === 'lodging' && !requestedEndExclusive) {
+      return NextResponse.json(
+        { error: 'check_out_required' },
+        { status: 400 }
+      );
+    }
+
+    if (
+      dateAvailability.isDateExclusive &&
+      requestedDatesAreUnavailable(
+        dateAvailability.unavailableDates,
+        requestedStart,
+        requestedEndExclusive
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'date_unavailable', message: 'التاريخ المختار محجوز وغير متاح.' },
+        { status: 409 }
+      );
+    }
 
     const unitPrice = Number(service.price || 0);
     const totalPrice = isUnlimitedFixedPriceExperience ? unitPrice : unitPrice * bookingQuantity;

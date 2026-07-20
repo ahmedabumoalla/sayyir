@@ -56,7 +56,7 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
         if (context?.isMaintenanceMode) {
             setIsMaintenanceMode(true);
-            setUserName("وضع الصيانة");
+            setUserName(context.providerProfile?.full_name || "مزود خدمة");
             return;
         }
 

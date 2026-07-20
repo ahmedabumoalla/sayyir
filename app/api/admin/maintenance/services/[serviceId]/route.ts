@@ -165,14 +165,13 @@ export async function PATCH(req: Request, context: { params: any }) {
     return NextResponse.json({ error: "no_valid_update_fields" }, { status: 400 });
   }
 
-  const { data: updatedService, error: updateError } = await supabaseServer.rpc(
-    "maintenance_update_service",
-    {
-      p_service_id: serviceId,
-      p_provider_id: providerId,
-      p_updates: updatePayload,
-    }
-  );
+  const { data: updatedService, error: updateError } = await supabaseServer
+    .from("services")
+    .update(updatePayload)
+    .eq("id", serviceId)
+    .eq("provider_id", providerId)
+    .select("*")
+    .single();
 
   if (updateError) {
     const supabaseError = updateError as any;
