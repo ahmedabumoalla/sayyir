@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { getProviderClientContext } from "@/lib/providerContextClient";
 import { 
   ChevronRight, Save, Loader2, MapPin, Image as ImageIcon, 
   Home, Compass, Building, Tent, Info, Plus, Trash2, 
@@ -349,8 +350,7 @@ export default function AddServicePage() {
               };
           }
 
-          const payload = {
-              provider_id: session.user.id,
+          const servicePayload = {
               service_category: mainCategory === 'facility_lodging' ? (subCategory === 'facility' ? 'facility' : 'lodging') : 'experience',
               sub_category: subCategory,
               service_type: mainCategory === 'experience_event' ? 'experience' : 'general',
@@ -360,11 +360,36 @@ export default function AddServicePage() {
               commercial_license: licenseUrl,
               location_lat: finalLat,
               location_lng: finalLng,
-              status: 'pending',
               image_url: images[0] || null,
               max_capacity: capacity ? Number(capacity) : null,
               work_schedule: subCategory === 'lodging' ? workDays : null,
               details: details
+          };
+
+          const providerContext = await getProviderClientContext();
+
+          if (providerContext.isMaintenanceMode) {
+              const response = await fetch('/api/admin/maintenance/services', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(servicePayload),
+              });
+              const result = await response.json().catch(() => ({}));
+
+              if (!response.ok) {
+                  throw new Error(result?.error || 'تعذر حفظ الخدمة مباشرة في وضع الصيانة');
+              }
+
+              alert("تم حفظ الخدمة مباشرة باسم المزود بنجاح.");
+              router.push('/provider/services');
+              return;
+          }
+
+          const payload = {
+              ...servicePayload,
+              provider_id: session.user.id,
+              status: 'pending',
           };
 
           const { error } = await supabase.from('services').insert([payload]);
