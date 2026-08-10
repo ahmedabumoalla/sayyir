@@ -60,7 +60,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
             // 2. تسجيل عملية دفع في جدول payments
             const { error: payError } = await supabase.from('payments').insert([{
                 user_id: booking.user_id,
-                amount: booking.total_price,
+                amount: Number(booking.final_price ?? booking.total_price ?? 0),
                 currency: 'SAR',
                 status: 'succeeded',
                 description: `حجز خدمة: ${booking.services.title}`,
@@ -88,6 +88,8 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#1a1a1a] text-[#C89B3C]"><Loader2 className="animate-spin w-10 h-10"/></div>;
   if (!booking) return <div className="h-screen flex items-center justify-center text-white">لم يتم العثور على الحجز</div>;
 
+  const payableAmount = Number(booking.final_price ?? booking.total_price ?? 0);
+
   return (
     <main dir="rtl" className={`min-h-screen bg-[#121212] flex items-center justify-center p-4 ${tajawal.className}`}>
       <div className="bg-[#1E1E1E] w-full max-w-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden">
@@ -112,7 +114,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
                 </div>
                 <div className="flex justify-between items-center text-[#C89B3C] font-bold text-lg pt-2">
                     <span>الإجمالي للدفع</span>
-                    <span>{booking.total_price} ريال</span>
+                    <span>{payableAmount} ريال</span>
                 </div>
             </div>
 

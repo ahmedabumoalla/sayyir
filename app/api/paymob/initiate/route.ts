@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import {
+  calculateServiceSubtotal,
+  validateDiscountCode,
+} from '@/lib/server/discounts';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,7 +15,8 @@ export async function POST(request: Request) {
     console.log("🟢 PAYMOB INITIATE START");
 
     const body = await request.json();
-    const { bookingId, couponCode, paymentMethod } = body;
+    const { bookingId } = body;
+    const discountCode = body.discountCode ?? body.couponCode ?? null;
 
     console.log("📦 INITIATE BODY:", body);
 
@@ -78,35 +83,28 @@ export async function POST(request: Request) {
       console.error("⚠️ PLATFORM SETTINGS ERROR:", settingsError);
     }
 
-    const quantity = booking.quantity || 1;
-    const unitPrice = Number(booking.services?.price || 0);
-    const subtotal = unitPrice * quantity;
+    const subtotal = calculateServiceSubtotal(
+      booking.services,
+      booking.quantity ?? 1,
+      booking.details?.child_count || 0
+    );
+    const discount = await validateDiscountCode({
+      supabase: supabaseAdmin,
+      code: discountCode,
+      service: booking.services,
+      bookingDate: booking.booking_date || booking.check_in,
+      subtotal,
+    });
 
-    let generalDiscountAmount = 0;
-    let couponDiscountAmount = 0;
-
-    if (settings?.is_general_discount_active && Number(settings.general_discount_percent) > 0) {
-      generalDiscountAmount = (subtotal * Number(settings.general_discount_percent)) / 100;
+    if (!discount.valid) {
+      return NextResponse.json(
+        { error: discount.error || "كود الخصم غير صالح" },
+        { status: 400 }
+      );
     }
 
-    if (couponCode) {
-      const { data: coupon, error: couponError } = await supabaseAdmin
-        .from("coupons")
-        .select("discount_percent, code")
-        .eq("code", couponCode)
-        .single();
-
-      if (couponError) {
-        console.error("⚠️ COUPON ERROR:", couponError);
-      }
-
-      if (coupon) {
-        couponDiscountAmount = (subtotal * Number(coupon.discount_percent)) / 100;
-      }
-    }
-
-    const totalDiscount = generalDiscountAmount + couponDiscountAmount;
-    const finalAmountToPay = Math.max(0, subtotal - totalDiscount);
+    const totalDiscount = discount.discountAmount;
+    const finalAmountToPay = discount.finalAmount;
     const netAmountBeforeVat = finalAmountToPay / 1.15;
     const vatAmount = finalAmountToPay - netAmountBeforeVat;
 
@@ -140,12 +138,13 @@ export async function POST(request: Request) {
       .update({
         subtotal,
         discount_amount: totalDiscount,
+        discount_applied: discount.applied,
         tax_amount: vatAmount,
         final_price: finalAmountToPay,
         total_price: finalAmountToPay,
         platform_fee: platformFee,
         provider_earnings: providerEarnings,
-        coupon_code: couponCode || null
+        coupon_code: discount.code
       })
       .eq("id", bookingId);
 

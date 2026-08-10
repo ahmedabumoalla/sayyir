@@ -3,7 +3,6 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient"; // تأكدنا من استخدام المتغير المصدر
-import { calculateBookingPrice } from "@/lib/utils/pricing";
 import { CreditCard, Tag, ArrowRight, ShieldCheck, Loader2 } from "lucide-react";
 
 function CheckoutContent() {
@@ -53,11 +52,17 @@ function CheckoutContent() {
 
       setBooking(data);
 
-      // حساب السعر المبدئي (سيجلب الخصم العام تلقائياً إذا كان مفعلاً في pricing.ts)
-      const initialCalc = await calculateBookingPrice(data.services.price);
-      if (initialCalc.success && initialCalc.data) {
-        setPriceDetails(initialCalc.data);
-      }
+      const originalPrice = Number(
+        data.subtotal ?? Number(data.services.price || 0) * Number(data.quantity ?? 1)
+      );
+      setPriceDetails({
+        originalPrice,
+        discountAmount: 0,
+        finalPrice: originalPrice,
+        platformFee: 0,
+        providerEarnings: 0,
+        couponCode: null,
+      });
 
       setLoading(false);
     };
@@ -70,61 +75,71 @@ function CheckoutContent() {
     if (!couponCode) return;
     setProcessing(true);
 
-    const result = await calculateBookingPrice(
-      booking.services.price,
-      couponCode
-    );
+    try {
+      const response = await fetch("/api/discounts/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: couponCode, bookingId }),
+      });
+      const result = await response.json();
 
-    if (result.success && result.data) {
-      setPriceDetails(result.data);
+      if (!response.ok || !result.applied) {
+        alert(result.error || "❌ الكوبون غير صالح");
+        return;
+      }
+
+      setCouponCode(result.code);
+      setPriceDetails((current) => ({
+        ...current,
+        originalPrice: result.subtotal,
+        discountAmount: result.discountAmount,
+        finalPrice: result.finalAmount,
+        couponCode: result.code,
+      }));
       alert("✅ تم تطبيق الكوبون بنجاح!");
-    } else {
-      alert(result.error || "❌ الكوبون غير صالح");
-      // إعادة الحساب لإزالة الكوبون الخاطئ (مع الإبقاء على الخصم العام إن وجد)
-      const reset = await calculateBookingPrice(booking.services.price);
-      if (reset.data) setPriceDetails(reset.data);
-      setCouponCode("");
+    } catch {
+      alert("تعذر التحقق من كود الخصم");
+    } finally {
+      setProcessing(false);
     }
-
-    setProcessing(false);
   };
 
   // 3. إتمام الدفع
   const handlePayment = async () => {
     setProcessing(true);
 
-    // محاكاة تأخير الدفع
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      const response = await fetch("/api/paymob/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId,
+          discountCode: priceDetails.couponCode,
+          paymentMethod: "card",
+        }),
+      });
+      const result = await response.json();
 
-    const { error } = await supabase
-      .from("bookings")
-      .update({
-        payment_status: "paid",
-        status: "confirmed", // تحويل الحالة إلى مؤكد
-        original_price: priceDetails.originalPrice,
-        discount_amount: priceDetails.discountAmount,
-        coupon_code: priceDetails.couponCode,
-        final_price: priceDetails.finalPrice,
-        platform_fee: priceDetails.platformFee,
-        provider_earnings: priceDetails.providerEarnings,
-      })
-      .eq("id", bookingId);
+      if (!response.ok) throw new Error(result.error || "فشل بدء عملية الدفع");
 
-    if (!error) {
-      // زيادة عداد استخدام الكوبون
-      if (priceDetails.couponCode) {
-        await supabase.rpc("increment_coupon_usage", {
-          code_input: priceDetails.couponCode,
+      if (result.skipPayment) {
+        const freeResponse = await fetch("/api/paymob/free-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookingId, paymentMethod: "مجاني" }),
         });
+        const freeResult = await freeResponse.json();
+        if (!freeResponse.ok) throw new Error(freeResult.error || "فشل تأكيد الحجز المجاني");
+        router.push(`/payment-success?booking_id=${bookingId}`);
+        return;
       }
 
-      // التوجيه لصفحة النجاح
-      router.push(`/payment-success?booking_id=${bookingId}`);
-    } else {
-      alert("حدث خطأ أثناء الدفع، يرجى المحاولة مرة أخرى.");
+      if (!result.iframeUrl) throw new Error("لم يتم استلام رابط الدفع");
+      window.location.href = result.iframeUrl;
+    } catch (error: any) {
+      alert(error.message || "حدث خطأ أثناء الدفع، يرجى المحاولة مرة أخرى.");
+      setProcessing(false);
     }
-
-    setProcessing(false);
   };
 
   if (loading) {
@@ -196,7 +211,18 @@ function CheckoutContent() {
                 <input 
                   type="text" 
                   value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    const value = e.target.value.toUpperCase();
+                    setCouponCode(value);
+                    if (priceDetails.couponCode && value !== priceDetails.couponCode) {
+                      setPriceDetails((current) => ({
+                        ...current,
+                        discountAmount: 0,
+                        finalPrice: current.originalPrice,
+                        couponCode: null,
+                      }));
+                    }
+                  }}
                   placeholder="KSA2030"
                   className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-[#C89B3C] outline-none placeholder:text-gray-600"
                 />
@@ -205,7 +231,7 @@ function CheckoutContent() {
                   disabled={processing || !couponCode}
                   className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg transition disabled:opacity-50"
                 >
-                  <Tag size={18} />
+                  <Tag size={18} /> تطبيق الكود
                 </button>
               </div>
             </div>
