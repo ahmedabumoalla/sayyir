@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireProvider } from '@/lib/requireProvider';
+import { getInternalNotificationHeaders } from '@/lib/notificationAuth';
+import {
+  ensureProfileWhatsApp,
+  whatsappGuardStatus,
+} from '@/lib/whatsappProfile';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,6 +19,13 @@ export async function POST(request: Request) {
 
     if (providerAuthError || !provider) {
       return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
+    }
+
+    const providerWhatsApp = await ensureProfileWhatsApp(provider);
+    if (!providerWhatsApp.ok) {
+      return NextResponse.json(providerWhatsApp, {
+        status: whatsappGuardStatus(providerWhatsApp),
+      });
     }
 
     const body = await request.json();
@@ -78,6 +90,21 @@ export async function POST(request: Request) {
       console.error('CLIENT FETCH ERROR:', clientError);
     }
 
+    if (!client) {
+      return NextResponse.json({ error: 'بيانات العميل غير موجودة' }, { status: 404 });
+    }
+
+    const clientWhatsApp = await ensureProfileWhatsApp(client);
+    if (!clientWhatsApp.ok) {
+      return NextResponse.json(
+        {
+          error: 'لا يمكن اتخاذ القرار لأن العميل لا يملك رقم واتساب صالحاً محفوظاً.',
+          code: 'CLIENT_WHATSAPP_UNAVAILABLE',
+        },
+        { status: clientWhatsApp.code === 'WHATSAPP_CHECK_FAILED' ? 503 : 409 }
+      );
+    }
+
     const { data: service, error: serviceError } = await supabaseAdmin
       .from('services')
       .select('id, title, name, price')
@@ -137,29 +164,43 @@ export async function POST(request: Request) {
         );
       }
 
-      const clientDashboardUrl = `${baseUrl}/client/dashboard`;
+      const paymentUrl = `${baseUrl}/checkout/${updatedBooking.id}`;
 
-      if (client?.email || client?.phone) {
+      let notificationSucceeded = false;
+      let notificationResult: unknown = null;
+      if (client?.email || clientWhatsApp.phone) {
         const approvePayload = {
           templateId: 'booking_approved_invoice',
           email: client?.email,
-          phone: client?.phone,
+          phone: clientWhatsApp.phone,
           data: {
             bookingId: updatedBooking.id.split('-')[0].toUpperCase(),
             clientName: client?.full_name || 'عميل',
             serviceName: service?.title || service?.name || 'خدمة سيّر',
-            paymentLink: clientDashboardUrl,
+            providerName: providerProfile?.full_name || 'مزود الخدمة',
+            checkIn: updatedBooking.check_in || updatedBooking.booking_date || '',
+            checkOut: updatedBooking.check_out || '',
+            date: updatedBooking.booking_date || updatedBooking.check_in || '',
+            time: updatedBooking.booking_time || '',
+            guests: updatedBooking.quantity || 1,
+            quantity: updatedBooking.quantity || 1,
+            totalPrice: `${Number(updatedBooking.total_price || 0)} ريال`,
+            expiresAt: updatedBooking.expires_at,
+            paymentLink: paymentUrl,
           },
         };
 
         try {
           const emailResponse = await fetch(`${baseUrl}/api/emails/send`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getInternalNotificationHeaders(),
             body: JSON.stringify(approvePayload),
           });
 
           const emailResult = await emailResponse.json();
+          notificationResult = emailResult;
+          notificationSucceeded =
+            emailResponse.ok && emailResult?.success === true;
 
           console.log('APPROVE EMAIL RESULT:', emailResult);
 
@@ -173,8 +214,14 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: 'تمت الموافقة على الحجز وإرسال رابط الدفع للعميل',
+        message: notificationSucceeded
+          ? 'تمت الموافقة على الحجز وإرسال رابط الدفع للعميل على واتساب.'
+          : 'تمت الموافقة على الحجز، لكن تعذر إرسال رابط الدفع على واتساب.',
         booking: updatedBooking,
+        notificationStatus: {
+          whatsapp: notificationSucceeded ? 'sent' : 'failed',
+          result: notificationResult,
+        },
       });
     }
 
@@ -198,27 +245,40 @@ export async function POST(request: Request) {
       );
     }
 
-    if (client?.email || client?.phone) {
+    let notificationSucceeded = false;
+    let notificationResult: unknown = null;
+    if (client?.email || clientWhatsApp.phone) {
       const rejectPayload = {
         templateId: 'booking_rejected',
         email: client?.email,
-        phone: client?.phone,
+        phone: clientWhatsApp.phone,
         data: {
           bookingId: rejectedBooking.id.split('-')[0].toUpperCase(),
           clientName: client?.full_name || 'عميل',
           serviceName: service?.title || service?.name || 'خدمة سيّر',
+          providerName: providerProfile?.full_name || 'مزود الخدمة',
           reason: finalRejectReason,
+          checkIn: rejectedBooking.check_in || rejectedBooking.booking_date || '',
+          checkOut: rejectedBooking.check_out || '',
+          date: rejectedBooking.booking_date || rejectedBooking.check_in || '',
+          time: rejectedBooking.booking_time || '',
+          guests: rejectedBooking.quantity || 1,
+          quantity: rejectedBooking.quantity || 1,
+          totalPrice: `${Number(rejectedBooking.total_price || 0)} ريال`,
         },
       };
 
       try {
         const rejectEmailResponse = await fetch(`${baseUrl}/api/emails/send`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getInternalNotificationHeaders(),
           body: JSON.stringify(rejectPayload),
         });
 
         const rejectEmailResult = await rejectEmailResponse.json();
+        notificationResult = rejectEmailResult;
+        notificationSucceeded =
+          rejectEmailResponse.ok && rejectEmailResult?.success === true;
 
         console.log('REJECT EMAIL RESULT:', rejectEmailResult);
 
@@ -232,8 +292,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'تم رفض الحجز وإرسال السبب للعميل',
+      message: notificationSucceeded
+        ? 'تم رفض الحجز وإرسال السبب للعميل على واتساب.'
+        : 'تم رفض الحجز، لكن تعذر إرسال السبب على واتساب.',
       booking: rejectedBooking,
+      notificationStatus: {
+        whatsapp: notificationSucceeded ? 'sent' : 'failed',
+        result: notificationResult,
+      },
     });
   } catch (error: any) {
     console.error('PROVIDER BOOKING ACTION ROUTE ERROR:', error);

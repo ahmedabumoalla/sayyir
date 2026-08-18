@@ -204,18 +204,24 @@ export default function JoinRequestsPage() {
                 ? Number(customCommission)
                 : null,
             }
-          : { requestId: selectedRequest.id, reason: rejectionReason };
+          : { requestId: selectedRequest.id, reason: rejectionReason, requesterId: adminId };
 
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify(body),
       });
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "فشل المعالجة");
 
-      alert(`✅ تم ${action === "approve" ? "قبول" : "رفض"} الطلب بنجاح.`);
+      alert(
+        result.message ||
+          `✅ تم ${action === "approve" ? "قبول" : "رفض"} الطلب بنجاح.`
+      );
       setSelectedRequest(null);
       setRejectionReason("");
       setUseCustomCommission(false);

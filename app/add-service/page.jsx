@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { supabase } from "@/lib/supabaseClient"; 
 import { useRouter } from 'next/navigation';
+import { useWhatsAppPhone } from '@/components/WhatsAppPhoneGate';
 
 // استدعاء المكونات الفرعية
 import AccommodationForm from '@/components/forms/AccommodationForm';
@@ -12,6 +13,7 @@ import LocationPicker from '@/components/map/LocationPicker';
 
 export default function AddServicePage() {
   const router = useRouter();
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
   const [loading, setLoading] = useState(false);
 
   const [serviceType, setServiceType] = useState('accommodation');
@@ -42,6 +44,11 @@ export default function AddServicePage() {
         return;
     }
 
+    if (!(await ensureWhatsAppPhone())) {
+        setLoading(false);
+        return;
+    }
+
     const payload = {
         provider_id: user.id,
         title: baseData.title,
@@ -56,10 +63,18 @@ export default function AddServicePage() {
     };
 
     try {
-        const { error } = await supabase.from('services').insert([payload]);
-        if (error) throw error;
+        const response = await fetch('/api/provider/services', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result?.error || 'تعذر إرسال الخدمة للمراجعة');
 
-        alert('✅ تم رفع الطلب بنجاح! سيتم مراجعته.');
+        alert(result.message || '✅ تم رفع الطلب بنجاح! سيتم مراجعته.');
         
         // تعديل المسار ليعيدك للوحة تحكم المزود (تأكد من صحة المسار لديك)
         router.push('/dashboard'); 

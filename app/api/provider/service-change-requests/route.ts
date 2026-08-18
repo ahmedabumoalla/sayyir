@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "../../../../lib/supabaseServer";
 import { requireProvider } from "../../../../lib/requireProvider";
+import { notifyAdminServiceRequest } from "@/lib/whatsappNotifications";
+import {
+  ensureProfileWhatsApp,
+  whatsappGuardStatus,
+} from "@/lib/whatsappProfile";
 
 export async function POST(req: Request) {
   try {
@@ -21,7 +26,7 @@ export async function POST(req: Request) {
 
     const { data: service, error: serviceError } = await supabaseServer
       .from("services")
-      .select("id, provider_id")
+      .select("id, provider_id, title, service_category, sub_category, service_type, price, details")
       .eq("id", service_id)
       .eq("provider_id", provider.id)
       .single();
@@ -62,7 +67,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updateServiceError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, request: data });
+    const whatsapp = await ensureProfileWhatsApp(provider);
+    if (!whatsapp.ok) {
+      return NextResponse.json(whatsapp, { status: whatsappGuardStatus(whatsapp) });
+    }
+
+    const notificationResult = await notifyAdminServiceRequest({
+      kind: "update",
+      service,
+      provider: { ...provider, phone: whatsapp.phone },
+      requestId: data.id,
+      reason: reason || "تعديل بيانات الخدمة",
+      requestedChanges: requested_changes,
+    });
+
+    return NextResponse.json({
+      success: true,
+      request: data,
+      message: notificationResult.ok
+        ? "تم إرسال طلب التعديل وإشعار الأدمن على واتساب."
+        : "تم حفظ طلب التعديل، لكن تعذر إرسال إشعار واتساب للأدمن.",
+      notificationStatus: {
+        whatsapp: notificationResult.ok ? "sent" : "failed",
+        error: notificationResult.ok ? null : notificationResult.error,
+      },
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 import { Tajawal } from "next/font/google";
 import {
   Loader2,
@@ -334,6 +335,7 @@ export default function ServiceDetailsPage() {
   const params = useParams();
   const id = params?.id as string;
   const router = useRouter();
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
 
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -816,10 +818,13 @@ export default function ServiceDetailsPage() {
         return;
       }
 
+      if (!(await ensureWhatsAppPhone())) return;
+
       const response = await fetch("/api/bookings/create", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           serviceId: service.id,
@@ -853,38 +858,6 @@ export default function ServiceDetailsPage() {
 
       if (!bookingData?.id) {
         throw new Error("تم إنشاء الحجز لكن لم يتم استلام بياناته بشكل صحيح");
-      }
-
-      try {
-        const { data: clientProfile } = await supabase
-          .from("profiles")
-          .select("full_name, email, phone")
-          .eq("id", session.user.id)
-          .single();
-
-        await fetch("/api/emails/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            templateId: "new_booking_provider", 
-            email: service.profiles?.email, 
-            phone: service.profiles?.phone, 
-            data: {
-              providerName: service.profiles?.full_name,
-              serviceName: service.title,
-              clientName: clientProfile?.full_name || "عميل سيّر",
-              date: formatDateAr(finalCheckIn),
-              time: isLodging ? "طوال اليوم" : formatTime12H(finalCheckIn || ""),
-              guests: isUnlimitedFixedPriceExperience
-                ? "تجربة بدون تحديد عدد الأشخاص"
-                : guestCount.toString(),
-              bookingId: bookingData.id.split('-')[0].toUpperCase()
-            }
-          }),
-        });
-
-      } catch (notifyError) {
-        console.error("فشل إرسال إشعار المزود:", notifyError);
       }
 
       if (isEvent) {

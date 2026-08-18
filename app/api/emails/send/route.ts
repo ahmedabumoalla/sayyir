@@ -1,14 +1,9 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import twilio from 'twilio';
-import { createClient } from '@supabase/supabase-js';
+import { sendTemplateWhatsAppNotification } from '@/lib/whatsappNotifications';
+import { isAuthorizedInternalNotification } from '@/lib/notificationAuth';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 type Template = {
   subject: string;
@@ -176,19 +171,15 @@ const fillTemplate = (text: string, data: Record<string, any>) => {
   return result;
 };
 
-const stripHtml = (html: string) =>
-  html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/\n\s*\n/g, '\n')
-    .trim();
-
 export async function POST(req: Request) {
   try {
+    if (!isAuthorizedInternalNotification(req)) {
+      return NextResponse.json({ error: 'Unauthorized notification request' }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { templateId, type, email, phone } = body;
+    const { templateId, type, email } = body;
+    const phone = body.phone || body.providerPhone || body.clientPhone || null;
 
     const incomingTemplateId = templateId || type;
     const activeTemplateId = TEMPLATE_ALIASES[incomingTemplateId] || incomingTemplateId;
@@ -196,10 +187,9 @@ export async function POST(req: Request) {
     console.log('EMAIL API INPUT:', {
       templateId: incomingTemplateId,
       activeTemplateId,
-      email,
-      phone,
+      hasEmail: Boolean(email),
+      hasPhone: Boolean(phone),
       hasResendKey: !!process.env.RESEND_API_KEY,
-      body
     });
 
     if (!activeTemplateId || !TEMPLATES[activeTemplateId]) {
@@ -226,8 +216,6 @@ export async function POST(req: Request) {
       mergedData.totalPrice = `${mergedData.price} ريال`;
     }
 
-    console.log('EMAIL MERGED DATA:', mergedData);
-
     const template = TEMPLATES[activeTemplateId];
     const messageBody = fillTemplate(template.html, mergedData);
     const messageSubject = fillTemplate(template.subject, mergedData);
@@ -252,8 +240,6 @@ export async function POST(req: Request) {
           subject: messageSubject
         };
 
-        console.log('RESEND PAYLOAD:', resendPayload);
-
         const emailRes = await resend.emails.send({
           from: resendPayload.from,
           to: resendPayload.to,
@@ -261,9 +247,11 @@ export async function POST(req: Request) {
           html: messageBody
         });
 
-        console.log('RESEND SUCCESS RESPONSE:', emailRes);
-
-        results.email = emailRes;
+        if (emailRes.error) {
+          results.emailError = emailRes.error.message || 'Email send failed';
+        } else {
+          results.email = emailRes.data;
+        }
       } catch (e: any) {
         console.error('❌ RESEND EMAIL ERROR FULL:', e);
         results.emailError = e?.message || 'Email send failed';
@@ -276,51 +264,38 @@ export async function POST(req: Request) {
 
     if (phone) {
       try {
-        const { data: settings, error } = await supabaseAdmin
-          .from('platform_settings')
-          .select('twilio_account_sid, twilio_auth_token, twilio_phone_number')
-          .eq('id', 1)
-          .single();
+        const whatsappResult = await sendTemplateWhatsAppNotification(
+          activeTemplateId,
+          String(phone),
+          mergedData
+        );
 
-        if (error) throw error;
-
-        console.log('TWILIO SETTINGS FOUND:', {
-          hasSid: !!settings?.twilio_account_sid,
-          hasToken: !!settings?.twilio_auth_token,
-          phoneNumber: settings?.twilio_phone_number || null
-        });
-
-        if (settings?.twilio_account_sid && settings?.twilio_auth_token && settings?.twilio_phone_number) {
-          const client = twilio(settings.twilio_account_sid, settings.twilio_auth_token);
-          const normalizedPhone = String(phone).trim();
-          const formattedTo = `whatsapp:${normalizedPhone.startsWith('+') ? normalizedPhone : `+${normalizedPhone}`}`;
-          const formattedFrom = `whatsapp:${settings.twilio_phone_number}`;
-
-          const plainTextBody = stripHtml(messageBody);
-
-          const waRes = await client.messages.create({
-            body: `*${messageSubject}*\n\n${plainTextBody}`,
-            from: formattedFrom,
-            to: formattedTo
-          });
-
-          console.log('TWILIO SUCCESS RESPONSE:', waRes);
-
-          results.whatsapp = waRes.sid;
+        if (whatsappResult.ok) {
+          results.whatsapp = whatsappResult;
         } else {
-          console.error('TWILIO CONFIG INCOMPLETE');
-          results.whatsappError = 'Twilio config incomplete';
+          results.whatsappError = whatsappResult.error || 'WhatsApp send failed';
+          if (whatsappResult.skipped) results.whatsappSkipped = true;
         }
       } catch (e: any) {
-        console.error('❌ TWILIO WHATSAPP ERROR FULL:', e);
+        console.error('❌ GREEN API WHATSAPP ERROR FULL:', e);
         results.whatsappError = e?.message || 'WhatsApp send failed';
-        results.whatsappErrorFull = e;
       }
     }
 
-    console.log('EMAIL API FINAL RESULT:', results);
+    const emailSucceeded = !email || Boolean(results.email);
+    const whatsappSucceeded = !phone || Boolean(results.whatsapp);
+    const success = emailSucceeded && whatsappSucceeded;
 
-    return NextResponse.json({ success: true, results });
+    console.log('NOTIFICATION DELIVERY RESULT:', {
+      template: activeTemplateId,
+      email: email ? (emailSucceeded ? 'accepted' : 'failed') : 'not_requested',
+      whatsapp: phone ? (whatsappSucceeded ? 'accepted' : 'failed') : 'not_requested',
+    });
+
+    return NextResponse.json(
+      { success, results },
+      { status: success ? 200 : 502 }
+    );
   } catch (error: any) {
     console.error('❌ NOTIFICATION API ERROR FULL:', error);
     return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });

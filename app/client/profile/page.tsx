@@ -37,17 +37,37 @@ export default function ClientProfilePage() {
     setUpdating(true);
 
     try {
-        // 1. تحديث جدول profiles وحل مشكلة 409 (إذا كان الجوال فارغ يرسله null وليس "")
-        const phoneToSave = profile.phone.trim() === "" ? null : profile.phone.trim();
-        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("انتهت الجلسة، سجّل الدخول مجدداً");
+
         const { error: profileError } = await supabase.from("profiles").update({ 
             full_name: profile.full_name, 
-            phone: phoneToSave 
         }).eq("id", profile.id);
 
         if (profileError) throw profileError;
 
-        // 2. تحديث اسم المستخدم في نظام المصادقة (Auth) بدون رقم الجوال لمنع خطأ 422
+        if (profile.phone.trim()) {
+          const phoneResponse = await fetch("/api/profile/whatsapp", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ phone: profile.phone }),
+          });
+          const phoneResult = await phoneResponse.json().catch(() => ({}));
+          if (!phoneResponse.ok) {
+            throw new Error(phoneResult.message || phoneResult.error || "تعذر حفظ رقم واتساب");
+          }
+          setProfile((current) => ({ ...current, phone: phoneResult.phone }));
+        } else {
+          const { error: clearPhoneError } = await supabase
+            .from("profiles")
+            .update({ phone: null })
+            .eq("id", profile.id);
+          if (clearPhoneError) throw clearPhoneError;
+        }
+
         const { error: authError } = await supabase.auth.updateUser({
             data: { full_name: profile.full_name }
         });
@@ -87,7 +107,7 @@ export default function ClientProfilePage() {
           <div className="space-y-4">
             <div><label className="text-sm text-white/60 block mb-1">الاسم الكامل</label><input type="text" value={profile.full_name} onChange={(e) => setProfile({ ...profile, full_name: e.target.value })} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-[#C89B3C] outline-none"/></div>
             <div><label className="text-sm text-white/60 block mb-1">البريد الإلكتروني</label><input disabled type="text" value={profile.email} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white/50 cursor-not-allowed"/></div>
-            <div><label className="text-sm text-white/60 block mb-1">رقم الجوال</label><input type="text" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-[#C89B3C] outline-none"/></div>
+            <div><label className="text-sm text-white/60 block mb-1">رقم واتساب الرسمي</label><input type="tel" dir="ltr" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="+9665XXXXXXXX" className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-[#C89B3C] outline-none"/></div>
             <button onClick={handleUpdateProfile} disabled={updating} className="w-full bg-[#C89B3C] text-[#2B1F17] py-3 rounded-xl font-bold hover:bg-[#b38a35] transition flex items-center justify-center gap-2">{updating ? <Loader2 className="animate-spin"/> : "حفظ التغييرات"}</button>
           </div>
         </div>

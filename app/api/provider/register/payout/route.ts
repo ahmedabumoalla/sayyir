@@ -1,52 +1,74 @@
-import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
-import { Resend } from 'resend';
-import { sendSMS } from '@/lib/twilio'; // ✅
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { NextResponse } from "next/server";
+import { requireProvider } from "@/lib/requireProvider";
+import { supabaseServer } from "@/lib/supabaseServer";
+import { ensureProfileWhatsApp, whatsappGuardStatus } from "@/lib/whatsappProfile";
+import { notifyAdminPayoutRequest } from "@/lib/whatsappNotifications";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { providerId, amount, iban, bankName, providerName } = body;
-
-    if (!providerId || !amount || !iban) {
-      return NextResponse.json({ error: "بيانات الطلب ناقصة" }, { status: 400 });
+    const providerContext = await requireProvider(req);
+    if (!providerContext.provider) {
+      return NextResponse.json({ error: providerContext.error || "غير مصرح" }, { status: 401 });
+    }
+    if (providerContext.isMaintenanceMode) {
+      return NextResponse.json({ error: "وضع الصيانة للقراءة فقط" }, { status: 403 });
     }
 
-    const { error: insertError } = await supabaseAdmin
-      .from('payout_requests')
-      .insert([{ provider_id: providerId, amount: amount, iban: iban, bank_name: bankName, status: 'pending' }]);
+    const whatsapp = await ensureProfileWhatsApp(providerContext.provider);
+    if (!whatsapp.ok) {
+      return NextResponse.json(
+        { error: whatsapp.code, code: whatsapp.code, message: whatsapp.message },
+        { status: whatsappGuardStatus(whatsapp) }
+      );
+    }
 
-    if (insertError) throw insertError;
+    const body = await req.json();
+    const amount = Number(body.amount);
+    const iban = String(body.iban || "").replace(/\s+/g, "").toUpperCase();
+    const bankName = String(body.bankName || "").trim();
 
-    // 📩 إشعار للأدمن (أنت)
-    const adminEmail = process.env.ADMIN_EMAIL || 'info@sayyir.sa';
-    const adminPhone = process.env.ADMIN_PHONE || '+966508424401'; // استبدله برقمك
+    if (!Number.isFinite(amount) || amount <= 0 || !bankName || !/^SA\d{22}$/.test(iban)) {
+      return NextResponse.json(
+        { error: "أدخل مبلغاً صحيحاً واسم البنك وآيبان سعودياً صحيحاً (SA متبوعاً بـ22 رقماً)" },
+        { status: 400 }
+      );
+    }
 
-    // 1. إرسال إيميل
-    await resend.emails.send({
-        from: 'المالية - سَيّر <info@emails.sayyir.sa>',
-        to: adminEmail,
-        subject: '💰 طلب سحب رصيد جديد',
-        html: `<div dir="rtl"><h2>طلب سحب: ${providerName}</h2><p>المبلغ: ${amount} ريال</p><p>البنك: ${bankName}</p></div>`
+    const { data: currentBalance, error: balanceError } = await supabaseServer
+      .rpc("get_provider_balance", { p_provider_id: providerContext.provider.id });
+    if (balanceError) throw balanceError;
+    if (amount > Number(currentBalance || 0)) {
+      return NextResponse.json({ error: "المبلغ المطلوب أكبر من الرصيد المتاح" }, { status: 400 });
+    }
+
+    const { data: payout, error: insertError } = await supabaseServer
+      .from("payout_requests")
+      .insert({
+        provider_id: providerContext.provider.id,
+        amount,
+        iban,
+        bank_name: bankName,
+        status: "pending",
+      })
+      .select("*")
+      .single();
+    if (insertError || !payout) throw insertError || new Error("تعذر إنشاء طلب السحب");
+
+    const notification = await notifyAdminPayoutRequest({
+      payout,
+      provider: { ...providerContext.provider, phone: whatsapp.phone },
     });
 
-    // 2. إرسال SMS ✅
-    await sendSMS({
-        to: adminPhone,
-        body: `💰 تنبيه مالي:\nيوجد طلب سحب رصيد جديد.\nالمزود: ${providerName}\nالمبلغ: ${amount} ريال.`
+    return NextResponse.json({
+      success: true,
+      payout,
+      notificationStatus: notification.ok ? "sent" : "failed",
+      message: notification.ok
+        ? "تم إرسال طلب السحب وإشعار الإدارة عبر واتساب"
+        : `تم تسجيل طلب السحب، لكن تعذر إشعار الإدارة عبر واتساب: ${notification.error || "خطأ غير معروف"}`,
     });
-
-    return NextResponse.json({ success: true, message: "تم إرسال طلب السحب بنجاح" });
-
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

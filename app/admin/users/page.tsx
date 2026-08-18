@@ -26,6 +26,8 @@ const ALL_PERMISSIONS = [
       { key: "requests_view", label: "مشاهدة الطلبات" },
       { key: "requests_approve", label: "قبول/رفض الطلبات" },
       { key: "providers_manage", label: "إدارة بيانات المزودين" },
+      { key: "services_view", label: "مشاهدة طلبات الخدمات" },
+      { key: "services_approve", label: "قبول/رفض طلبات الخدمات" },
     ]
   },
   {

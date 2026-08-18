@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 import {
   Tag, ArrowRight, ShieldCheck, Loader2,
   CheckCircle, AlertCircle, MapPin, Clock,
@@ -100,6 +101,7 @@ const formatRemaining = (ms: number) => {
 
 function CheckoutContent() {
   const router = useRouter();
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
   const searchParams = useSearchParams();
   const params = useParams();
 
@@ -292,9 +294,12 @@ setTotals({
 
   const handlePayment = async () => {
     if (!bookingId || expired) return;
+    if (!(await ensureWhatsAppPhone())) return;
     setProcessing(true);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("انتهت الجلسة، سجّل الدخول مجدداً");
       const { data: checkData, error } = await supabase.from("bookings").select("status, expires_at").eq("id", bookingId).single();
       if (error || !checkData) throw new Error("حدث خطأ في قراءة الحجز");
       if (checkData.status !== 'approved_unpaid') throw new Error("الحجز غير متاح للدفع");
@@ -310,17 +315,25 @@ setTotals({
 
       if (totals.total <= 0) {
         const response = await fetch("/api/paymob/free-checkout", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
           body: JSON.stringify({ bookingId, paymentMethod: "مجاني" })
         });
-        if (!response.ok) throw new Error((await response.json()).error);
-        toast.success("✅ تم تأكيد الحجز بنجاح وإصدار التذكرة!");
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || result.error);
+        if (result.notificationStatus === 'failed') toast.warning(result.message);
+        else toast.success(result.message || "✅ تم تأكيد الحجز بنجاح وإصدار التذكرة!");
         router.replace("/client/dashboard");
         return;
       }
 
       const response = await fetch("/api/paymob/initiate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({
           bookingId,
           couponCode: finalCode,

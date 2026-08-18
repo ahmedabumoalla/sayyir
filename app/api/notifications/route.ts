@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
+import {
+  getInternalNotificationHeaders,
+  isAuthorizedInternalNotification,
+} from '@/lib/notificationAuth';
 
 export async function POST(req: Request) {
   try {
+    if (!isAuthorizedInternalNotification(req)) {
+      return NextResponse.json({ error: 'Unauthorized notification request' }, { status: 401 });
+    }
+
     const body = await req.json();
 
     console.log('NOTIFICATIONS API INPUT:', body);
@@ -17,11 +25,18 @@ export async function POST(req: Request) {
         clientName: body.clientName || 'عميل',
         serviceName: body.serviceName || body.serviceTitle || 'خدمة سيّر',
         date: body.date || '',
+        checkIn: body.checkIn || body.date || '',
+        checkOut: body.checkOut || '',
         time: body.time || '',
-        guests: body.guests || 1
+        guests: body.guests || body.quantity || 1,
+        quantity: body.quantity || body.guests || 1,
+        childCount: body.childCount || 0,
+        totalPrice: body.totalPrice || '',
+        notes: body.notes || '',
+        clientPhone: body.clientPhone || ''
       };
 
-      const results: Record<string, any> = {};
+      const results: Record<string, unknown> = {};
 
       if (body.providerEmail || body.providerPhone) {
         const providerPayload = {
@@ -39,7 +54,7 @@ export async function POST(req: Request) {
         try {
           const providerResponse = await fetch(`${baseUrl}/api/emails/send`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getInternalNotificationHeaders(),
             body: JSON.stringify(providerPayload)
           });
 
@@ -52,7 +67,7 @@ export async function POST(req: Request) {
           });
 
           results.provider = {
-            ok: providerResponse.ok,
+            ok: providerResponse.ok && providerResult.success === true,
             status: providerResponse.status,
             result: providerResult
           };
@@ -85,7 +100,7 @@ export async function POST(req: Request) {
         try {
           const clientResponse = await fetch(`${baseUrl}/api/emails/send`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getInternalNotificationHeaders(),
             body: JSON.stringify(clientPayload)
           });
 
@@ -98,7 +113,7 @@ export async function POST(req: Request) {
           });
 
           results.client = {
-            ok: clientResponse.ok,
+            ok: clientResponse.ok && clientResult.success === true,
             status: clientResponse.status,
             result: clientResult
           };
@@ -118,7 +133,14 @@ export async function POST(req: Request) {
         };
       }
 
-      return NextResponse.json({ success: true, results });
+      const providerResult = results.provider as { ok?: boolean } | undefined;
+      const clientResult = results.client as { ok?: boolean } | undefined;
+      const success = providerResult?.ok === true && clientResult?.ok === true;
+
+      return NextResponse.json(
+        { success, results },
+        { status: success ? 200 : 502 }
+      );
     }
 
     const fallbackPayload = {
@@ -131,7 +153,7 @@ export async function POST(req: Request) {
 
     const response = await fetch(`${baseUrl}/api/emails/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getInternalNotificationHeaders(),
       body: JSON.stringify(fallbackPayload)
     });
 

@@ -15,6 +15,7 @@ import { Tajawal } from "next/font/google";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { getProviderClientContext } from "@/lib/providerContextClient";
+import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -93,6 +94,7 @@ const formatTime12H = (timeStr: string) => {
 const isVideo = (url: string) => url?.match(/\.(mp4|webm|ogg)$/i) || url?.includes("video");
 
 export default function ProviderBookingsPage() {
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("active");
@@ -161,6 +163,8 @@ export default function ProviderBookingsPage() {
         throw new Error("جلسة العمل منتهية، يرجى تسجيل الدخول مرة أخرى");
       }
 
+      if (!(await ensureWhatsAppPhone())) return;
+
       const response = await fetch("/api/provider/bookings/action", {
         method: "POST",
         headers: {
@@ -179,7 +183,7 @@ export default function ProviderBookingsPage() {
         throw new Error(result?.error || "فشل قبول الحجز");
       }
 
-      alert("✅ تم قبول الطلب وإرسال رابط الدفع للعميل.");
+      alert(result.message || "✅ تم قبول الطلب وإرسال رابط الدفع للعميل.");
       setSelectedBooking(null);
       setShowRejectModal(false);
       setRejectReason("");
@@ -208,6 +212,8 @@ export default function ProviderBookingsPage() {
       if (!session) {
         throw new Error("جلسة العمل منتهية، يرجى تسجيل الدخول مرة أخرى");
       }
+
+      if (!(await ensureWhatsAppPhone())) return;
 
       const response = await fetch("/api/provider/bookings/action", {
         method: "POST",
@@ -241,7 +247,7 @@ export default function ProviderBookingsPage() {
         }
       ]);
 
-      alert("تم رفض الطلب وإرسال السبب للعميل.");
+      alert(result.message || "تم رفض الطلب وإرسال السبب للعميل.");
       setShowRejectModal(false);
       setSelectedBooking(null);
       setRejectReason("");

@@ -65,13 +65,26 @@ export default function RequestDetailsPage() {
   }, [id]);
 
   const handleAction = async (action: 'approve' | 'reject') => {
-    if (!confirm("⚠️ سيتم أرشفة الحساب وإيقافه بالكامل. هل أنت متأكد؟")) return;
+    if (!confirm(`هل أنت متأكد من ${action === 'approve' ? 'قبول' : 'رفض'} طلب الانضمام؟`)) return;
+    const reason = action === 'reject'
+      ? prompt("اكتب سبب الرفض الذي سيصل إلى مقدم الطلب عبر واتساب:")?.trim()
+      : undefined;
+    if (action === 'reject' && !reason) return alert("سبب الرفض مطلوب");
     setProcessing(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("انتهت جلسة الأدمن");
       const response = await fetch(`/api/admin/${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId: request.id }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          requestId: request.id,
+          requesterId: session.user.id,
+          reason,
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);

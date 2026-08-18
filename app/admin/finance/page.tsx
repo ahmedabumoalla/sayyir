@@ -365,15 +365,29 @@ export default function FinancePage() {
         
         const { data: urlData } = supabase.storage.from('receipts').getPublicUrl(fileName);
         
-        const { error } = await supabase.from('payout_requests').update({ 
+        const payout = payouts.find((item) => item.id === currentPayoutId);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("انتهت جلسة الأدمن");
+        const response = await fetch('/api/admin/finance/action', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            actionType: 'update_payout',
+            requestId: currentPayoutId,
             status: 'approved',
-            receipt_url: urlData.publicUrl 
-        }).eq('id', currentPayoutId);
-        
-        if (error) throw error;
+            amount: payout?.amount,
+            providerName: payout?.provider_name,
+            receiptUrl: urlData.publicUrl,
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'تعذر اعتماد طلب السحب');
 
         setPayouts(prev => prev.map(p => p.id === currentPayoutId ? { ...p, status: 'approved', receipt_url: urlData.publicUrl } : p));
-        alert("تم اعتماد التحويل ورفع الإيصال بنجاح ✅");
+        alert(result.message || "تم اعتماد التحويل ورفع الإيصال بنجاح ✅");
         setIsReceiptModalOpen(false);
     } catch (error: any) {
         alert("خطأ أثناء الاعتماد: " + error.message);
@@ -384,10 +398,30 @@ export default function FinancePage() {
 
   const handleRejectPayout = async (id: string) => {
       if(!confirm("هل أنت متأكد من رفض الطلب وإعادة المبلغ لمحفظة المزود؟")) return;
-      const { error } = await supabase.from('payout_requests').update({ status: 'rejected' }).eq('id', id);
-      if (!error) {
+      try {
+          const payout = payouts.find((item) => item.id === id);
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) throw new Error("انتهت جلسة الأدمن");
+          const response = await fetch('/api/admin/finance/action', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              actionType: 'update_payout',
+              requestId: id,
+              status: 'rejected',
+              amount: payout?.amount,
+              providerName: payout?.provider_name,
+            }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'تعذر رفض طلب السحب');
           setPayouts(prev => prev.map(p => p.id === id ? { ...p, status: 'rejected' } : p));
-          alert("تم الرفض بنجاح ✅");
+          alert(result.message || "تم الرفض بنجاح ✅");
+      } catch (error: any) {
+          alert("خطأ أثناء الرفض: " + error.message);
       }
   };
 

@@ -92,39 +92,7 @@ function CheckoutContent() {
   // 3. إتمام الدفع
   const handlePayment = async () => {
     setProcessing(true);
-
-    // محاكاة تأخير الدفع
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    const { error } = await supabase
-      .from("bookings")
-      .update({
-        payment_status: "paid",
-        status: "confirmed", // تحويل الحالة إلى مؤكد
-        original_price: priceDetails.originalPrice,
-        discount_amount: priceDetails.discountAmount,
-        coupon_code: priceDetails.couponCode,
-        final_price: priceDetails.finalPrice,
-        platform_fee: priceDetails.platformFee,
-        provider_earnings: priceDetails.providerEarnings,
-      })
-      .eq("id", bookingId);
-
-    if (!error) {
-      // زيادة عداد استخدام الكوبون
-      if (priceDetails.couponCode) {
-        await supabase.rpc("increment_coupon_usage", {
-          code_input: priceDetails.couponCode,
-        });
-      }
-
-      // التوجيه لصفحة النجاح
-      router.push(`/payment-success?booking_id=${bookingId}`);
-    } else {
-      alert("حدث خطأ أثناء الدفع، يرجى المحاولة مرة أخرى.");
-    }
-
-    setProcessing(false);
+    router.push(`/checkout/${bookingId}`);
   };
 
   if (loading) {

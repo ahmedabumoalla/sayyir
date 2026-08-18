@@ -1,7 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { sendSMS } from "@/lib/twilio";
+import { notifyAdminNewProviderRequest } from "@/lib/whatsappNotifications";
+import { normalizeInternationalPhone } from "@/lib/phone";
+import { checkGreenApiRecipient } from "@/lib/greenApi";
+import { getAuthenticatedUserId } from "@/lib/requireProvider";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,7 +19,8 @@ function normalizeEmail(email: string) {
 }
 
 function normalizePhone(phone: string) {
-  return String(phone || "").trim();
+  if (!String(phone || "").trim()) return "";
+  return normalizeInternationalPhone(phone);
 }
 
 export async function POST(req: Request) {
@@ -26,7 +30,15 @@ export async function POST(req: Request) {
 
     const normalizedName = String(name || "").trim();
     const normalizedEmail = normalizeEmail(email);
-    const normalizedPhone = normalizePhone(phone);
+    let normalizedPhone = "";
+    try {
+      normalizedPhone = normalizePhone(phone);
+    } catch {
+      return NextResponse.json(
+        { error: "رقم واتساب غير صالح. أدخل الرقم مع رمز الدولة." },
+        { status: 400 }
+      );
+    }
     const normalizedServiceType = String(service_type || "").trim();
 
     if (!normalizedName) {
@@ -40,6 +52,22 @@ export async function POST(req: Request) {
     if (!normalizedPhone) {
       return NextResponse.json({ error: "رقم الجوال مطلوب." }, { status: 400 });
     }
+
+    const whatsappCheck = await checkGreenApiRecipient(normalizedPhone, true);
+    if (!whatsappCheck.ok) {
+      return NextResponse.json(
+        { error: "تعذر التحقق من رقم واتساب حالياً. حاول مرة أخرى." },
+        { status: 503 }
+      );
+    }
+    if (!whatsappCheck.existsWhatsApp) {
+      return NextResponse.json(
+        { error: "الرقم المدخل غير مرتبط بحساب واتساب." },
+        { status: 400 }
+      );
+    }
+
+    const authenticatedUserId = await getAuthenticatedUserId(req);
 
     const { data: profileByEmail, error: profileEmailError } = await supabaseAdmin
       .from("profiles")
@@ -107,7 +135,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const { error: insertError } = await supabaseAdmin
+    const { data: createdRequest, error: insertError } = await supabaseAdmin
       .from("provider_requests")
       .insert([
         {
@@ -117,8 +145,14 @@ export async function POST(req: Request) {
           service_type: normalizedServiceType,
           dynamic_data: dynamic_data ?? {},
           status: "pending",
+          user_id:
+            authenticatedUserId && profileByEmail?.id === authenticatedUserId
+              ? authenticatedUserId
+              : null,
         },
-      ]);
+      ])
+      .select("*")
+      .single();
 
     if (insertError) {
       if (
@@ -136,24 +170,47 @@ export async function POST(req: Request) {
       throw insertError;
     }
 
+    if (authenticatedUserId && profileByEmail?.id === authenticatedUserId) {
+      await supabaseAdmin
+        .from("profiles")
+        .update({ phone: normalizedPhone })
+        .eq("id", authenticatedUserId);
+    }
+
     const adminEmail = process.env.ADMIN_EMAIL || "info@sayyir.sa";
-    const adminPhone = process.env.ADMIN_PHONE || "+966508424401";
+    const notificationResults = await Promise.allSettled([
+      resend.emails.send({
+        from: "نظام سَيّر <info@emails.sayyir.sa>",
+        to: adminEmail,
+        subject: "🔔 طلب انضمام مزود جديد!",
+        html: `<div dir="rtl"><h3>طلب جديد: ${normalizedName}</h3><p>الخدمة: ${normalizedServiceType}</p><p>راجع لوحة التحكم.</p></div>`,
+      }),
+      notifyAdminNewProviderRequest(createdRequest),
+    ]);
 
-    await resend.emails.send({
-      from: "نظام سَيّر <info@emails.sayyir.sa>",
-      to: adminEmail,
-      subject: "🔔 طلب انضمام مزود جديد!",
-      html: `<div dir="rtl"><h3>طلب جديد: ${normalizedName}</h3><p>الخدمة: ${normalizedServiceType}</p><p>راجع لوحة التحكم.</p></div>`,
+    notificationResults.forEach((result, index) => {
+      if (result.status === "rejected") {
+        console.error(
+          index === 0
+            ? "Provider request email failed:"
+            : "Provider request WhatsApp failed:",
+          result.reason
+        );
+      }
     });
 
-    await sendSMS({
-      to: adminPhone,
-      body: `🔔 تنبيه سَيّر:\nوصل طلب انضمام جديد من: ${normalizedName}\nالخدمة: ${normalizedServiceType}`,
-    });
+    const whatsappResult = notificationResults[1];
+    const whatsappSent =
+      whatsappResult.status === "fulfilled" && whatsappResult.value.ok === true;
 
     return NextResponse.json({
       success: true,
-      message: "تم استقبال طلبك بنجاح.",
+      message: whatsappSent
+        ? "تم استقبال طلبك وإشعار الإدارة على واتساب."
+        : "تم استقبال طلبك، لكن تعذر إرسال إشعار واتساب للإدارة.",
+      notificationStatus: {
+        whatsapp: whatsappSent ? "sent" : "failed",
+      },
     });
   } catch (error: any) {
     console.error("Register Error:", error);

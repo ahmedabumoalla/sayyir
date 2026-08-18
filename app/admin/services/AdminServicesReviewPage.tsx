@@ -366,19 +366,15 @@ export default function ReviewServicesPage() {
     setActionLoading(true);
     try {
       let updates: any = {};
-      let emailType = ''; // لتحديد نوع الإيميل الذي سيرسل
 
       if (action === 'approve') {
           updates = { status: 'approved', rejection_reason: null, platform_commission: useCustomCommission ? Number(customCommission) : null }; 
-          emailType = 'service_approved';
       }
       if (action === 'reject') {
           updates = { status: 'rejected', rejection_reason: `${rejectionReason}\n\n${ADMIN_CONTACT_INFO}` }; 
-          emailType = 'service_rejected';
       }
       if (action === 'approve_update') {
           updates = { ...selectedService.pending_updates, status: 'approved', pending_updates: null };
-          emailType = 'update_approved';
       }
       if (action === 'reject_update') {
           updates = { status: 'approved', pending_updates: null };
@@ -386,14 +382,12 @@ export default function ReviewServicesPage() {
       }
       if (action === 'approve_stop') {
           updates = { status: 'stopped' };
-          emailType = 'stop_approved';
       }
       if (action === 'reject_stop') {
           updates = { status: 'approved' };
       }
       if (action === 'approve_delete') {
           updates = { status: 'deleted' };
-          emailType = 'delete_approved';
       }
       if (action === 'reject_delete') {
           updates = { status: 'approved', delete_reason: null };
@@ -408,33 +402,33 @@ export default function ReviewServicesPage() {
 
       if (action === 'admin_reactivate') updates = { status: 'approved', stop_dates: null };
 
-      // 1. تحديث حالة الخدمة في قاعدة البيانات
-      const { error: updateError } = await supabase.from('services').update(updates).eq('id', selectedService.id);
-      if (updateError) throw updateError;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("جلسة الأدمن منتهية، يرجى تسجيل الدخول مجدداً");
 
-      // 2. إرسال الإشعار للمزود (إذا كان الإجراء يتطلب إشعاراً)
-      if (emailType) {
-          const providerEmail = getProviderEmail(selectedService);
-          const providerName = getProviderName(selectedService);
-          const providerPhone = getProviderPhone(selectedService);
+      const response = await fetch('/api/admin/services/action', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+              serviceId: selectedService.id,
+              action,
+              reason: action === 'admin_stop' ? stopReason : rejectionReason,
+              updates,
+              adminId: session.user.id,
+              stopType,
+              stopUntil,
+          }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || 'تعذر تنفيذ إجراء الخدمة');
 
-          if (providerEmail) {
-              await fetch('/api/emails/send', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                      type: emailType,
-                      providerEmail: providerEmail,
-                      providerName: providerName,
-                      serviceTitle: selectedService.title,
-                      providerPhone: providerPhone,
-                      reason: rejectionReason // في حالة الرفض
-                  })
-              }).catch(e => console.error("فشل إرسال إشعار للمزود:", e));
-          }
+      if (result?.notificationStatus === "failed") {
+        toast.warning(result.message || "تم تنفيذ الإجراء، لكن تعذر إرسال إشعار واتساب للمزود");
+      } else {
+        toast.success(result.message || "تم تنفيذ الإجراء وتحديث الخدمة بنجاح ✅");
       }
-
-      toast.success("تم تنفيذ الإجراء وتحديث الخدمة بنجاح ✅");
       setSelectedService(null);
       fetchServices(); 
       fetchCounts(); 

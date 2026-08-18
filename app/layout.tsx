@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import PWARegister from "@/components/PWARegister";
+import { WhatsAppPhoneGateProvider } from "@/components/WhatsAppPhoneGate";
 import { GoogleAnalytics } from '@next/third-parties/google'; // 👈 1. تم الاستيراد
 import "./globals.css";
 
@@ -62,7 +63,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <WhatsAppPhoneGateProvider>{children}</WhatsAppPhoneGateProvider>
         
         
 <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID || ""} />

@@ -8,6 +8,7 @@ import {
     Loader2, ArrowRight, Edit, Send, Info, FileText, Clock, Compass, Home, Ticket, ShieldAlert, UploadCloud, CheckCircle, Eye, ImageIcon, X, Trash2, Plus
 } from "lucide-react";
 import { getProviderClientContext } from "@/lib/providerContextClient";
+import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const serviceStatuses = [
@@ -52,13 +53,13 @@ const safeArray = (data: any) => {
 };
 
 export default function EditServicePage() {
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
   const router = useRouter();
   const params = useParams();
   const serviceId = params.id as string;
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [providerInfo, setProviderInfo] = useState<any>(null);
   const [providerContext, setProviderContext] = useState<any>(null);
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   
@@ -103,9 +104,6 @@ export default function EditServicePage() {
               router.replace('/login');
               return;
           }
-
-          const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', context.providerId).single();
-          setProviderInfo(profile);
 
           const { data: service, error } = await supabase
               .from('services')
@@ -285,6 +283,8 @@ export default function EditServicePage() {
               throw new Error("جلسة المزود غير صالحة");
           }
 
+          if (!(await ensureWhatsAppPhone())) return;
+
           const response = await fetch('/api/provider/service-change-requests', {
               method: 'POST',
               headers: {
@@ -300,17 +300,7 @@ export default function EditServicePage() {
           const result = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(result?.error || 'تعذر إرسال طلب التعديل');
 
-          await fetch('/api/emails/send', { 
-              method: 'POST', 
-              headers: {'Content-Type': 'application/json'}, 
-              body: JSON.stringify({ 
-                  type: 'new_service_notification', 
-                  providerName: providerInfo?.full_name, 
-                  serviceTitle: `طلب تعديل شامل لبيانات خدمة: ${originalService.title}` 
-              }) 
-          }).catch(e => console.error(e));
-
-          alert("تم إرسال طلب التعديل الشامل للإدارة بنجاح ✅\n(الخدمة الحالية ستبقى معروضة ببياناتها القديمة حتى توافق الإدارة)");
+          alert(result.message || "تم إرسال طلب التعديل الشامل للإدارة بنجاح ✅\n(الخدمة الحالية ستبقى معروضة ببياناتها القديمة حتى توافق الإدارة)");
           router.push('/provider/services');
           
       } catch (e: any) { 

@@ -8,6 +8,7 @@ import { Eye, EyeOff, Loader2, Home } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { toast, Toaster } from "sonner";
+import { normalizeInternationalPhone } from "@/lib/phone";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -26,7 +27,16 @@ export default function RegisterPage() {
     const password = (document.getElementById("password") as HTMLInputElement)?.value;
     const confirm = (document.getElementById("confirm") as HTMLInputElement)?.value;
 
-    const phone = rawPhone ? phoneCode + rawPhone.replace(/\D/g, '') : '';
+    let phone = '';
+    if (rawPhone) {
+      try {
+        phone = normalizeInternationalPhone(`${phoneCode}${rawPhone}`);
+      } catch {
+        toast.error("رقم الجوال غير صالح");
+        setLoading(false);
+        return;
+      }
+    }
 
     // 1. التحقق من الحقول الفارغة
     if (!full_name || !phone || !email || !password || !confirm) {

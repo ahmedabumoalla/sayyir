@@ -16,6 +16,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Tajawal } from "next/font/google";
 import { getProviderClientContext } from "@/lib/providerContextClient";
+import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -73,6 +74,7 @@ const formatTime12H = (time24: string) => {
 
 export default function ProviderServicesPage() {
   const router = useRouter();
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [providerInfo, setProviderInfo] = useState<any>(null);
@@ -133,13 +135,26 @@ export default function ProviderServicesPage() {
       if (!stopForm.reason.trim()) return alert("يرجى كتابة سبب الإيقاف.");
       setActionLoading(true);
       try {
-          const stopDates = (stopForm.startDate || stopForm.endDate) ? { start: stopForm.startDate, end: stopForm.endDate } : null;
-          const { error } = await supabase.from('services')
-              .update({ status: 'stop_requested', stop_dates: stopDates, details: { ...viewService.details, stop_reason: stopForm.reason } })
-              .eq('id', viewService.id);
-          if (error) throw error;
-          await notifyAdmin(`طلب إيقاف لخدمة: ${viewService.title} (السبب: ${stopForm.reason})`);
-          alert("تم إرسال طلب الإيقاف للإدارة بنجاح.");
+          const context = await getProviderClientContext();
+          if (!context.accessToken) throw new Error("جلسة المزود غير صالحة");
+          if (!(await ensureWhatsAppPhone())) return;
+          const response = await fetch('/api/provider/services/action', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${context.accessToken}`,
+              },
+              body: JSON.stringify({
+                  serviceId: viewService.id,
+                  action: 'stop',
+                  reason: stopForm.reason,
+                  startDate: stopForm.startDate,
+                  endDate: stopForm.endDate,
+              }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result?.error || 'تعذر إرسال طلب الإيقاف');
+          alert(result.message || "تم إرسال طلب الإيقاف للإدارة بنجاح.");
           closeAndRefresh();
       } catch (e: any) { alert("حدث خطأ: " + e.message); } finally { setActionLoading(false); }
   };
@@ -149,22 +164,26 @@ export default function ProviderServicesPage() {
       if (!deleteReason.trim()) return alert("يرجى كتابة سبب الحذف.");
       setActionLoading(true);
       try {
-          const { error } = await supabase.from('services')
-              .update({ status: 'delete_requested', delete_reason: deleteReason })
-              .eq('id', viewService.id);
-          if (error) throw error;
-          await notifyAdmin(`طلب حذف نهائي لخدمة: ${viewService.title} (السبب: ${deleteReason})`);
-          alert("تم إرسال طلب الحذف للإدارة بنجاح.");
+          const context = await getProviderClientContext();
+          if (!context.accessToken) throw new Error("جلسة المزود غير صالحة");
+          if (!(await ensureWhatsAppPhone())) return;
+          const response = await fetch('/api/provider/services/action', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${context.accessToken}`,
+              },
+              body: JSON.stringify({
+                  serviceId: viewService.id,
+                  action: 'delete',
+                  reason: deleteReason,
+              }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result?.error || 'تعذر إرسال طلب الإيقاف النهائي');
+          alert(result.message || "تم إرسال طلب الحذف للإدارة بنجاح.");
           closeAndRefresh();
       } catch (e: any) { alert("حدث خطأ: " + e.message); } finally { setActionLoading(false); }
-  };
-
-  const notifyAdmin = async (title: string) => {
-      await fetch('/api/emails/send', { 
-          method: 'POST', 
-          headers: {'Content-Type': 'application/json'}, 
-          body: JSON.stringify({ type: 'new_service_notification', providerName: providerInfo?.full_name, serviceTitle: title }) 
-      }).catch(e => console.error(e));
   };
 
   const closeAndRefresh = () => {

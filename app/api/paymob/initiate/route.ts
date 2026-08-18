@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUserId } from '@/lib/requireProvider';
+import { ensureProfileWhatsApp, whatsappGuardStatus } from '@/lib/whatsappProfile';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,8 +14,6 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { bookingId, couponCode, paymentMethod } = body;
-
-    console.log("📦 INITIATE BODY:", body);
 
     if (!bookingId) {
       return NextResponse.json({ error: "رقم الحجز مفقود" }, { status: 400 });
@@ -42,8 +42,8 @@ export async function POST(request: Request) {
       .select(`
         *,
         services (*),
-        provider_profile:provider_id (custom_commission, full_name, email, phone),
-        client_profile:user_id (full_name, email, phone)
+        provider_profile:provider_id (id, custom_commission, full_name, email, phone),
+        client_profile:user_id (id, full_name, email, phone)
       `)
       .eq("id", bookingId)
       .single();
@@ -53,7 +53,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "الحجز غير موجود" }, { status: 404 });
     }
 
-    console.log("✅ BOOKING FOUND:", booking);
+    const authenticatedUserId = await getAuthenticatedUserId(request);
+    if (!authenticatedUserId || authenticatedUserId !== booking.user_id) {
+      return NextResponse.json({ error: "غير مصرح لك بدفع هذا الحجز" }, { status: 401 });
+    }
+
+    const clientWhatsApp = await ensureProfileWhatsApp(booking.client_profile);
+    if (!clientWhatsApp.ok) {
+      return NextResponse.json(
+        { error: clientWhatsApp.code, code: clientWhatsApp.code, message: clientWhatsApp.message },
+        { status: whatsappGuardStatus(clientWhatsApp) }
+      );
+    }
+    const providerWhatsApp = await ensureProfileWhatsApp(booking.provider_profile);
+    if (!providerWhatsApp.ok) {
+      return NextResponse.json(
+        { error: "تعذر إكمال الدفع لأن رقم واتساب المزود غير متاح. تواصل مع الدعم." },
+        { status: providerWhatsApp.code === 'WHATSAPP_CHECK_FAILED' ? 503 : 409 }
+      );
+    }
 
     if (booking.status !== "approved_unpaid") {
       return NextResponse.json(

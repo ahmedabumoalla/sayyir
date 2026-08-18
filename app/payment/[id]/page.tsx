@@ -47,42 +47,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
 
   const handlePayment = async () => {
     setProcessing(true);
-
-    try {
-        if (paymentMode === 'test') {
-            // === محاكاة الدفع الوهمي ===
-            // تأخير بسيط للمحاكاة
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            // 1. تحديث حالة الحجز
-            await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', bookingId);
-
-            // 2. تسجيل عملية دفع في جدول payments
-            const { error: payError } = await supabase.from('payments').insert([{
-                user_id: booking.user_id,
-                amount: booking.total_price,
-                currency: 'SAR',
-                status: 'succeeded',
-                description: `حجز خدمة: ${booking.services.title}`,
-                payment_method: 'Test Card (Visa 4242)'
-            }]);
-
-            if (payError) throw payError;
-
-            // 3. توجيه لصفحة النجاح
-            alert("✅ تمت عملية الدفع (التجريبية) بنجاح!");
-            router.push('/client/trips');
-
-        } else {
-            // === الدفع الحقيقي (ميسر) ===
-            // هنا سيتم وضع كود ميسر لاحقاً
-            alert("نظام الدفع المباشر قيد التفعيل. يرجى استخدام الوضع التجريبي حالياً.");
-        }
-    } catch (error: any) {
-        alert("فشلت العملية: " + error.message);
-    } finally {
-        setProcessing(false);
-    }
+    router.push(`/checkout/${bookingId}`);
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#1a1a1a] text-[#C89B3C]"><Loader2 className="animate-spin w-10 h-10"/></div>;

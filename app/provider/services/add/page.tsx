@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { getProviderClientContext } from "@/lib/providerContextClient";
+import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 import { 
   ChevronRight, Save, Loader2, MapPin, Image as ImageIcon, 
   Home, Compass, Building, Tent, Info, Plus, Trash2, 
@@ -123,6 +124,7 @@ const isVideoLink = (url: string | null) => {
 
 export default function AddServicePage() {
   const router = useRouter();
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const facilityServiceFileRef = useRef<HTMLInputElement>(null);
@@ -289,6 +291,7 @@ export default function AddServicePage() {
       try {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) throw new Error("غير مصرح");
+          if (!(await ensureWhatsAppPhone())) return;
 
           let licenseUrls: string[] = [];
           if (commercialLicenses.length > 0) {
@@ -394,16 +397,18 @@ export default function AddServicePage() {
               return;
           }
 
-          const payload = {
-              ...servicePayload,
-              provider_id: session.user.id,
-              status: 'pending',
-          };
+          const response = await fetch('/api/provider/services', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify(servicePayload),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result?.error || 'تعذر إرسال الخدمة للمراجعة');
 
-          const { error } = await supabase.from('services').insert([payload]);
-          if (error) throw error;
-
-          alert("✅ تم إرسال الخدمة للمراجعة بنجاح!");
+          alert(result.message || "✅ تم إرسال الخدمة للمراجعة بنجاح!");
           router.push('/provider/services');
 
       } catch (error: any) {

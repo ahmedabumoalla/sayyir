@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { assertExperienceSeatsAvailable } from '@/lib/experienceSeats';
+import { getInternalNotificationHeaders } from '@/lib/notificationAuth';
+import { getAuthenticatedUserId } from '@/lib/requireProvider';
+import { ensureProfileWhatsApp, whatsappGuardStatus } from '@/lib/whatsappProfile';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,15 +22,35 @@ export async function POST(req: Request) {
       .from('bookings')
       .select(`
         *,
-        users:user_id (full_name, email, phone),
+        users:user_id (id, full_name, email, phone),
         services:service_id (title, provider_id),
-        profiles:provider_id (full_name, email, phone)
+        profiles:provider_id (id, full_name, email, phone)
       `)
       .eq('id', bookingId)
       .single();
 
     if (fetchError || !booking) {
       throw new Error('الحجز غير موجود');
+    }
+
+    const authenticatedUserId = await getAuthenticatedUserId(req);
+    if (!authenticatedUserId || authenticatedUserId !== booking.user_id) {
+      return NextResponse.json({ error: 'غير مصرح لك بتأكيد هذا الحجز' }, { status: 401 });
+    }
+
+    const clientWhatsApp = await ensureProfileWhatsApp(booking.users);
+    if (!clientWhatsApp.ok) {
+      return NextResponse.json(
+        { error: clientWhatsApp.code, code: clientWhatsApp.code, message: clientWhatsApp.message },
+        { status: whatsappGuardStatus(clientWhatsApp) }
+      );
+    }
+    const providerWhatsApp = await ensureProfileWhatsApp(booking.profiles);
+    if (!providerWhatsApp.ok) {
+      return NextResponse.json(
+        { error: 'تعذر تأكيد الحجز لأن رقم واتساب المزود غير متاح. تواصل مع الدعم.' },
+        { status: providerWhatsApp.code === 'WHATSAPP_CHECK_FAILED' ? 503 : 409 }
+      );
     }
 
     await assertExperienceSeatsAvailable(
@@ -53,47 +76,70 @@ export async function POST(req: Request) {
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || new URL(req.url).origin;
 
-    if (booking.users?.email) {
-      await fetch(`${baseUrl}/api/emails/send`, {
+    const notificationRequests: Promise<{ recipient: string; ok: boolean; result: any }>[] = [];
+
+    if (booking.users?.email || clientWhatsApp.phone) {
+      notificationRequests.push(fetch(`${baseUrl}/api/emails/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getInternalNotificationHeaders(),
         body: JSON.stringify({
           templateId: 'booking_payment_confirmed',
           email: booking.users.email,
-          phone: booking.users.phone,
+          phone: clientWhatsApp.phone,
           data: {
             bookingId: booking.id,
             clientName: booking.users.full_name,
             serviceName: booking.services?.title || 'خدمة سيّر',
             ticketCode: qrCodeString,
             ticketCodeShort: qrCodeString,
-            totalPrice: '0 ريال'
+            totalPrice: '0 ريال',
+            checkIn: booking.check_in || booking.booking_date || '',
+            checkOut: booking.check_out || '',
+            date: booking.booking_date || booking.check_in || '',
+            time: booking.booking_time || '',
+            guests: booking.quantity || 1
           }
         })
-      }).catch((err) => console.error('فشل إرسال إيميل العميل في free-checkout:', err));
+      }).then(async (response) => ({ recipient: 'client', ok: response.ok, result: await response.json().catch(() => ({})) })));
     }
 
-    if (booking.profiles?.email) {
-      await fetch(`${baseUrl}/api/emails/send`, {
+    if (booking.profiles?.email || providerWhatsApp.phone) {
+      notificationRequests.push(fetch(`${baseUrl}/api/emails/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getInternalNotificationHeaders(),
         body: JSON.stringify({
           templateId: 'provider_payment_received',
           email: booking.profiles.email,
-          phone: booking.profiles.phone,
+          phone: providerWhatsApp.phone,
           data: {
             bookingId: booking.id,
             providerName: booking.profiles.full_name,
             clientName: booking.users?.full_name || '',
+            clientPhone: clientWhatsApp.phone,
             serviceName: booking.services?.title || 'خدمة سيّر',
             guests: booking.quantity || 1,
-            totalPrice: '0 ريال'
+            totalPrice: '0 ريال',
+            checkIn: booking.check_in || booking.booking_date || '',
+            checkOut: booking.check_out || '',
+            date: booking.booking_date || booking.check_in || '',
+            time: booking.booking_time || ''
           }
         })
-      }).catch((err) => console.error('فشل إرسال إيميل المزود في free-checkout:', err));
+      }).then(async (response) => ({ recipient: 'provider', ok: response.ok, result: await response.json().catch(() => ({})) })));
     }
 
-    return NextResponse.json({ success: true, message: 'تم تأكيد الحجز المجاني وإرسال الإشعارات بنجاح.' });
+    const notifications = await Promise.allSettled(notificationRequests);
+    const notificationsSucceeded =
+      notifications.length === 2 &&
+      notifications.every((item) => item.status === 'fulfilled' && item.value.ok && item.value.result?.success === true);
+
+    return NextResponse.json({
+      success: true,
+      notificationStatus: notificationsSucceeded ? 'sent' : 'failed',
+      message: notificationsSucceeded
+        ? 'تم تأكيد الحجز المجاني وإرسال التذكرة والإشعارات بنجاح.'
+        : 'تم تأكيد الحجز المجاني، لكن تعذر إرسال إشعار واحد أو أكثر. تم تسجيل الفشل للمتابعة.',
+    });
   } catch (error: any) {
     console.error('Free Checkout Error:', error);
     return NextResponse.json({ error: error?.message || 'Server error' }, { status: 500 });

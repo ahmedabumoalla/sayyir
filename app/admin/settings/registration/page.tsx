@@ -20,6 +20,7 @@ interface Field {
   options?: string[] | null;
   is_required: boolean;
   sort_order: number;
+  scope: "registration";
 }
 
 export default function RegistrationSettings() {
@@ -37,7 +38,8 @@ export default function RegistrationSettings() {
     field_type: "text",
     options: [],
     is_required: false,
-    sort_order: 0
+    sort_order: 0,
+    scope: "registration"
   });
 
   const [optionsText, setOptionsText] = useState("");
@@ -46,13 +48,17 @@ export default function RegistrationSettings() {
 
   const fetchFields = async () => {
     setLoading(true);
-    const { data } = await supabase.from('registration_fields').select('*').order('sort_order', { ascending: true });
+    const { data } = await supabase
+      .from('registration_fields')
+      .select('*')
+      .eq('scope', 'registration')
+      .order('sort_order', { ascending: true });
     if (data) setFields(data);
     setLoading(false);
   };
 
   const handleAddNew = () => {
-    setCurrentField({ label: "", field_type: "text", options: [], is_required: false, sort_order: fields.length + 1 });
+    setCurrentField({ label: "", field_type: "text", options: [], is_required: false, sort_order: fields.length + 1, scope: "registration" });
     setOptionsText("");
     setIsModalOpen(true);
   };
@@ -89,7 +95,8 @@ export default function RegistrationSettings() {
       const fieldData = {
         ...currentField,
         options: finalOptions,
-        is_required: currentField.field_type === 'policy' ? true : currentField.is_required
+        is_required: currentField.field_type === 'policy' ? true : currentField.is_required,
+        scope: 'registration' as const
       };
 
       const { data, error } = await supabase.from('registration_fields').upsert(fieldData).select().single();

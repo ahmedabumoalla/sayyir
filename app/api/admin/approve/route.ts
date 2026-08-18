@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { checkAdminPermission } from '@/lib/adminGuard';
+import { getAuthenticatedUserId } from '@/lib/requireProvider';
+import { getInternalNotificationHeaders } from '@/lib/notificationAuth';
+import { ensureProfileWhatsApp } from '@/lib/whatsappProfile';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -172,6 +175,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: permissionCheck.message }, { status: 403 });
     }
 
+    const authenticatedUserId = await getAuthenticatedUserId(req);
+    if (!authenticatedUserId || authenticatedUserId !== requesterId) {
+      return NextResponse.json({ error: 'Invalid admin session' }, { status: 401 });
+    }
+
     const { data: requestData, error: requestError } = await supabaseAdmin
       .from('provider_requests')
       .select('*')
@@ -219,28 +227,43 @@ export async function POST(req: Request) {
         ? 'http://localhost:3000'
         : (process.env.NEXT_PUBLIC_SITE_URL || 'https://sayyir.sa');
 
+    const providerWhatsApp = await ensureProfileWhatsApp({
+      id: userId,
+      phone: providerRequest.phone,
+    });
+
     const emailResponse = await fetch(`${baseUrl}/api/emails/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getInternalNotificationHeaders(),
       body: JSON.stringify({
         type: 'provider_approved',
         email: providerRequest.email,
-        phone: providerRequest.phone,
+        phone: providerWhatsApp.ok ? providerWhatsApp.phone : null,
         providerName: providerRequest.name,
+        requestId,
         password: tempPassword || 'Existing account',
       }),
     });
 
     const emailResult = await emailResponse.json();
 
-    if (!emailResponse.ok) {
+    const notificationSucceeded =
+      providerWhatsApp.ok &&
+      emailResponse.ok &&
+      emailResult?.success === true &&
+      Boolean(emailResult?.results?.whatsapp);
+
+    if (!notificationSucceeded) {
       console.error('EMAIL SEND ERROR:', emailResult);
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Provider request approved successfully.',
+      message: notificationSucceeded
+        ? 'تمت الموافقة على طلب الانضمام وإشعار المزود بنجاح.'
+        : `تمت الموافقة على طلب الانضمام، لكن تعذر إكمال الإشعارات${providerWhatsApp.ok ? '' : `: ${providerWhatsApp.message}`}.`,
       providerId: userId,
+      notificationStatus: notificationSucceeded ? 'sent' : 'failed',
       emailResult,
     });
   } catch (error: unknown) {

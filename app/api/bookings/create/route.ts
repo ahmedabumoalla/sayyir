@@ -5,6 +5,12 @@ import {
   getDateAvailability,
   requestedDatesAreUnavailable,
 } from '@/lib/serviceAvailability';
+import { getInternalNotificationHeaders } from '@/lib/notificationAuth';
+import { getAuthenticatedUserId } from '@/lib/requireProvider';
+import {
+  ensureProfileWhatsApp,
+  whatsappGuardStatus,
+} from '@/lib/whatsappProfile';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,8 +20,6 @@ const supabaseAdmin = createClient(
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-
-    console.log('CREATE BOOKING INPUT:', body);
 
     const {
       serviceId,
@@ -35,6 +39,14 @@ export async function POST(request: Request) {
         { error: 'serviceId و userId مطلوبة' },
         { status: 400 }
       );
+    }
+
+    const authenticatedUserId = await getAuthenticatedUserId(request);
+    if (!authenticatedUserId) {
+      return NextResponse.json({ error: 'يجب تسجيل الدخول لإتمام الحجز.' }, { status: 401 });
+    }
+    if (authenticatedUserId !== userId) {
+      return NextResponse.json({ error: 'لا يمكنك إنشاء حجز لمستخدم آخر.' }, { status: 403 });
     }
 
     const requestedQuantity = Number(quantity || guests || 1);
@@ -61,8 +73,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('SERVICE FOUND:', service);
-
     const { data: client, error: clientError } = await supabaseAdmin
       .from('profiles')
       .select('id, full_name, email, phone')
@@ -77,7 +87,12 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('CLIENT FOUND:', client);
+    const clientWhatsApp = await ensureProfileWhatsApp(client);
+    if (!clientWhatsApp.ok) {
+      return NextResponse.json(clientWhatsApp, {
+        status: whatsappGuardStatus(clientWhatsApp),
+      });
+    }
 
     const provider = service.profiles;
 
@@ -103,7 +118,16 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('PROVIDER PROFILE FOUND:', providerProfile);
+    const providerWhatsApp = await ensureProfileWhatsApp(providerProfile);
+    if (!providerWhatsApp.ok) {
+      return NextResponse.json(
+        {
+          error: 'تعذر الحجز مؤقتاً لأن مزود الخدمة لم يضف رقم واتساب صالحاً.',
+          code: 'PROVIDER_WHATSAPP_UNAVAILABLE',
+        },
+        { status: 409 }
+      );
+    }
 
     const isUnlimitedFixedPriceExperience =
       service.service_category === 'experience' &&
@@ -173,8 +197,6 @@ export async function POST(request: Request) {
     if (bookingDate) insertPayload.booking_date = bookingDate;
     if (bookingTime) insertPayload.booking_time = bookingTime;
 
-    console.log('BOOKING INSERT PAYLOAD:', insertPayload);
-
     const { data: booking, error: bookingError } = await supabaseAdmin
       .from('bookings')
       .insert(insertPayload)
@@ -189,8 +211,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('BOOKING CREATED:', booking);
-
     const baseUrl =
       process.env.NODE_ENV === 'development'
         ? 'http://localhost:3000'
@@ -200,33 +220,33 @@ export async function POST(request: Request) {
       type: 'new_booking_request',
       bookingId: booking.id,
       clientEmail: client.email?.trim() || null,
-      clientPhone: client.phone?.trim() || null,
+      clientPhone: clientWhatsApp.phone,
       clientName: client.full_name || 'عميل',
       providerEmail: providerProfile.email?.trim() || null,
-      providerPhone: providerProfile.phone?.trim() || null,
+      providerPhone: providerWhatsApp.phone,
       providerName: providerProfile.full_name || 'مزود الخدمة',
       serviceName: service.title || service.name || 'خدمة سيّر',
       date: booking.booking_date || booking.check_in || '',
+      checkIn: booking.check_in || booking.booking_date || '',
+      checkOut: booking.check_out || '',
       time: booking.booking_time || '',
-      guests: booking.quantity || 1
+      guests: booking.quantity || 1,
+      quantity: booking.quantity || 1,
+      childCount: Number(childCount || 0),
+      totalPrice: `${Number(booking.total_price || totalPrice || 0)} ريال`,
+      notes: booking.additional_notes || notes || ''
     };
 
-    console.log('NEW BOOKING NOTIFICATION PAYLOAD:', notificationPayload);
-
+    let notificationStatus: Record<string, unknown> | null = null;
     try {
       const notificationResponse = await fetch(`${baseUrl}/api/notifications`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getInternalNotificationHeaders(),
         body: JSON.stringify(notificationPayload)
       });
 
       const notificationResult = await notificationResponse.json();
-
-      console.log('NEW BOOKING NOTIFICATION RESULT:', {
-        ok: notificationResponse.ok,
-        status: notificationResponse.status,
-        result: notificationResult
-      });
+      notificationStatus = notificationResult;
 
       if (!notificationResponse.ok) {
         console.error('NEW BOOKING NOTIFICATION FAILED:', notificationResult);
@@ -237,7 +257,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      booking
+      booking,
+      message:
+        notificationStatus && notificationStatus.success !== false
+          ? 'تم إنشاء الحجز وإرسال إشعارات واتساب.'
+          : 'تم إنشاء الحجز، لكن تعذر إرسال واحد أو أكثر من الإشعارات.',
+      notificationStatus,
     });
   } catch (error: unknown) {
     console.error('CREATE BOOKING ROUTE ERROR:', error);

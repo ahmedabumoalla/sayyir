@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { checkAdminPermission } from "@/lib/adminGuard";
+import { notifyProviderServiceDecision } from "@/lib/whatsappNotifications";
+import { getAuthenticatedUserId } from "@/lib/requireProvider";
+import { ensureProfileWhatsApp } from "@/lib/whatsappProfile";
 
 export async function POST(
   req: NextRequest,
@@ -52,6 +55,20 @@ export async function POST(
       );
     }
 
+    const authenticatedUserId = await getAuthenticatedUserId(req);
+    if (!authenticatedUserId || authenticatedUserId !== admin_id) {
+      return NextResponse.json({ error: "جلسة الأدمن غير صالحة" }, { status: 401 });
+    }
+
+    const [{ data: service }, { data: provider }] = await Promise.all([
+      supabaseServer.from("services").select("*").eq("id", changeRequest.service_id).single(),
+      supabaseServer
+        .from("profiles")
+        .select("id, full_name, phone")
+        .eq("id", changeRequest.provider_id)
+        .single(),
+    ]);
+
     if (action === "reject") {
       const { error: serviceError } = await supabaseServer
         .from("services")
@@ -81,9 +98,26 @@ export async function POST(
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
 
+      const providerWhatsApp = provider
+        ? await ensureProfileWhatsApp(provider)
+        : { ok: false as const, code: "whatsapp_phone_required" as const, message: "لا يوجد ملف للمزود" };
+      const notificationResult = providerWhatsApp.ok && service
+        ? await notifyProviderServiceDecision({
+          phone: providerWhatsApp.phone,
+          providerName: provider?.full_name,
+          service,
+          action: "reject_update",
+          reason: rejection_reason || "تم رفض طلب التعديل",
+          requestedChanges: changeRequest.requested_changes,
+        })
+        : { ok: false, error: providerWhatsApp.ok ? "الخدمة غير موجودة" : providerWhatsApp.message };
+
       return NextResponse.json({
         success: true,
-        message: "تم رفض طلب التعديل",
+        message: notificationResult.ok
+          ? "تم رفض طلب التعديل وإشعار المزود عبر واتساب"
+          : `تم رفض طلب التعديل، لكن تعذر إشعار المزود: ${notificationResult.error || "خطأ غير معروف"}`,
+        notificationStatus: notificationResult.ok ? "sent" : "failed",
       });
     }
 
@@ -118,9 +152,25 @@ export async function POST(
       );
     }
 
+    const providerWhatsApp = provider
+      ? await ensureProfileWhatsApp(provider)
+      : { ok: false as const, code: "whatsapp_phone_required" as const, message: "لا يوجد ملف للمزود" };
+    const notificationResult = providerWhatsApp.ok && service
+      ? await notifyProviderServiceDecision({
+        phone: providerWhatsApp.phone,
+        providerName: provider?.full_name,
+        service,
+        action: "approve_update",
+        requestedChanges: changeRequest.requested_changes,
+      })
+      : { ok: false, error: providerWhatsApp.ok ? "الخدمة غير موجودة" : providerWhatsApp.message };
+
     return NextResponse.json({
       success: true,
-      message: "تم قبول طلب التعديل وتطبيقه",
+      message: notificationResult.ok
+        ? "تم قبول طلب التعديل وتطبيقه وإشعار المزود عبر واتساب"
+        : `تم قبول طلب التعديل وتطبيقه، لكن تعذر إشعار المزود: ${notificationResult.error || "خطأ غير معروف"}`,
+      notificationStatus: notificationResult.ok ? "sent" : "failed",
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

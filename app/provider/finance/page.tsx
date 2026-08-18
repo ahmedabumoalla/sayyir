@@ -7,10 +7,12 @@ import {
 } from "lucide-react";
 import { Tajawal } from "next/font/google";
 import { getProviderClientContext } from "@/lib/providerContextClient";
+import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700"] });
 
 export default function ProviderFinancePage() {
+  const { ensureWhatsAppPhone } = useWhatsAppPhone();
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [balance, setBalance] = useState(0); 
@@ -90,21 +92,22 @@ export default function ProviderFinancePage() {
       if (!providerContext.providerId) {
         throw new Error("يجب تسجيل الدخول أولاً");
       }
+      if (!(await ensureWhatsAppPhone())) return;
 
-      // إدخال الطلب مباشرة في قاعدة البيانات
-      const { error } = await supabase
-        .from('payout_requests')
-        .insert([{
-            provider_id: providerContext.providerId,
-            amount: requestedAmount,
-            bank_name: bankName,
-            iban: iban,
-            status: 'pending'
-        }]);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("انتهت الجلسة، سجّل الدخول مجدداً");
+      const response = await fetch("/api/provider/register/payout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ amount: requestedAmount, bankName, iban }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || result.error || "تعذر إرسال طلب السحب");
 
-      if (error) throw error;
-
-      alert("✅ تم إرسال طلب السحب بنجاح. سيتم مراجعته من قبل الإدارة.");
+      alert(result.message || "✅ تم إرسال طلب السحب بنجاح. سيتم مراجعته من قبل الإدارة.");
       
       // تصفير النموذج وتحديث البيانات
       setAmount("");

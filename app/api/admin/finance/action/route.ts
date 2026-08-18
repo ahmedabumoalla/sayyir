@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { ensureProfileWhatsApp } from '@/lib/whatsappProfile';
+import { notifyProviderPayoutDecision } from '@/lib/whatsappNotifications';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,20 +37,57 @@ export async function POST(req: Request) {
     let logType = '';
     let logDetails = '';
     let targetId = null;
+    let notificationResult: { ok: boolean; error?: string } | null = null;
 
     // --- أ: معالجة طلبات السحب ---
     if (actionType === 'update_payout') {
-        const { requestId, status, amount, providerName } = body;
+        const { requestId, status, amount, providerName, reason, receiptUrl } = body;
+
+        if (!['paid', 'approved', 'rejected'].includes(String(status))) {
+          return NextResponse.json({ error: "حالة طلب السحب غير صالحة" }, { status: 400 });
+        }
+
+        const { data: payout, error: payoutError } = await supabaseAdmin
+          .from('payout_requests')
+          .select('*')
+          .eq('id', requestId)
+          .single();
+        if (payoutError || !payout) {
+          return NextResponse.json({ error: "طلب السحب غير موجود" }, { status: 404 });
+        }
         
         const { error } = await supabaseAdmin
             .from('payout_requests')
-            .update({ status: status, updated_at: new Date().toISOString() })
+            .update({
+              status,
+              updated_at: new Date().toISOString(),
+              ...(receiptUrl ? { receipt_url: receiptUrl } : {}),
+            })
             .eq('id', requestId);
 
         if (error) throw error;
 
-        logType = status === 'paid' ? 'approve_payout' : 'reject_payout';
-        logDetails = `تمت ${status === 'paid' ? 'الموافقة على' : 'رفض'} طلب سحب رصيد بقيمة ${amount} ﷼ للشريك: ${providerName}`;
+        const { data: provider } = await supabaseAdmin
+          .from('profiles')
+          .select('id, full_name, phone')
+          .eq('id', payout.provider_id)
+          .maybeSingle();
+        const whatsapp = provider
+          ? await ensureProfileWhatsApp(provider)
+          : { ok: false as const, message: "ملف المزود غير موجود" };
+        notificationResult = whatsapp.ok
+          ? await notifyProviderPayoutDecision({
+              phone: whatsapp.phone,
+              providerName: provider?.full_name || providerName,
+              payout,
+              approved: status === 'paid' || status === 'approved',
+              reason: String(reason || '').trim() || undefined,
+            })
+          : { ok: false, error: whatsapp.message };
+
+        const payoutApproved = status === 'paid' || status === 'approved';
+        logType = payoutApproved ? 'approve_payout' : 'reject_payout';
+        logDetails = `تمت ${payoutApproved ? 'الموافقة على' : 'رفض'} طلب سحب رصيد بقيمة ${amount} ﷼ للشريك: ${providerName}`;
         targetId = requestId;
     } 
     
@@ -83,7 +122,17 @@ export async function POST(req: Request) {
         });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      notificationStatus: notificationResult
+        ? (notificationResult.ok ? 'sent' : 'failed')
+        : 'not_requested',
+      message: notificationResult
+        ? (notificationResult.ok
+            ? 'تم تحديث طلب السحب وإشعار المزود عبر واتساب'
+            : `تم تحديث طلب السحب، لكن تعذر إشعار المزود: ${notificationResult.error || 'خطأ غير معروف'}`)
+        : 'تم حفظ الإعدادات بنجاح',
+    });
 
   } catch (error: any) {
     console.error("API Error:", error);

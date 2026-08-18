@@ -63,20 +63,44 @@ export default function ProviderProfilePage() {
     if (!profile.full_name.trim()) return alert("الاسم مطلوب");
     setUpdating(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        full_name: profile.full_name,
-        phone: profile.phone,
-      })
-      .eq("id", profile.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("انتهت الجلسة، سجّل الدخول مجدداً");
 
-    if (error) {
-      alert("فشل التحديث: " + error.message);
-    } else {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ full_name: profile.full_name })
+        .eq("id", profile.id);
+      if (error) throw error;
+
+      if (profile.phone.trim()) {
+        const phoneResponse = await fetch("/api/profile/whatsapp", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ phone: profile.phone }),
+        });
+        const phoneResult = await phoneResponse.json().catch(() => ({}));
+        if (!phoneResponse.ok) {
+          throw new Error(phoneResult.message || phoneResult.error || "تعذر حفظ رقم واتساب");
+        }
+        setProfile((current) => ({ ...current, phone: phoneResult.phone }));
+      } else {
+        const { error: clearPhoneError } = await supabase
+          .from("profiles")
+          .update({ phone: null })
+          .eq("id", profile.id);
+        if (clearPhoneError) throw clearPhoneError;
+      }
+
       alert("تم تحديث بياناتك بنجاح ✅");
+    } catch (error: any) {
+      alert("فشل التحديث: " + error.message);
+    } finally {
+      setUpdating(false);
     }
-    setUpdating(false);
   };
 
   const handleUpdatePassword = async () => {
@@ -136,11 +160,13 @@ export default function ProviderProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm text-white/70">رقم الجوال</label>
+              <label className="text-sm text-white/70">رقم واتساب الرسمي</label>
               <input 
-                type="text" 
+                type="tel"
+                dir="ltr"
                 value={profile.phone}
                 onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                placeholder="+9665XXXXXXXX"
                 className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-[#C89B3C] outline-none"
               />
             </div>

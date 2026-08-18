@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { assertExperienceSeatsAvailable } from "@/lib/experienceSeats";
+import { getInternalNotificationHeaders } from "@/lib/notificationAuth";
+import { ensureProfileWhatsApp } from "@/lib/whatsappProfile";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
         .select(`
           *,
           users:user_id (
+            id,
             full_name,
             email,
             phone
@@ -66,6 +69,7 @@ export async function POST(request: Request) {
             provider_id
           ),
           profiles:provider_id (
+            id,
             full_name,
             email,
             phone
@@ -126,6 +130,7 @@ export async function POST(request: Request) {
         .select(`
           *,
           users:user_id (
+            id,
             full_name,
             email,
             phone
@@ -135,6 +140,7 @@ export async function POST(request: Request) {
             provider_id
           ),
           profiles:provider_id (
+            id,
             full_name,
             email,
             phone
@@ -154,6 +160,10 @@ export async function POST(request: Request) {
     const clientInfo = updatedBooking.users;
     const serviceInfo = updatedBooking.services;
     const providerInfo = updatedBooking.profiles;
+    const [clientWhatsApp, providerWhatsApp] = await Promise.all([
+      ensureProfileWhatsApp(clientInfo),
+      ensureProfileWhatsApp(providerInfo),
+    ]);
 
     const baseUrl =
       process.env.NEXT_PUBLIC_BASE_URL ||
@@ -162,17 +172,19 @@ export async function POST(request: Request) {
     // رابط التذكرة
     const ticketUrl = `${baseUrl}/client/trips/${updatedBooking.id}`;
 
+    const notificationRequests: Promise<{ recipient: string; ok: boolean; result: any }>[] = [];
+
     // إشعار العميل
-    if (clientInfo?.email) {
-      await fetch(`${baseUrl}/api/emails/send`, {
+    if (clientInfo?.email || clientWhatsApp.ok) {
+      notificationRequests.push(fetch(`${baseUrl}/api/emails/send`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          ...getInternalNotificationHeaders(),
         },
         body: JSON.stringify({
           templateId: "booking_payment_confirmed",
           email: clientInfo.email,
-          phone: clientInfo.phone,
+          phone: clientWhatsApp.ok ? clientWhatsApp.phone : null,
 
           data: {
             bookingId: updatedBooking.id,
@@ -188,6 +200,12 @@ export async function POST(request: Request) {
 
             ticketCodeShort: String(ticketCode).slice(0, 16),
 
+            checkIn: updatedBooking.check_in || updatedBooking.booking_date || "",
+            checkOut: updatedBooking.check_out || "",
+            date: updatedBooking.booking_date || updatedBooking.check_in || "",
+            time: updatedBooking.booking_time || "",
+            guests: updatedBooking.quantity || 1,
+
             totalPrice: `${
               updatedBooking.final_price ||
               updatedBooking.total_price ||
@@ -195,22 +213,20 @@ export async function POST(request: Request) {
             } ريال`,
           },
         }),
-      }).catch((err) => {
-        console.error("فشل إرسال إيميل العميل:", err);
-      });
+      }).then(async (response) => ({ recipient: "client", ok: response.ok, result: await response.json().catch(() => ({})) })));
     }
 
     // إشعار المزود
-    if (providerInfo?.email) {
-      await fetch(`${baseUrl}/api/emails/send`, {
+    if (providerInfo?.email || providerWhatsApp.ok) {
+      notificationRequests.push(fetch(`${baseUrl}/api/emails/send`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          ...getInternalNotificationHeaders(),
         },
         body: JSON.stringify({
           templateId: "provider_payment_received",
           email: providerInfo.email,
-          phone: providerInfo.phone,
+          phone: providerWhatsApp.ok ? providerWhatsApp.phone : null,
 
           data: {
             bookingId: updatedBooking.id,
@@ -221,6 +237,8 @@ export async function POST(request: Request) {
             clientName:
               clientInfo?.full_name || "",
 
+            clientPhone: clientWhatsApp.ok ? clientWhatsApp.phone : "",
+
             serviceName:
               serviceInfo?.title || "خدمة سيّر",
 
@@ -229,6 +247,11 @@ export async function POST(request: Request) {
               updatedBooking.number_of_guests ||
               1,
 
+            checkIn: updatedBooking.check_in || updatedBooking.booking_date || "",
+            checkOut: updatedBooking.check_out || "",
+            date: updatedBooking.booking_date || updatedBooking.check_in || "",
+            time: updatedBooking.booking_time || "",
+
             totalPrice: `${
               updatedBooking.final_price ||
               updatedBooking.total_price ||
@@ -236,14 +259,27 @@ export async function POST(request: Request) {
             } ريال`,
           },
         }),
-      }).catch((err) => {
-        console.error("فشل إرسال إيميل المزود:", err);
-      });
+      }).then(async (response) => ({ recipient: "provider", ok: response.ok, result: await response.json().catch(() => ({})) })));
     }
+
+    const notificationResults = await Promise.allSettled(notificationRequests);
+    const whatsappNotificationsSucceeded =
+      clientWhatsApp.ok &&
+      providerWhatsApp.ok &&
+      notificationResults.length === 2 &&
+      notificationResults.every(
+        (item) =>
+          item.status === "fulfilled" &&
+          item.value.ok &&
+          Boolean(item.value.result?.results?.whatsapp)
+      );
 
     return NextResponse.json({
       success: true,
-      message: "تم تأكيد الدفع بنجاح",
+      notificationStatus: whatsappNotificationsSucceeded ? "sent" : "failed",
+      message: whatsappNotificationsSucceeded
+        ? "تم تأكيد الدفع وإرسال التذكرة والإشعارات بنجاح"
+        : "تم تأكيد الدفع، لكن تعذر إرسال إشعار واتساب واحد أو أكثر وتم تسجيل الفشل للمتابعة",
       bookingId: updatedBooking.id,
       ticketCode,
     });

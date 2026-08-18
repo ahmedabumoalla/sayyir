@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient";
+import { normalizeInternationalPhone } from "@/lib/phone";
 import {
   ArrowRight,
   Loader2,
@@ -65,6 +66,7 @@ export default function DynamicProviderRegister() {
       const { data: fieldsData } = await supabase
         .from("registration_fields")
         .select("*")
+        .eq("scope", "registration")
         .order("sort_order", { ascending: true });
 
       // 2. التحقق من تسجيل دخول العميل وجلب بياناته
@@ -236,7 +238,7 @@ export default function DynamicProviderRegister() {
       }
 
       const normalizedEmail = String(emailVal).trim().toLowerCase();
-      const normalizedPhone = String(phoneVal).trim();
+      const normalizedPhone = normalizeInternationalPhone(String(phoneVal));
 
       const { data: profileByEmail } = await supabase
         .from("profiles")
@@ -321,9 +323,18 @@ export default function DynamicProviderRegister() {
         finalData[key] = uploadedData[key];
       });
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       const response = await fetch("/api/provider/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
+        },
         body: JSON.stringify({
           name: nameVal,
           email: normalizedEmail,
@@ -493,7 +504,9 @@ export default function DynamicProviderRegister() {
                       className="w-full bg-white/5 border border-white/10 rounded-r-2xl px-5 py-4 text-white focus:border-[#C89B3C] focus:bg-white/10 outline-none transition-all shadow-lg shadow-black/20 text-left"
                       placeholder={`رقم الجوال...`}
                       onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, "");
+                        const val = e.target.value
+                          .replace(/\D/g, "")
+                          .replace(/^0+/, "");
                         handleChange(field.id, phoneCode + val);
                       }}
                       dir="ltr"
