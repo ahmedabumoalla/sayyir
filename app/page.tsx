@@ -5,6 +5,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient"; 
+import { sortPlacesByLandmarkSheet } from "@/lib/landmarkOrder";
 import DynamicShowcase from "@/components/DynamicShowcase"; 
 import PWAInstallButton from "@/components/PWAInstallButton";
 import { 
@@ -252,7 +253,7 @@ export default function HomePage() {
       }
 
       const { data: places } = await supabase.from('places').select('*').eq('is_active', true).limit(6);
-      if (places) setLandmarksData(places);
+      if (places) setLandmarksData(sortPlacesByLandmarkSheet(places));
 
       const { data: providerExp } = await supabase.from('services').select('*').eq('service_category', 'experience').eq('sub_category', 'experience').in('status', ['approved', 'update_requested']);
       const { data: adminExp } = await supabase.from('places').select('*').eq('type', 'experience').eq('is_active', true);

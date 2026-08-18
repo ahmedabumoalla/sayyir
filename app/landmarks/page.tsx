@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { Tajawal } from "next/font/google";
+import { sortPlacesByLandmarkSheet } from "@/lib/landmarkOrder";
 import { 
   MapPin, ArrowRight, Loader2, Mountain, Landmark, 
   Search, Trees, X, Heart
@@ -33,7 +34,7 @@ export default function LandmarksPage() {
       .neq('type', 'experience') 
       .order('created_at', { ascending: false });
 
-    if (data) setPlaces(data);
+    if (data) setPlaces(sortPlacesByLandmarkSheet(data));
     setLoading(false);
   };
 
@@ -158,9 +159,6 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
   }
 
   const isMainMediaVideo = mainMedia ? isVideo(mainMedia) : false;
-  const hasPrice = data.price !== null && data.price !== undefined && data.price !== "";
-  const priceValue = Number(data.price);
-  
   // ✅ صورة احتياطية خارجية مضمونة تشتغل دائماً بدل الصورة المحلية اللي سببت كسر الأيقونة
   const fallbackImg = "https://images.unsplash.com/photo-1582650625119-3a31f8fa2699?q=80&w=800";
 
@@ -208,11 +206,6 @@ function LandmarkCard({ data, isVideo }: { data: any, isVideo: (url: string) => 
             </span>
           </div>
 
-          {hasPrice && (
-              <div className={`absolute bottom-4 right-4 backdrop-blur text-white text-[10px] md:text-xs px-3 py-1.5 rounded-lg font-bold shadow-lg z-10 ${priceValue > 0 ? 'bg-black/60 border border-[#C89B3C]/50 text-[#C89B3C]' : 'bg-emerald-500/90 border border-emerald-400 text-white'}`}>
-                  {priceValue > 0 ? `${priceValue} ريال` : 'دخول مجاني'}
-              </div>
-          )}
         </div>
         
         <div className="p-4 md:p-6 flex flex-col flex-1 relative -mt-8 z-20">
