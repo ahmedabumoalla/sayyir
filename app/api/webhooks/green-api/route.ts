@@ -2,17 +2,20 @@ import { NextResponse } from "next/server";
 import { recordWhatsAppAudit } from "@/lib/whatsappAudit";
 
 function isAuthorized(req: Request) {
-  const expected = String(
-    process.env.GREEN_API_WEBHOOK_TOKEN ||
-      process.env.INTERNAL_NOTIFICATION_SECRET ||
-      process.env.GREEN_API_TOKEN_INSTANCE ||
-      ""
-  ).trim();
-  if (!expected) return false;
+  const expectedTokens = [
+    process.env.GREEN_API_WEBHOOK_TOKEN,
+    process.env.INTERNAL_NOTIFICATION_SECRET,
+    process.env.GREEN_API_TOKEN_INSTANCE,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  if (!expectedTokens.length) return false;
   const authorization = String(req.headers.get("authorization") || "").trim();
   const supplied = authorization.replace(/^Bearer\s+/i, "");
   const queryToken = new URL(req.url).searchParams.get("token") || "";
-  return supplied === expected || queryToken === expected;
+  return expectedTokens.some(
+    (expected) => supplied === expected || queryToken === expected
+  );
 }
 
 export async function GET() {
