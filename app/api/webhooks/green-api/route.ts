@@ -5,7 +5,6 @@ function isAuthorized(req: Request) {
   const expectedTokens = [
     process.env.GREEN_API_WEBHOOK_TOKEN,
     process.env.INTERNAL_NOTIFICATION_SECRET,
-    process.env.GREEN_API_TOKEN_INSTANCE,
   ]
     .map((value) => String(value || "").trim())
     .filter(Boolean);

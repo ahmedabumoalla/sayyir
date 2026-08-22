@@ -140,3 +140,5 @@
   - أضيف `GREEN_API_TOKEN_INSTANCE` كخيار مصادقة احتياطي للـ webhook لأن سر webhook الموجود في Vercel لا يطابق البيئة المحلية؛ يبقى التوكن منقولًا في ترويسة المصادقة عبر HTTPS ولا يوضع في الرابط.
   - التحقق يقبل أي توكن مضبوط وصالح بدل إعطاء الأولوية لقيمة واحدة، لضمان التوافق مع سر Vercel القديم دون تعطيله.
   - عبر Vercel CLI تم توحيد متغيرات Production التالية مع البيئة المحلية العاملة، دون طباعة قيمها: `GREEN_API_ID_INSTANCE` و`GREEN_API_TOKEN_INSTANCE` و`GREEN_API_API_URL` و`GREEN_API_MEDIA_URL` و`ADMIN_PHONE` و`INTERNAL_NOTIFICATION_SECRET`، وإضافة `GREEN_API_WEBHOOK_TOKEN`.
+  - تم ربط webhook على الدومين الرسمي والتحقق عمليًا برسالة اختبار مرسلة من مسار الإنتاج: سُجلت الحالات `accepted` ثم `sent` ثم `delivered` لرقم الأدمن الجديد.
+  - بعد نجاح الربط أزيل قبول توكن Green API العام من مصادقة webhook، وأبقي سر webhook المخصص مع `INTERNAL_NOTIFICATION_SECRET` كاحتياط فقط.
