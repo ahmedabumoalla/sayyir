@@ -3,7 +3,10 @@ import { recordWhatsAppAudit } from "@/lib/whatsappAudit";
 
 function isAuthorized(req: Request) {
   const expected = String(
-    process.env.GREEN_API_WEBHOOK_TOKEN || process.env.INTERNAL_NOTIFICATION_SECRET || ""
+    process.env.GREEN_API_WEBHOOK_TOKEN ||
+      process.env.INTERNAL_NOTIFICATION_SECRET ||
+      process.env.GREEN_API_TOKEN_INSTANCE ||
+      ""
   ).trim();
   if (!expected) return false;
   const authorization = String(req.headers.get("authorization") || "").trim();
