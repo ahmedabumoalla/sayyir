@@ -138,7 +138,7 @@ function compose({
 export async function notifyAdminNewProviderRequest(data: Record<string, unknown>) {
   const appUrl = getAppUrl();
   return sendGreenApiMessage({
-    to: process.env.ADMIN_PHONE || "+966508424401",
+    to: process.env.ADMIN_PHONE || "+966579889822",
     message: compose({
       title: "🔔 طلب انضمام مزود جديد",
       intro: "وصل طلب جديد ويحتاج إلى مراجعة الإدارة.",
@@ -183,7 +183,7 @@ export async function notifyAdminServiceRequest({
   const appUrl = getAppUrl();
 
   return sendGreenApiMessage({
-    to: process.env.ADMIN_PHONE || "+966508424401",
+    to: process.env.ADMIN_PHONE || "+966579889822",
     message: compose({
       title: `🧾 ${labels[kind]}`,
       intro: "يوجد طلب خدمة جديد بانتظار مراجعة الإدارة.",
@@ -307,7 +307,7 @@ export async function notifyAdminPayoutRequest({
 }) {
   const appUrl = getAppUrl();
   return sendGreenApiMessage({
-    to: process.env.ADMIN_PHONE || "+966508424401",
+    to: process.env.ADMIN_PHONE || "+966579889822",
     message: compose({
       title: "💰 طلب سحب رصيد جديد",
       intro: "وصل طلب سحب جديد ويحتاج إلى مراجعة الإدارة.",

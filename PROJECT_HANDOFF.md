@@ -11,7 +11,7 @@
 - نجح `npx tsc --noEmit` بدون أخطاء.
 - نجح `npm run build`، وتم بناء 103 صفحات ومسارات API.
 - Green API متصل ويعمل، وتم تنفيذ اختبار إرسال حي إلى رقم الأدمن.
-- رقم الأدمن المعتمد: `+966508424401`.
+- رقم الأدمن المعتمد: `+966579889822`.
 - اختبار الإرسال الحي أعاد `idMessage` بالقيمة `3EB02E9BF157967BCCEC9A`، وكانت حالته في Green API هي `sent`.
 - تم تسجيل عملية الاختبار في جدول `admin_logs` مع إخفاء الرقم على صورة `***4401`.
 
@@ -43,7 +43,7 @@ GREEN_API_TOKEN_INSTANCE=
 GREEN_API_API_URL=https://7107.api.greenapi.com
 GREEN_API_MEDIA_URL=https://7107.api.greenapi.com
 
-ADMIN_PHONE=+966508424401
+ADMIN_PHONE=+966579889822
 INTERNAL_NOTIFICATION_SECRET=
 ```
 
