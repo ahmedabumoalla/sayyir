@@ -139,3 +139,4 @@
   - فحص GitHub والإنتاج أثبت أن سبب غياب الإشعارات هو اختلاف النسخة المنشورة عن تكامل Green API المحلي.
   - أضيف `GREEN_API_TOKEN_INSTANCE` كخيار مصادقة احتياطي للـ webhook لأن سر webhook الموجود في Vercel لا يطابق البيئة المحلية؛ يبقى التوكن منقولًا في ترويسة المصادقة عبر HTTPS ولا يوضع في الرابط.
   - التحقق يقبل أي توكن مضبوط وصالح بدل إعطاء الأولوية لقيمة واحدة، لضمان التوافق مع سر Vercel القديم دون تعطيله.
+  - عبر Vercel CLI تم توحيد متغيرات Production التالية مع البيئة المحلية العاملة، دون طباعة قيمها: `GREEN_API_ID_INSTANCE` و`GREEN_API_TOKEN_INSTANCE` و`GREEN_API_API_URL` و`GREEN_API_MEDIA_URL` و`ADMIN_PHONE` و`INTERNAL_NOTIFICATION_SECRET`، وإضافة `GREEN_API_WEBHOOK_TOKEN`.
