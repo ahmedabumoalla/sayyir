@@ -4,6 +4,10 @@ import { assertExperienceSeatsAvailable } from '@/lib/experienceSeats';
 import { getInternalNotificationHeaders } from '@/lib/notificationAuth';
 import { getAuthenticatedUserId } from '@/lib/requireProvider';
 import { ensureProfileWhatsApp, whatsappGuardStatus } from '@/lib/whatsappProfile';
+import {
+  calculateServiceSubtotal,
+  validateDiscountCode,
+} from '@/lib/server/discounts';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,7 +27,7 @@ export async function POST(req: Request) {
       .select(`
         *,
         users:user_id (id, full_name, email, phone),
-        services:service_id (title, provider_id),
+        services:service_id (*),
         profiles:provider_id (id, full_name, email, phone)
       `)
       .eq('id', bookingId)
@@ -53,6 +57,47 @@ export async function POST(req: Request) {
       );
     }
 
+    if (booking.status !== 'approved_unpaid') {
+      return NextResponse.json(
+        { error: 'هذا الحجز غير متاح للدفع حاليًا.' },
+        { status: 400 }
+      );
+    }
+
+    if (booking.expires_at && new Date(booking.expires_at).getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: 'انتهت مهلة الدفع لهذا الحجز.' },
+        { status: 400 }
+      );
+    }
+
+    const subtotal = calculateServiceSubtotal(
+      booking.services,
+      booking.quantity ?? 1,
+      booking.details?.child_count || 0
+    );
+    const discount = await validateDiscountCode({
+      supabase: supabaseAdmin,
+      code: booking.coupon_code,
+      service: booking.services,
+      bookingDate: booking.booking_date || booking.check_in,
+      subtotal,
+    });
+
+    if (!discount.valid) {
+      return NextResponse.json(
+        { error: discount.error || 'كود الخصم غير صالح' },
+        { status: 400 }
+      );
+    }
+
+    if (discount.finalAmount !== 0) {
+      return NextResponse.json(
+        { error: 'لا يمكن تأكيد هذا الحجز كحجز مجاني.' },
+        { status: 400 }
+      );
+    }
+
     await assertExperienceSeatsAvailable(
       supabaseAdmin,
       booking.service_id,
@@ -67,6 +112,15 @@ export async function POST(req: Request) {
         status: 'confirmed',
         payment_status: 'paid',
         payment_method: paymentMethod || 'مجاني',
+        subtotal,
+        discount_amount: discount.discountAmount,
+        discount_applied: discount.applied,
+        coupon_code: discount.code,
+        final_price: 0,
+        total_price: 0,
+        tax_amount: 0,
+        platform_fee: 0,
+        provider_earnings: 0,
         ticket_qr_code: qrCodeString,
         is_ticket_used: false
       })

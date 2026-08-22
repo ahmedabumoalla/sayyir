@@ -117,15 +117,8 @@ function CheckoutContent() {
   const [selectedPaymentMethod] = useState<"card">("card");
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
-  const [appliedPlatformDiscount, setAppliedPlatformDiscount] = useState(false);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [couponError, setCouponError] = useState("");
-
-  const [settings, setSettings] = useState<any>({
-    general_discount_code: "",
-    general_discount_percent: 0,
-    is_general_discount_active: false,
-    general_discount_categories: []
-  });
 
   const [totals, setTotals] = useState({
     baseAmount: 0,
@@ -181,10 +174,24 @@ function CheckoutContent() {
         }
 
         const { data: serviceData } = await supabase.from("services").select(`*, profiles:provider_id(full_name, email, phone)`).eq("id", bookingData.service_id).single();
-        const { data: settingsData } = await supabase.from("platform_settings").select("*").single();
-
-        if (settingsData) setSettings(settingsData);
         setBooking({ ...bookingData, services: serviceData || {} });
+
+        if (bookingData.coupon_code) {
+          const discountResponse = await fetch("/api/discounts/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              code: bookingData.coupon_code,
+              bookingId,
+            }),
+          });
+
+          if (discountResponse.ok) {
+            const discountData = await discountResponse.json();
+            setCouponCode(discountData.code || "");
+            setAppliedCoupon(discountData.applied ? discountData : null);
+          }
+        }
       } catch (e) {
         toast.error("حدث خطأ أثناء تحميل بيانات الحجز.");
       } finally {
@@ -215,81 +222,48 @@ function CheckoutContent() {
   useEffect(() => {
     if (!booking || !booking.services) return;
 
-    const totalServicePrice = Number(booking.total_price || 0);
+    const baseAmount = Number(booking.subtotal ?? booking.total_price ?? 0);
+    const discountAmount = appliedCoupon ? Number(appliedCoupon.discountAmount || 0) : 0;
+    const finalTotal = appliedCoupon ? Number(appliedCoupon.finalAmount) : baseAmount;
+    const vat = (finalTotal * 15) / 115;
 
-    let generalDisc = 0;
-    if (appliedPlatformDiscount) {
-        generalDisc = (totalServicePrice * settings.general_discount_percent) / 100;
-    }
-
-    let couponDisc = 0;
-    if (appliedCoupon) {
-      couponDisc = (totalServicePrice * appliedCoupon.discount_percent) / 100;
-    }
-
-    const totalDisc = generalDisc + couponDisc;
-const finalTotal = Math.max(0, totalServicePrice - totalDisc);
-
-
-const vat = (finalTotal * 15) / 115;
-const baseAmount = totalServicePrice;
-
-setTotals({
-  baseAmount,
-  generalDiscountAmount: generalDisc,
-  couponDiscountAmount: couponDisc,
-  totalDiscount: totalDisc,
-  vat,
-  total: finalTotal
-});
-  }, [booking, appliedCoupon, appliedPlatformDiscount, settings]);
+    setTotals({
+      baseAmount,
+      generalDiscountAmount: appliedCoupon?.source === "platform" ? discountAmount : 0,
+      couponDiscountAmount: appliedCoupon?.source === "coupon" ? discountAmount : 0,
+      totalDiscount: discountAmount,
+      vat,
+      total: finalTotal
+    });
+  }, [booking, appliedCoupon]);
 
   const handleApplyCoupon = async () => {
     if (!couponCode || expired) return;
     setCouponError("");
     setAppliedCoupon(null);
-    setAppliedPlatformDiscount(false);
+    setValidatingCoupon(true);
 
-    // 1. التحقق من كود خصم المنصة العام
-    if (settings.is_general_discount_active && settings.general_discount_code.toUpperCase() === couponCode.toUpperCase()) {
-        const srvCat = booking.services.service_category;
-        const subCat = booking.services.sub_category;
-        const activeCats = safeArray(settings.general_discount_categories);
+    try {
+      const response = await fetch("/api/discounts/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: couponCode, bookingId }),
+      });
+      const data = await response.json();
 
-        if (activeCats.includes(srvCat) || activeCats.includes(subCat)) {
-            setAppliedPlatformDiscount(true);
-            toast.success(`تم تطبيق خصم المنصة ${settings.general_discount_percent}% بنجاح!`);
-            return;
-        } else {
-            setCouponError("عذراً، كود الخصم لا يشمل هذا القسم.");
-            return;
-        }
-    }
-
-    // 2. التحقق من كود المسوقين
-    const { data, error } = await supabase
-      .from("coupons")
-      .select("*")
-      .ilike("code", couponCode)
-      .single();
-
-    if (error || !data) {
-      setCouponError("الكوبون غير صالح أو غير موجود");
-      return;
-    }
-
-    const today = new Date().toISOString().split('T')[0];
-    if (data.start_date && data.start_date > today) {
-        setCouponError("تاريخ بداية الكوبون لم يحن بعد");
+      if (!response.ok || !data.applied) {
+        setCouponError(data.error || "كود الخصم غير صالح");
         return;
-    }
-    if (data.end_date && data.end_date < today) {
-        setCouponError("عذراً، الكوبون منتهي الصلاحية");
-        return;
-    }
+      }
 
-    setAppliedCoupon(data);
-    toast.success(`تم تطبيق خصم الكوبون ${data.discount_percent}% بنجاح!`);
+      setCouponCode(data.code);
+      setAppliedCoupon(data);
+      toast.success("تم تطبيق كود الخصم بنجاح!");
+    } catch {
+      setCouponError("تعذر التحقق من كود الخصم");
+    } finally {
+      setValidatingCoupon(false);
+    }
   };
 
   const handlePayment = async () => {
@@ -305,7 +279,7 @@ setTotals({
       if (checkData.status !== 'approved_unpaid') throw new Error("الحجز غير متاح للدفع");
       if (new Date(checkData.expires_at).getTime() - Date.now() <= 0) throw new Error("انتهت مهلة الدفع لهذا الحجز");
 
-      const finalCode = appliedPlatformDiscount ? settings.general_discount_code : appliedCoupon ? appliedCoupon.code : null;
+      const finalCode = appliedCoupon?.code || null;
 
       await supabase.from('bookings').update({
           coupon_code: finalCode,
@@ -336,13 +310,28 @@ setTotals({
         },
         body: JSON.stringify({
           bookingId,
-          couponCode: finalCode,
+          discountCode: finalCode,
           paymentMethod: selectedPaymentMethod
         })
       });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "فشل في إنشاء رابط الدفع");
+      if (data.skipPayment) {
+        const freeResponse = await fetch("/api/paymob/free-checkout", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ bookingId, paymentMethod: "مجاني" })
+        });
+        const freeData = await freeResponse.json();
+        if (!freeResponse.ok) throw new Error(freeData.error || "فشل تأكيد الحجز المجاني");
+        toast.success("✅ تم تأكيد الحجز بنجاح وإصدار التذكرة!");
+        router.replace("/client/dashboard");
+        return;
+      }
       if (data.iframeUrl) {
         window.location.href = data.iframeUrl;
         return;
@@ -538,19 +527,22 @@ setTotals({
                 <input
                   type="text"
                   value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    setCouponCode(e.target.value.toUpperCase());
+                    setCouponError("");
+                  }}
                   placeholder="أدخل كود الخصم"
-                  disabled={!!appliedCoupon || !!appliedPlatformDiscount || expired}
+                  disabled={!!appliedCoupon || expired || validatingCoupon}
                   className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-[#C89B3C] outline-none disabled:opacity-50 tracking-wider font-mono"
                 />
-                {!appliedCoupon && !appliedPlatformDiscount ? (
-                  <button onClick={handleApplyCoupon} disabled={!couponCode || expired} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition disabled:opacity-50 font-bold text-xs">تطبيق</button>
+                {!appliedCoupon ? (
+                  <button onClick={handleApplyCoupon} disabled={!couponCode || expired || validatingCoupon} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition disabled:opacity-50 font-bold text-xs">{validatingCoupon ? "جارٍ التحقق" : "تطبيق الكود"}</button>
                 ) : (
-                  <button onClick={() => { setAppliedCoupon(null); setAppliedPlatformDiscount(false); setCouponCode(""); }} disabled={expired} className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-2 rounded-lg transition disabled:opacity-50" title="إلغاء الكوبون"><XIcon size={18} /></button>
+                  <button onClick={() => { setAppliedCoupon(null); setCouponCode(""); setCouponError(""); }} disabled={expired} className="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-2 rounded-lg transition disabled:opacity-50" title="إلغاء الكوبون"><XIcon size={18} /></button>
                 )}
               </div>
               {couponError && <p className="text-red-400 text-xs mt-2 flex items-center gap-1"><AlertCircle size={12} /> {couponError}</p>}
-              {(appliedCoupon || appliedPlatformDiscount) && <p className="text-emerald-400 text-xs mt-2 flex items-center gap-1"><CheckCircle size={12} /> تم تطبيق الخصم بنجاح</p>}
+              {appliedCoupon && <p className="text-emerald-400 text-xs mt-2 flex items-center gap-1"><CheckCircle size={12} /> تم تطبيق الخصم بنجاح</p>}
             </div>
 
             <div className="space-y-3 text-sm mb-6 bg-black/20 p-5 rounded-2xl border border-white/5">

@@ -117,3 +117,23 @@
 - اعتماد المشروع:
   - `profiles` (حقول `is_deleted`, `is_banned`, `is_blocked`)
   - Supabase Auth Admin API (رفع الحظر الرسمي عبر `ban_duration: 'none'`).
+
+## تحديث إضافي (2026-08-22): إصلاح نشر إشعارات الأدمن عبر Green API
+
+- المشكلة:
+  - النسخة المحلية ترسل إشعارات واتساب عبر Green API، بينما `main` المنشور كان لا يزال يرسل SMS عبر Twilio.
+  - مسار webhook الخاص بـ Green API لم يكن موجودًا في النسخة المنشورة.
+- طريقة الحل:
+  1) إنشاء نقطة Git مرجعية قبل العمل بالمعرف `6a2ad1b`.
+  2) جلب أحدث `origin/main` ودمج تحديث التحقق من الخصومات مع حماية الدفع وإشعارات واتساب المحلية.
+  3) الحفاظ على `lib/greenApi.ts` و`lib/whatsappNotifications.ts` ومسار webhook، مع إبقاء التحقق من المستخدم وأرقام واتساب في مسارات الحجز والدفع.
+  4) التحقق عبر `npx tsc --noEmit` بنجاح.
+- الملفات المتأثرة مباشرة أثناء حل الدمج:
+  - `app/api/bookings/create/route.ts`
+  - `app/api/paymob/initiate/route.ts`
+  - `app/api/paymob/free-checkout/route.ts`
+  - `app/checkout/[id]/page.tsx`
+  - ملفات تحديث الخصومات الواردة من `origin/main`.
+- أساس القرار:
+  - فحص Green API أكد أن الـ instance مصرح وأن رقم الأدمن موجود على واتساب.
+  - فحص GitHub والإنتاج أثبت أن سبب غياب الإشعارات هو اختلاف النسخة المنشورة عن تكامل Green API المحلي.

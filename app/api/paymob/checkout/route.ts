@@ -1,8 +1,95 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import {
+  calculateServiceSubtotal,
+  validateDiscountCode,
+} from '@/lib/server/discounts';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: Request) {
   try {
-    const { amount, firstName, lastName, email, phone } = await request.json();
+    const { bookingId, firstName, lastName, email, phone } = await request.json();
+
+    if (!bookingId) {
+      return NextResponse.json({ error: 'bookingId مطلوب' }, { status: 400 });
+    }
+
+    const { data: booking, error: bookingError } = await supabaseAdmin
+      .from('bookings')
+      .select('*, services:service_id (*)')
+      .eq('id', bookingId)
+      .single();
+
+    if (bookingError || !booking?.services) {
+      return NextResponse.json({ error: 'الحجز غير موجود' }, { status: 404 });
+    }
+
+    if (booking.status !== 'approved_unpaid') {
+      return NextResponse.json(
+        { error: 'هذا الحجز غير متاح للدفع حاليًا.' },
+        { status: 400 }
+      );
+    }
+
+    if (booking.expires_at && new Date(booking.expires_at).getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: 'انتهت مهلة الدفع لهذا الحجز.' },
+        { status: 400 }
+      );
+    }
+
+    const subtotal = calculateServiceSubtotal(
+      booking.services,
+      booking.quantity ?? 1,
+      booking.details?.child_count || 0
+    );
+    const discount = await validateDiscountCode({
+      supabase: supabaseAdmin,
+      code: booking.coupon_code,
+      service: booking.services,
+      bookingDate: booking.booking_date || booking.check_in,
+      subtotal,
+    });
+
+    if (!discount.valid) {
+      return NextResponse.json(
+        { error: discount.error || 'كود الخصم غير صالح' },
+        { status: 400 }
+      );
+    }
+
+    const amount = discount.finalAmount;
+
+    if (amount <= 0) {
+      return NextResponse.json(
+        { error: 'استخدم مسار الدفع المجاني لهذا الحجز.' },
+        { status: 400 }
+      );
+    }
+
+    const { error: pricingUpdateError } = await supabaseAdmin
+      .from('bookings')
+      .update({
+        subtotal,
+        discount_amount: discount.discountAmount,
+        discount_applied: discount.applied,
+        coupon_code: discount.code,
+        final_price: amount,
+        total_price: amount,
+      })
+      .eq('id', bookingId);
+
+    if (pricingUpdateError) {
+      console.error('BOOKING PRICING UPDATE ERROR:', pricingUpdateError);
+      return NextResponse.json(
+        { error: 'فشل تحديث المبلغ المحسوب للحجز.' },
+        { status: 500 }
+      );
+    }
 
     // 1. Authentication - الحصول على توكن المصادقة
     const authRes = await fetch('https://accept.paymob.com/api/auth/tokens', {
