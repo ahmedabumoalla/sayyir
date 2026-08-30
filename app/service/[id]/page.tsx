@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { trackPlatformEvent } from "@/lib/platformAnalytics";
 import { useWhatsAppPhone } from "@/components/WhatsAppPhoneGate";
 import { Tajawal } from "next/font/google";
 import {
@@ -384,6 +385,24 @@ export default function ServiceDetailsPage() {
   useEffect(() => {
     if (service) checkFavorite();
   }, [service]);
+
+  useEffect(() => {
+    if (!service?.id) return;
+
+    const entityType =
+      service.sub_category === "event"
+        ? "event"
+        : service.service_category === "experience"
+          ? "experience"
+          : "facility";
+
+    void trackPlatformEvent({
+      eventType: "entity_open",
+      entityType,
+      entityId: String(service.id),
+      entityName: service.title,
+    });
+  }, [service?.id, service?.title, service?.sub_category, service?.service_category]);
 
   const galleryImages = useMemo(() => {
     if (!service) return [];

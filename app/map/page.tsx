@@ -6,6 +6,7 @@ import Map, { Marker, NavigationControl, Popup } from "react-map-gl/mapbox";
 import { Tajawal } from "next/font/google";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { trackPlatformEvent } from "@/lib/platformAnalytics";
 import Image from "next/image";
 import Link from "next/link"; 
 import { 
@@ -188,6 +189,13 @@ export default function MapPage() {
   };
 
   const handleSelectSearchResult = (item: MapItem) => {
+    void trackPlatformEvent({
+      eventType: "map_click",
+      entityType: item.type === "experience" ? "experience" : item.sourceTable === "places" ? "landmark" : "facility",
+      entityId: item.id,
+      entityName: item.name,
+      metadata: { action: "search_result", city: item.city || null },
+    });
     setSelectedLocation(item);
     setViewState({
         latitude: item.lat - 0.005,
@@ -217,6 +225,13 @@ export default function MapPage() {
 
   const handleActionClick = () => {
     if (!selectedLocation || !selectedLocation.id) return;
+    void trackPlatformEvent({
+      eventType: "map_click",
+      entityType: selectedLocation.type === "experience" ? "experience" : selectedLocation.sourceTable === "places" ? "landmark" : "facility",
+      entityId: selectedLocation.id,
+      entityName: selectedLocation.name,
+      metadata: { action: "open_details", city: selectedLocation.city || null },
+    });
     if (selectedLocation.sourceTable === 'places') router.push(`/place/${selectedLocation.id}`);
     else router.push(`/service/${selectedLocation.id}`);
   };
@@ -353,7 +368,13 @@ export default function MapPage() {
           mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
           mapStyle="mapbox://styles/mapbox/satellite-streets-v12" 
           style={{ width: "100%", height: "100%" }}
-          onClick={() => setSelectedLocation(null)}
+          onClick={() => {
+            void trackPlatformEvent({
+              eventType: "map_click",
+              metadata: { action: "map_canvas", selectedCity },
+            });
+            setSelectedLocation(null);
+          }}
         >
           <NavigationControl position="bottom-right" style={{ marginBottom: '100px', marginRight: '20px' }} />
 
@@ -385,6 +406,13 @@ export default function MapPage() {
                 anchor="bottom"
                 onClick={(e) => {
                   e.originalEvent.stopPropagation();
+                  void trackPlatformEvent({
+                    eventType: "map_click",
+                    entityType: loc.type === "experience" ? "experience" : loc.sourceTable === "places" ? "landmark" : "facility",
+                    entityId: loc.id,
+                    entityName: loc.name,
+                    metadata: { action: "marker_open", city: loc.city || null },
+                  });
                   setSelectedLocation(loc);
                   setViewState(prev => ({ ...prev, latitude: loc.lat - 0.005, longitude: loc.lng, zoom: 14 }));
                 }}

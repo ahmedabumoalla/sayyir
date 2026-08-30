@@ -7,6 +7,7 @@ import { Tajawal } from "next/font/google";
 import { ArrowRight, ChevronLeft, ChevronRight, Heart, ImageIcon, Landmark, Loader2, MapPin, Mountain, Share2, Trees, X } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
+import { trackPlatformEvent } from "@/lib/platformAnalytics";
 
 const tajawal = Tajawal({ subsets: ["arabic"], weight: ["400", "500", "700", "800"] });
 
@@ -74,6 +75,16 @@ export default function PlaceDetails() {
   useEffect(() => {
     if (place) checkFavorite();
   }, [place]);
+
+  useEffect(() => {
+    if (!place?.id) return;
+    void trackPlatformEvent({
+      eventType: "entity_open",
+      entityType: place.type === "experience" ? "experience" : "landmark",
+      entityId: String(place.id),
+      entityName: place.name,
+    });
+  }, [place?.id, place?.name, place?.type]);
 
   const media = useMemo(() => normalizeMedia(place?.media_urls ?? null), [place?.media_urls]);
   const mainMedia = media[currentImageIndex] || media[0] || null;

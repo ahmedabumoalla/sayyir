@@ -7,6 +7,7 @@ import { Tajawal } from "next/font/google";
 import { supabase } from "@/lib/supabaseClient";
 import { 
   LayoutDashboard, 
+  BarChart3,
   Map, 
   Briefcase, 
   Users, 
@@ -109,6 +110,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
 
   const sidebarItems = [
     { icon: LayoutDashboard, label: language === "ar" ? "الرئيسية" : "Dashboard", href: "/admin/dashboard", show: true, badge: 0 },
+    { icon: BarChart3, label: language === "ar" ? "متابعة المنصة" : "Platform Analytics", href: "/admin/analytics", show: true, badge: 0 },
     { icon: Briefcase, label: language === "ar" ? "طلبات الانضمام" : "Join Requests", href: "/admin/requests", show: true, badge: notificationCounts.requests }, // 👈 ربط العداد
     { icon: CheckCircle, label: language === "ar" ? "مراجعة الخدمات" : "Review Services", href: "/admin/services", show: true, badge: notificationCounts.services }, // 👈 ربط العداد
     { icon: Map, label: language === "ar" ? "إدارة المعالم" : "Landmarks", href: "/admin/landmarks", show: true, badge: 0 },
