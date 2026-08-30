@@ -316,7 +316,7 @@ export default function PlatformAnalyticsPage() {
               <PanelHeader
                 icon={<MousePointerClick size={18} />}
                 title={isArabic ? "الاهتمام حسب القسم" : "Interest by category"}
-                subtitle={isArabic ? "نقرات فتح التفاصيل" : "Detail opens"}
+                subtitle={isArabic ? "الدخول إلى القسم وفتح التفاصيل" : "Category visits and detail opens"}
               />
               <div className="mt-7 space-y-6">
                 {(Object.keys(entityConfig) as EntityType[]).map((key) => {

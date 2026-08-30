@@ -110,6 +110,17 @@ export default function PlatformAnalytics() {
         }
       }
 
+      const categoryEntity =
+        targetPath === "/landmarks"
+          ? "landmark"
+          : targetPath === "/facilities"
+            ? "facility"
+            : targetPath === "/experiences"
+              ? "experience"
+              : targetPath === "/events"
+                ? "event"
+                : null;
+
       void sendAnalyticsPayload({
         eventType: "platform_click",
         pagePath: window.location.pathname,
@@ -118,6 +129,15 @@ export default function PlatformAnalytics() {
           target: targetPath,
         },
       });
+
+      if (categoryEntity) {
+        void sendAnalyticsPayload({
+          eventType: "entity_open",
+          entityType: categoryEntity,
+          pagePath: window.location.pathname,
+          metadata: { scope: "category", target: targetPath },
+        });
+      }
     };
 
     document.addEventListener("click", handleClick, { passive: true });
