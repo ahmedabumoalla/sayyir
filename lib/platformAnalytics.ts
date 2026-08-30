@@ -1,5 +1,7 @@
 "use client";
 
+import { supabase } from "@/lib/supabaseClient";
+
 export type AnalyticsEntityType =
   | "landmark"
   | "facility"
@@ -7,7 +9,7 @@ export type AnalyticsEntityType =
   | "event";
 
 export type PlatformAnalyticsEvent = {
-  eventType: "entity_open" | "map_click";
+  eventType: "entity_open" | "map_click" | "platform_click";
   entityType?: AnalyticsEntityType;
   entityId?: string;
   entityName?: string;
@@ -80,9 +82,15 @@ export async function sendAnalyticsPayload(
     return;
   }
 
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
   await fetch("/api/analytics/track", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     body,
     keepalive: true,
     credentials: "same-origin",

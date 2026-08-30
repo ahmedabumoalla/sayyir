@@ -737,6 +737,14 @@ export default function ServiceDetailsPage() {
   };
 
   const handleBookingRequest = async () => {
+    void trackPlatformEvent({
+      eventType: "platform_click",
+      entityType: isEvent ? "event" : isExperience ? "experience" : "facility",
+      entityId: String(service.id),
+      entityName: service.title,
+      metadata: { action: "booking_start" },
+    });
+
     if (!agreedToPolicies && service.details?.policies) {
       toast.warning("الرجاء الموافقة على سياسات المزود أولاً.");
       return;
@@ -878,6 +886,18 @@ export default function ServiceDetailsPage() {
       if (!bookingData?.id) {
         throw new Error("تم إنشاء الحجز لكن لم يتم استلام بياناته بشكل صحيح");
       }
+
+      await trackPlatformEvent({
+        eventType: "platform_click",
+        entityType: isEvent ? "event" : isExperience ? "experience" : "facility",
+        entityId: String(service.id),
+        entityName: service.title,
+        metadata: {
+          action: "booking_created",
+          booking_id: String(bookingData.id),
+          booking_status: String(bookingData.status || "pending"),
+        },
+      });
 
       if (isEvent) {
         toast.success("تم تأكيد الحجز المبدئي، جاري توجيهك للدفع...");
@@ -1645,6 +1665,16 @@ export default function ServiceDetailsPage() {
                 href={`https://www.google.com/maps?q=${service.location_lat},${service.location_lng}`}
                 target="_blank"
                 rel="noreferrer"
+                data-analytics-ignore="true"
+                onClick={() => {
+                  void trackPlatformEvent({
+                    eventType: "platform_click",
+                    entityType: isEvent ? "event" : isExperience ? "experience" : "facility",
+                    entityId: String(service.id),
+                    entityName: service.title,
+                    metadata: { action: "directions_click", destination: "google_maps" },
+                  });
+                }}
                 className="absolute bottom-6 left-6 right-6 bg-[#C89B3C] text-black py-4 rounded-xl font-bold text-center shadow-lg hover:bg-[#b38a35] transition flex justify-center items-center gap-2"
               >
                 <Compass size={18} /> فتح الموقع في خرائط Google
@@ -2034,6 +2064,7 @@ export default function ServiceDetailsPage() {
               )}
 
               <button
+                data-analytics-ignore="true"
                 onClick={handleBookingRequest}
                 disabled={
                   isSoldOut ||

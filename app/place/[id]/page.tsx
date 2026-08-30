@@ -144,6 +144,13 @@ export default function PlaceDetails() {
       toast.error("الموقع غير متوفر");
       return;
     }
+    void trackPlatformEvent({
+      eventType: "platform_click",
+      entityType: place.type === "experience" ? "experience" : "landmark",
+      entityId: String(place.id),
+      entityName: place.name,
+      metadata: { action: "directions_click", destination: "google_maps" },
+    });
     window.open(`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`, "_blank");
   }
 
@@ -244,7 +251,7 @@ export default function PlaceDetails() {
               <div className="flex items-center justify-between gap-4"><span>التصنيف</span><span className="text-white font-semibold">{typeLabel(place.type)}</span></div>
               {place.owner_name && <div className="flex items-center justify-between gap-4"><span>المصدر</span><span className="text-white font-semibold">{place.owner_name}</span></div>}
             </div>
-            <button onClick={openLocation} className="mt-6 w-full rounded-2xl bg-[#C89B3C] text-[#2B1F17] font-bold py-3 hover:bg-[#d5ac55] transition flex items-center justify-center gap-2">
+            <button data-analytics-ignore="true" onClick={openLocation} className="mt-6 w-full rounded-2xl bg-[#C89B3C] text-[#2B1F17] font-bold py-3 hover:bg-[#d5ac55] transition flex items-center justify-center gap-2">
               <MapPin className="h-5 w-5" /> فتح الموقع على الخريطة
             </button>
           </div>

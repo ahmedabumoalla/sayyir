@@ -75,9 +75,23 @@ export async function POST(request: Request) {
 
   const rawMetadata =
     body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
-      ? body.metadata
+      ? (body.metadata as Record<string, unknown>)
       : {};
-  const metadata = JSON.stringify(rawMetadata).length <= 2_000 ? rawMetadata : {};
+  const { user_id: _untrustedUserId, ...clientMetadata } = rawMetadata;
+  void _untrustedUserId;
+
+  let authenticatedUserId: string | null = null;
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (token) {
+    const { data: authData } = await supabaseServer.auth.getUser(token);
+    authenticatedUserId = authData.user?.id || null;
+  }
+
+  const enrichedMetadata = authenticatedUserId
+    ? { ...clientMetadata, user_id: authenticatedUserId }
+    : clientMetadata;
+  const metadata = JSON.stringify(enrichedMetadata).length <= 2_000 ? enrichedMetadata : {};
   const userAgent = request.headers.get("user-agent") || "";
   const city = getLocationHeader(request, [
     "x-vercel-ip-city",

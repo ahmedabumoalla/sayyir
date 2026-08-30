@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { requireAnalyticsAdmin } from "@/lib/analyticsAdminAuth";
 
 const allowedRanges = new Map([
   ["7d", 7],
@@ -8,27 +9,8 @@ const allowedRanges = new Map([
 ]);
 
 export async function GET(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return NextResponse.json({ error: "missing_token" }, { status: 401 });
-  }
-
-  const { data: authData, error: authError } = await supabaseServer.auth.getUser(token);
-  if (authError || !authData.user) {
-    return NextResponse.json({ error: "invalid_session" }, { status: 401 });
-  }
-
-  const { data: profile, error: profileError } = await supabaseServer
-    .from("profiles")
-    .select("is_admin, is_super_admin")
-    .eq("id", authData.user.id)
-    .single();
-
-  if (profileError || (!profile?.is_admin && !profile?.is_super_admin)) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  const admin = await requireAnalyticsAdmin(request);
+  if ("response" in admin) return admin.response;
 
   const url = new URL(request.url);
   const range = url.searchParams.get("range") || "30d";
@@ -54,11 +36,38 @@ export async function GET(request: Request) {
     );
   }
 
+  const { data: actionRows } = await supabaseServer
+    .from("analytics_events")
+    .select("metadata")
+    .eq("event_type", "platform_click")
+    .gte("occurred_at", from.toISOString())
+    .lt("occurred_at", to.toISOString())
+    .limit(10000);
+
+  const actions = {
+    directions: 0,
+    bookingStarts: 0,
+    bookingsCreated: 0,
+  };
+
+  for (const row of actionRows || []) {
+    const metadata =
+      row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? (row.metadata as Record<string, unknown>)
+        : {};
+
+    if (metadata.action === "directions_click") actions.directions += 1;
+    if (metadata.action === "booking_start") actions.bookingStarts += 1;
+    if (metadata.action === "booking_created") actions.bookingsCreated += 1;
+  }
+
   return NextResponse.json({
     range,
     from: from.toISOString(),
     to: to.toISOString(),
-    data,
+    data: {
+      ...(data && typeof data === "object" ? data : {}),
+      actions,
+    },
   });
 }
-
