@@ -141,8 +141,8 @@ export default function PlatformAnalyticsPage() {
 
   const isArabic = language === "ar";
 
-  const loadAnalytics = useCallback(async () => {
-    setLoading(true);
+  const loadAnalytics = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(false);
 
     try {
@@ -169,12 +169,20 @@ export default function PlatformAnalyticsPage() {
       console.error("Analytics dashboard error:", fetchError);
       setError(true);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [range]);
 
   useEffect(() => {
     void loadAnalytics();
+  }, [loadAnalytics]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadAnalytics(true);
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
   }, [loadAnalytics]);
 
   const categoryCounts = useMemo(() => {
